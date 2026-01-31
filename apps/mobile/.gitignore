@@ -1,0 +1,90 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# ===================
+# Dependencies
+# ===================
+node_modules/
+package-lock.json
+
+# ===================
+# Expo
+# ===================
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# ===================
+# Native (EAS Build generates these)
+# ===================
+/ios/
+/android/
+.kotlin/
+*.orig.*
+
+# ===================
+# Signing Keys
+# ===================
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.keystore
+
+# ===================
+# Metro
+# ===================
+.metro-health-check*
+
+# ===================
+# Debug / Logs
+# ===================
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# ===================
+# macOS
+# ===================
+.DS_Store
+*.pem
+
+# ===================
+# Environment Variables
+# ===================
+.env
+.env*.local
+
+# ===================
+# TypeScript
+# ===================
+*.tsbuildinfo
+
+# ===================
+# IDE / Editor
+# ===================
+.vscode/
+.idea/
+
+# ===================
+# Testing
+# ===================
+coverage/
+.jest/
+jest-results/
+
+# ===================
+# EAS Credentials (local)
+# ===================
+eas-credentials.json
+credentials.json
+
+# ===================
+# Temporary
+# ===================
+tmp/
+temp/
+*.tmp
+.cache/

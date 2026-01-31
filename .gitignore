@@ -1,0 +1,169 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# ===================
+# Dependencies
+# ===================
+node_modules/
+.pnp
+.pnp.js
+
+# ===================
+# Build Outputs
+# ===================
+.next/
+out/
+build/
+dist/
+web-build/
+
+# ===================
+# Turbo
+# ===================
+.turbo/
+
+# ===================
+# Expo / React Native
+# ===================
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+.metro-health-check*
+
+# Generated native folders (use EAS Build instead)
+apps/mobile/ios/
+apps/mobile/android/
+
+# Expo generated
+apps/mobile/expo-env.d.ts
+
+# EAS local credentials
+eas-credentials.json
+credentials.json
+
+# ===================
+# Environment Variables
+# ===================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# ===================
+# IDE / Editor
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ===================
+# macOS / Windows
+# ===================
+.DS_Store
+*.pem
+Thumbs.db
+Desktop.ini
+
+# ===================
+# Debug / Logs
+# ===================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+logs/
+
+# ===================
+# Testing
+# ===================
+coverage/
+*.tsbuildinfo
+.jest/
+jest-results/
+.nyc_output/
+test-results/
+
+# ===================
+# Linting / Formatting Cache
+# ===================
+.eslintcache
+.prettiercache
+.stylelintcache
+
+# ===================
+# Storybook
+# ===================
+storybook-static/
+.storybook-out/
+
+# ===================
+# Vercel
+# ===================
+.vercel/
+
+# ===================
+# Python (Backend)
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+poetry.lock
+*.egg-info/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ===================
+# Supabase
+# ===================
+.supabase/
+supabase/.temp/
+
+# ===================
+# Database
+# ===================
+*.db
+*.sqlite
+*.sqlite3
+
+# ===================
+# Secrets (NEVER commit)
+# ===================
+*.secret
+*-secret.json
+service-account*.json
+firebase-admin*.json
+google-credentials*.json
+
+# ===================
+# Temporary Files
+# ===================
+*.local
+.cache/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# ===================
+# Bundle Analyzer
+# ===================
+.analyzer/
+stats.json
+bundle-stats.json
