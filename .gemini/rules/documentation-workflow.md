@@ -116,6 +116,7 @@ TASK-{번호}-{간단한-설명}.md
 
 - [기획 문서](../plan/xxx.md)
 - [개발 문서](../develop/xxx.md)
+- [실행계획 문서](../tasks/xxx.md)
 ```
 
 ---
