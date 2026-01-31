@@ -53,4 +53,5 @@ const RootLayoutNav = () => {
   );
 };
 
+// Expo Router requires default export for route components
 export default RootLayout;

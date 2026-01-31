@@ -26,4 +26,5 @@ const styles = StyleSheet.create({
   },
 });
 
+// Expo Router requires default export for route components
 export default ModalScreen;

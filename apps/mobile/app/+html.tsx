@@ -42,4 +42,5 @@ const Root = ({ children }: RootProps) => {
   );
 };
 
+// Expo Router requires default export for route components
 export default Root;

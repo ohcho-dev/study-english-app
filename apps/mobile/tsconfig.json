@@ -5,6 +5,36 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@/shared": [
+        "./shared"
+      ],
+      "@/shared/*": [
+        "./shared/*"
+      ],
+      "@/entities": [
+        "./entities"
+      ],
+      "@/entities/*": [
+        "./entities/*"
+      ],
+      "@/features": [
+        "./features"
+      ],
+      "@/features/*": [
+        "./features/*"
+      ],
+      "@/widgets": [
+        "./widgets"
+      ],
+      "@/widgets/*": [
+        "./widgets/*"
+      ],
+      "@/pages": [
+        "./pages"
+      ],
+      "@/pages/*": [
+        "./pages/*"
       ]
     }
   },
