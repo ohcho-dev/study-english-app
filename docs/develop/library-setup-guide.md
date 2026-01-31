@@ -8,63 +8,43 @@
 
 ---
 
+## 0. UI 컴포넌트 (React Native Reusables 패턴)
+
+> ⚠️ **중요**: UI 스타일링은 **NativeWind + CSS 변수** 방식을 사용합니다.
+
+### 핵심 패턴
+- **CSS 변수 기반 테마**: `global.css`에서 `:root` / `.dark:root`로 정의
+- **shadcn/ui 스타일 클래스**: `bg-background`, `text-foreground`, `bg-card` 등
+- **다크/라이트 모드**: `_layout.tsx`에서 `dark` 클래스 토글로 자동 전환
+
+### 설정 파일
+| 파일 | 역할 |
+|------|------|
+| `global.css` | CSS 변수 정의 (light/dark) |
+| `tailwind.config.js` | `hsl(var(--color))` 참조 |
+| `lib/constants.ts` | 테마 상수 + 네비게이션 테마 |
+| `lib/useColorScheme.ts` | 현재 테마 모드 반환 |
+
+### 사용 예시
+```tsx
+// 클래스명으로 스타일링 (테마 자동 적용)
+<View className="bg-background">
+  <Text className="text-foreground">Hello</Text>
+  <TouchableOpacity className="bg-primary">
+    <Text className="text-primary-foreground">Button</Text>
+  </TouchableOpacity>
+</View>
+```
+
+### 테마 변경
+```typescript
+// lib/constants.ts
+export const APP_THEME: ThemeMode = 'dark';  // 'dark' | 'light' | 'system'
+```
+
+---
+
 ## 1. UI/스타일링
-
-### NativeWind v4 (Tailwind for React Native)
-- **용도**: `className="flex-1 bg-white"` 형태의 스타일링
-- **설치**:
-```bash
-cd apps/mobile
-pnpm add nativewind tailwindcss
-pnpm add -D tailwindcss@3.3.2
-npx tailwindcss init
-```
-- **추가 설정 필요**: `tailwind.config.js`, `babel.config.js` 수정
-
-### Pretendard 폰트 (커스텀 폰트)
-- **용도**: 한글 지원 최적화 폰트, 가장 많이 사용됨
-- **설치**:
-```bash
-cd apps/mobile
-pnpm add expo-font
-```
-- **설정**:
-  1. [Pretendard 다운로드](https://github.com/orioncactus/pretendard)
-  2. `assets/fonts/` 폴더에 `.ttf` 파일 복사
-  3. `app.json`에 폰트 등록:
-```json
-{
-  "expo": {
-    "plugins": [
-      ["expo-font", {
-        "fonts": ["./assets/fonts/Pretendard-Regular.ttf"]
-      }]
-    ]
-  }
-}
-```
-  4. 컴포넌트에서 사용:
-```typescript
-import { useFonts } from 'expo-font';
-
-const [fontsLoaded] = useFonts({
-  'Pretendard-Regular': require('./assets/fonts/Pretendard-Regular.ttf'),
-  'Pretendard-Bold': require('./assets/fonts/Pretendard-Bold.ttf'),
-});
-```
-
-### Lucide Icons (아이콘)
-- **용도**: shadcn/ui, NativeWind와 가장 잘 어울리는 모던 아이콘
-- **설치**:
-```bash
-cd apps/mobile
-pnpm add lucide-react-native react-native-svg
-```
-- **사용 예시**:
-```typescript
-import { Home, Settings, User } from 'lucide-react-native';
-
-<Home size={24} color="#000" />
 ```
 
 ---

@@ -6,6 +6,12 @@
       "@/*": [
         "./*"
       ],
+      "@/lib": [
+        "./lib"
+      ],
+      "@/lib/*": [
+        "./lib/*"
+      ],
       "@/shared": [
         "./shared"
       ],
@@ -42,6 +48,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
   ]
 }

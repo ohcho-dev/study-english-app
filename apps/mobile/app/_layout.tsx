@@ -1,10 +1,15 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { colorScheme } from 'nativewind';
+import '../global.css';
 
-import { useColorScheme, useAppFonts } from '@/shared';
+import { useAppFonts } from '@/shared';
+import { useColorScheme } from '@/lib/useColorScheme';
+import { NAV_THEME } from '@/lib/constants';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -21,6 +26,12 @@ SplashScreen.preventAutoHideAsync();
 
 const RootLayout = () => {
   const [loaded, error] = useAppFonts();
+  const currentColorScheme = useColorScheme();
+
+  // NativeWind의 colorScheme 설정 (앱 시작시 적용)
+  useEffect(() => {
+    colorScheme.set(currentColorScheme);
+  }, [currentColorScheme]);
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
@@ -41,10 +52,12 @@ const RootLayout = () => {
 };
 
 const RootLayoutNav = () => {
-  const colorScheme = useColorScheme();
+  const currentColorScheme = useColorScheme();
+  const isDark = currentColorScheme === 'dark';
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={NAV_THEME[currentColorScheme]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />

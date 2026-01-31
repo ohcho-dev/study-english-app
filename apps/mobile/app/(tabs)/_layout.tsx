@@ -3,7 +3,8 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
-import { themeColors, useColorScheme, useClientOnlyValue } from '@/shared';
+import { useColorScheme } from '@/lib/useColorScheme';
+import { THEME } from '@/lib/constants';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 const TabBarIcon = (props: {
@@ -15,15 +16,20 @@ const TabBarIcon = (props: {
 
 const TabLayout = () => {
   const colorScheme = useColorScheme();
-  const colors = themeColors[colorScheme ?? 'light'];
+  const colors = THEME[colorScheme];
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
+        tabBarActiveTintColor: colors.primary,
+        tabBarStyle: {
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+        },
+        headerStyle: {
+          backgroundColor: colors.background,
+        },
+        headerTintColor: colors.foreground,
       }}>
       <Tabs.Screen
         name="index"
@@ -37,7 +43,7 @@ const TabLayout = () => {
                   <FontAwesome
                     name="info-circle"
                     size={25}
-                    color={colors.text}
+                    color={colors.foreground}
                     style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
                   />
                 )}
