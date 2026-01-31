@@ -4,7 +4,22 @@ import { ScrollViewStyleReset } from 'expo-router/html';
 // web page during static rendering.
 // The contents of this function only run in Node.js environments and
 // do not have access to the DOM or browser APIs.
-export default function Root({ children }: { children: React.ReactNode }) {
+
+interface RootProps {
+  children: React.ReactNode;
+}
+
+const responsiveBackground = `
+body {
+  background-color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #000;
+  }
+}`;
+
+const Root = ({ children }: RootProps) => {
   return (
     <html lang="en">
       <head>
@@ -25,14 +40,6 @@ export default function Root({ children }: { children: React.ReactNode }) {
       <body>{children}</body>
     </html>
   );
-}
+};
 
-const responsiveBackground = `
-body {
-  background-color: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #000;
-  }
-}`;
+export default Root;
