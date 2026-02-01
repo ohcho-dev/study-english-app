@@ -3,6 +3,7 @@ module.exports = {
   darkMode: 'class',
   content: [
     './app/**/*.{js,jsx,ts,tsx}',
+    './pages/**/*.{js,jsx,ts,tsx}',
     './shared/**/*.{js,jsx,ts,tsx}',
     './features/**/*.{js,jsx,ts,tsx}',
     './widgets/**/*.{js,jsx,ts,tsx}',

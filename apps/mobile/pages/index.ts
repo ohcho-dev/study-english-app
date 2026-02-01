@@ -19,3 +19,4 @@
 // 페이지 컴포넌트들은 여기서 export
 // export { HomePage } from './home';
 // export { SimulationPage } from './simulation';
+export { DesignSystemPage } from './design-system';

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { colorScheme } from 'nativewind';
+import { PortalHost } from '@rn-primitives/portal';
 import '../global.css';
 
 import { useAppFonts } from '@/shared';
@@ -62,9 +63,11 @@ const RootLayoutNav = () => {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
+      <PortalHost />
     </ThemeProvider>
   );
 };
 
 // Expo Router requires default export for route components
 export default RootLayout;
+

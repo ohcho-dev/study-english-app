@@ -59,6 +59,14 @@ const TabLayout = () => {
           tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="design-system"
+        options={{
+          title: 'Design',
+          headerShown: false,
+          tabBarIcon: ({ color }) => <TabBarIcon name="paint-brush" color={color} />,
+        }}
+      />
     </Tabs>
   );
 };
