@@ -4,7 +4,7 @@
  */
 
 import { useColorScheme as useSystemColorScheme } from 'react-native';
-import { APP_THEME } from '@/lib/constants';
+import { APP_THEME } from '@/shared/lib/constants';
 
 /**
  * 앱 테마 설정에 따른 컬러 스킴 반환

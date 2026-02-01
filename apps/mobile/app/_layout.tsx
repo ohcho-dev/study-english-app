@@ -8,8 +8,8 @@ import { colorScheme } from 'nativewind';
 import '../global.css';
 
 import { useAppFonts } from '@/shared';
-import { useColorScheme } from '@/lib/useColorScheme';
-import { NAV_THEME } from '@/lib/constants';
+import { useColorScheme } from '@/shared/lib/useColorScheme';
+import { NAV_THEME } from '@/shared/lib/constants';
 
 export {
   // Catch any errors thrown by the Layout component.
