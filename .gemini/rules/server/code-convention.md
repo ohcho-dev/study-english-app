@@ -13,31 +13,49 @@ apps/server/
 │   ├── api/                    # API 라우트
 │   │   ├── v1/                 # 버전별 API
 │   │   │   ├── __init__.py
-│   │   │   ├── users.py
-│   │   │   ├── themes.py
-│   │   │   └── lessons.py
+│   │   │   ├── router.py       # 메인 라우터
+│   │   │   ├── experiments.py  # 🧪 실험 관리
+│   │   │   ├── variables.py    # 🧪 변수 관리
+│   │   │   ├── cohorts.py      # 🧪 코호트 관리
+│   │   │   ├── prompts.py      # 🧪 AI 프롬프트
+│   │   │   ├── scenarios.py    # 📦 시나리오
+│   │   │   ├── analytics.py    # 🧪 분석 대시보드
+│   │   │   ├── users.py        # ⚙️ 사용자
+│   │   │   └── themes.py       # ⚙️ 테마
 │   │   ├── auth/               # 인증 API
 │   │   │   └── oauth.py
-│   │   └── ai/                 # AI 관련 API
+│   │   └── ai/                 # AI 스트리밍 API
 │   │       └── chat.py
 │   ├── core/                   # 핵심 설정
 │   │   ├── config.py           # 환경 변수
 │   │   ├── database.py         # DB 연결
-│   │   └── security.py         # JWT, OAuth
+│   │   ├── security.py         # JWT, OAuth
+│   │   └── exceptions.py       # 커스텀 예외
 │   ├── models/                 # SQLAlchemy 모델
+│   │   ├── base.py             # Base 클래스
 │   │   ├── user.py
-│   │   ├── theme.py
-│   │   └── lesson.py
+│   │   ├── experiment.py       # 🧪 실험, 변수
+│   │   ├── cohort.py           # 🧪 코호트
+│   │   ├── experiment_log.py   # 🧪 로그
+│   │   ├── ai_prompt.py        # 🧪 프롬프트
+│   │   ├── scenario.py         # 📦 시나리오
+│   │   └── theme.py            # ⚙️ 테마
 │   ├── schemas/                # Pydantic 스키마
+│   │   ├── common.py           # 공통 (페이지네이션 등)
 │   │   ├── user.py
-│   │   ├── theme.py
-│   │   └── common.py
+│   │   ├── experiment.py
+│   │   ├── prompt.py
+│   │   ├── scenario.py
+│   │   └── theme.py
 │   ├── services/               # 비즈니스 로직
-│   │   ├── user_service.py
-│   │   ├── theme_service.py
+│   │   ├── experiment_service.py
+│   │   ├── variable_service.py
+│   │   ├── prompt_service.py
+│   │   ├── scenario_service.py
+│   │   ├── analytics_service.py
 │   │   └── ai/
-│   │       ├── agent.py
-│   │       └── prompts.py
+│   │       ├── agent.py        # LangChain 에이전트
+│   │       └── chains.py       # LangChain 체인
 │   └── main.py                 # FastAPI 앱 진입점
 ├── migrations/                 # Alembic 마이그레이션
 ├── tests/                      # 테스트

@@ -2,9 +2,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| **작성일** | 2026-02-01 |
+| **작성일** | 2026-02-02 |
 | **상태** | Draft |
-| **관련 문서** | [architecture.md](./architecture.md) |
+| **관련 문서** | [architecture.md](./architecture.md), [research-cms.md](./research-cms.md) |
 
 ---
 
@@ -12,17 +12,30 @@
 
 ```mermaid
 erDiagram
+    %% 사용자 관련
     users ||--o{ user_progress : has
     users ||--o{ conversations : has
     users ||--o{ user_settings : has
+    users ||--o{ user_cohorts : assigned_to
     
-    lessons ||--o{ lesson_steps : contains
-    lessons ||--o{ user_progress : tracked_by
+    %% 실험 관련
+    experiments ||--o{ experiment_variables : has
+    experiments ||--o{ user_cohorts : contains
+    experiments ||--o{ experiment_logs : generates
     
+    %% 콘텐츠 관련
+    scenarios ||--o{ scenario_steps : contains
+    scenarios ||--o{ user_progress : tracked_by
+    
+    %% AI 관련
+    ai_prompts ||--o{ ai_prompt_versions : has
+    
+    %% 대화 관련
     conversations ||--o{ messages : contains
     
+    %% 테마 관련
     themes ||--o{ theme_versions : has
-    
+
     users {
         uuid id PK
         string email
@@ -46,23 +59,91 @@ erDiagram
         jsonb custom_settings
     }
     
-    lessons {
+    experiments {
         uuid id PK
-        string title
-        string description
-        enum category "listening|simulation|roleplay"
-        int level_required
-        int xp_reward
-        int order
-        boolean is_published
+        string name
+        text hypothesis
+        enum status "draft|running|completed|paused"
+        enum learning_theme "listening|simulation|myturn|all"
+        timestamp start_date
+        timestamp end_date
+        int target_sample_size
+        uuid created_by FK
         timestamp created_at
     }
     
-    lesson_steps {
+    experiment_variables {
         uuid id PK
-        uuid lesson_id FK
+        uuid experiment_id FK
+        string variable_key
+        jsonb control_value
+        jsonb treatment_value
+        float traffic_split
+        timestamp created_at
+    }
+    
+    user_cohorts {
+        uuid id PK
+        uuid user_id FK
+        uuid experiment_id FK
+        enum variant "control|treatment"
+        timestamp assigned_at
+        boolean completed
+    }
+    
+    experiment_logs {
+        uuid id PK
+        uuid experiment_id FK
+        uuid user_id FK
+        enum variant "control|treatment"
+        string event_type
+        jsonb event_data
+        enum learning_theme
+        uuid scenario_id FK
+        timestamp created_at
+    }
+    
+    ai_prompts {
+        uuid id PK
+        string name
+        enum target_theme "listening|simulation|myturn"
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    ai_prompt_versions {
+        uuid id PK
+        uuid prompt_id FK
+        int version
+        text system_prompt
+        float temperature
+        string model
+        int max_tokens
+        jsonb eval_weights
+        uuid created_by FK
+        timestamp created_at
+    }
+    
+    scenarios {
+        uuid id PK
+        string title
+        text description
+        enum category "listening|simulation|myturn"
+        enum status "draft|testing|published"
+        int level_required
+        int xp_reward
+        int order
+        uuid created_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    scenario_steps {
+        uuid id PK
+        uuid scenario_id FK
         int step_order
-        enum type "dialogue|choice|speaking|feedback"
+        enum type "dialogue|choice|speaking|observe|imitate|internalize"
         jsonb content
         jsonb ai_config
     }
@@ -70,7 +151,7 @@ erDiagram
     user_progress {
         uuid id PK
         uuid user_id FK
-        uuid lesson_id FK
+        uuid scenario_id FK
         enum status "not_started|in_progress|completed"
         int current_step
         int score
@@ -82,7 +163,7 @@ erDiagram
     conversations {
         uuid id PK
         uuid user_id FK
-        uuid lesson_id FK
+        uuid scenario_id FK
         string session_id
         timestamp created_at
     }
@@ -110,7 +191,7 @@ erDiagram
         int version
         jsonb light_mode
         jsonb dark_mode
-        string created_by
+        uuid created_by FK
         timestamp created_at
     }
     
@@ -151,104 +232,136 @@ erDiagram
 
 ---
 
-### 2.2 themes (테마)
+### 2.2 experiments (실험)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 실험 고유 ID |
+| name | VARCHAR(200) | NOT NULL | 실험명 |
+| hypothesis | TEXT | - | 가설 설명 |
+| status | ENUM | DEFAULT 'draft' | draft/running/completed/paused |
+| learning_theme | ENUM | NOT NULL | listening/simulation/myturn/all |
+| start_date | TIMESTAMP | - | 실험 시작일 |
+| end_date | TIMESTAMP | - | 실험 종료일 |
+| target_sample_size | INTEGER | - | 목표 샘플 수 |
+| created_by | UUID | FK → users | 생성자 |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+
+---
+
+### 2.3 experiment_variables (실험 변수)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 변수 고유 ID |
+| experiment_id | UUID | FK → experiments | 실험 ID |
+| variable_key | VARCHAR(100) | NOT NULL | 변수 키 (예: sim_feedback_timing) |
+| control_value | JSONB | NOT NULL | Control 그룹 값 |
+| treatment_value | JSONB | NOT NULL | Treatment 그룹 값 |
+| traffic_split | FLOAT | DEFAULT 0.5 | 트래픽 분배율 |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+
+---
+
+### 2.4 user_cohorts (사용자 코호트)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 코호트 고유 ID |
+| user_id | UUID | FK → users | 사용자 ID |
+| experiment_id | UUID | FK → experiments | 실험 ID |
+| variant | ENUM | NOT NULL | control/treatment |
+| assigned_at | TIMESTAMP | DEFAULT now() | 배정 시간 |
+| completed | BOOLEAN | DEFAULT false | 실험 완료 여부 |
+
+**인덱스:**
+- `idx_cohorts_user_experiment` (user_id, experiment_id) UNIQUE
+
+---
+
+### 2.5 experiment_logs (실험 로그)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 로그 고유 ID |
+| experiment_id | UUID | FK → experiments | 실험 ID |
+| user_id | UUID | FK → users | 사용자 ID |
+| variant | ENUM | NOT NULL | control/treatment |
+| event_type | VARCHAR(50) | NOT NULL | 이벤트 타입 |
+| event_data | JSONB | - | 이벤트 데이터 |
+| learning_theme | ENUM | - | 학습 테마 |
+| scenario_id | UUID | FK → scenarios | 시나리오 ID |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+
+**인덱스:**
+- `idx_logs_experiment` (experiment_id, created_at)
+- `idx_logs_user` (user_id, created_at)
+
+---
+
+### 2.6 ai_prompts (AI 프롬프트)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 프롬프트 고유 ID |
+| name | VARCHAR(100) | NOT NULL | 프롬프트명 |
+| target_theme | ENUM | NOT NULL | 적용 학습 테마 |
+| is_active | BOOLEAN | DEFAULT false | 활성 상태 |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+| updated_at | TIMESTAMP | DEFAULT now() | 수정일 |
+
+---
+
+### 2.7 ai_prompt_versions (AI 프롬프트 버전)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 버전 고유 ID |
+| prompt_id | UUID | FK → ai_prompts | 프롬프트 ID |
+| version | INTEGER | NOT NULL | 버전 번호 |
+| system_prompt | TEXT | NOT NULL | 시스템 프롬프트 |
+| temperature | FLOAT | DEFAULT 0.7 | Temperature |
+| model | VARCHAR(50) | NOT NULL | 모델명 |
+| max_tokens | INTEGER | DEFAULT 1000 | 최대 토큰 |
+| eval_weights | JSONB | - | 평가 기준 가중치 |
+| created_by | UUID | FK → users | 생성자 |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+
+---
+
+### 2.8 scenarios (시나리오)
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | 시나리오 고유 ID |
+| title | VARCHAR(200) | NOT NULL | 제목 |
+| description | TEXT | - | 설명 |
+| category | ENUM | NOT NULL | listening/simulation/myturn |
+| status | ENUM | DEFAULT 'draft' | draft/testing/published |
+| level_required | INTEGER | DEFAULT 1 | 필요 레벨 |
+| xp_reward | INTEGER | DEFAULT 10 | 완료 시 XP |
+| order | INTEGER | NOT NULL | 정렬 순서 |
+| created_by | UUID | FK → users | 생성자 |
+| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
+| updated_at | TIMESTAMP | DEFAULT now() | 수정일 |
+
+---
+
+### 2.9 themes (테마)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | UUID | PK | 테마 고유 ID |
 | name | VARCHAR(100) | NOT NULL | 테마 이름 |
-| is_active | BOOLEAN | DEFAULT false | 현재 활성 테마 |
+| is_active | BOOLEAN | DEFAULT false | 활성 테마 여부 |
 | created_at | TIMESTAMP | DEFAULT now() | 생성일 |
 | updated_at | TIMESTAMP | DEFAULT now() | 수정일 |
 
-### 2.3 theme_versions (테마 버전)
-
-| 컬럼 | 타입 | 제약 | 설명 |
-|------|------|------|------|
-| id | UUID | PK | 버전 고유 ID |
-| theme_id | UUID | FK → themes | 테마 ID |
-| version | INTEGER | NOT NULL | 버전 번호 |
-| light_mode | JSONB | NOT NULL | 라이트 모드 색상 |
-| dark_mode | JSONB | NOT NULL | 다크 모드 색상 |
-| created_by | VARCHAR(100) | - | 생성자 |
-| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
-
-**테마 JSON 구조:**
-```json
-{
-  "background": "0 0% 100%",
-  "foreground": "222.2 84% 4.9%",
-  "card": "0 0% 100%",
-  "card-foreground": "222.2 84% 4.9%",
-  "primary": "24.6 95% 53.1%",
-  "primary-foreground": "0 0% 100%",
-  "secondary": "217.2 91.2% 59.8%",
-  "secondary-foreground": "0 0% 100%",
-  "muted": "210 40% 96.1%",
-  "muted-foreground": "215.4 16.3% 46.9%",
-  "accent": "210 40% 96.1%",
-  "accent-foreground": "222.2 47.4% 11.2%",
-  "destructive": "0 84.2% 60.2%",
-  "destructive-foreground": "0 0% 100%",
-  "success": "142.1 76.2% 36.3%",
-  "success-foreground": "0 0% 100%",
-  "warning": "24.6 95% 53.1%",
-  "warning-foreground": "0 0% 100%",
-  "border": "214.3 31.8% 91.4%",
-  "input": "214.3 31.8% 91.4%",
-  "ring": "24.6 95% 53.1%"
-}
-```
-
 ---
 
-### 2.4 lessons (레슨)
+## 3. 다음 단계
 
-| 컬럼 | 타입 | 제약 | 설명 |
-|------|------|------|------|
-| id | UUID | PK | 레슨 고유 ID |
-| title | VARCHAR(200) | NOT NULL | 레슨 제목 |
-| description | TEXT | - | 레슨 설명 |
-| category | ENUM | NOT NULL | 카테고리 |
-| level_required | INTEGER | DEFAULT 1 | 필요 레벨 |
-| xp_reward | INTEGER | DEFAULT 10 | 완료 시 XP |
-| order | INTEGER | NOT NULL | 정렬 순서 |
-| is_published | BOOLEAN | DEFAULT false | 공개 여부 |
-| created_at | TIMESTAMP | DEFAULT now() | 생성일 |
-
----
-
-## 3. SQLAlchemy 모델 예시
-
-```python
-# app/models/user.py
-from sqlalchemy import Column, String, Integer, Enum, DateTime
-from sqlalchemy.dialects.postgresql import UUID
-from app.core.database import Base
-import uuid
-from datetime import datetime
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    avatar_url = Column(String)
-    provider = Column(String(20), nullable=False)
-    provider_id = Column(String(255), nullable=False)
-    role = Column(Enum("user", "admin", name="user_role"), default="user")
-    level = Column(Integer, default=1)
-    xp = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-```
-
----
-
-## 4. 다음 단계
-
-1. [ ] API 명세 작성 (`api-spec.md`)
-2. [ ] FastAPI 프로젝트 초기화
-3. [ ] SQLAlchemy 모델 구현
-4. [ ] Alembic 마이그레이션 설정
+1. [ ] SQLAlchemy 모델 구현
+2. [ ] Alembic 마이그레이션 설정
+3. [ ] 실험 관련 API 구현
+4. [ ] 변수 관리 API 구현

@@ -70,13 +70,18 @@ apps/server/
 │   │   ├── v1/                   # 버전별 API
 │   │   │   ├── __init__.py
 │   │   │   ├── router.py         # 메인 라우터
-│   │   │   ├── users.py
-│   │   │   ├── themes.py
-│   │   │   └── lessons.py
+│   │   │   ├── experiments.py    # 🧪 실험 관리
+│   │   │   ├── variables.py      # 🧪 변수 관리 (Feature Flags)
+│   │   │   ├── cohorts.py        # 🧪 코호트 관리
+│   │   │   ├── prompts.py        # 🧪 AI 프롬프트
+│   │   │   ├── scenarios.py      # 📦 시나리오 (콘텐츠)
+│   │   │   ├── analytics.py      # 🧪 분석 대시보드
+│   │   │   ├── users.py          # ⚙️ 사용자
+│   │   │   └── themes.py         # ⚙️ 테마
 │   │   ├── auth/
 │   │   │   └── oauth.py
 │   │   └── ai/
-│   │       └── chat.py
+│   │       └── chat.py           # AI 스트리밍 채팅
 │   ├── core/                     # 핵심 설정
 │   │   ├── config.py             # 환경 변수 (Pydantic Settings)
 │   │   ├── database.py           # DB 연결
@@ -86,25 +91,34 @@ apps/server/
 │   │   ├── __init__.py
 │   │   ├── base.py               # Base 클래스
 │   │   ├── user.py
-│   │   ├── theme.py
-│   │   └── lesson.py
+│   │   ├── experiment.py         # 🧪 experiments, experiment_variables
+│   │   ├── cohort.py             # 🧪 user_cohorts
+│   │   ├── experiment_log.py     # 🧪 experiment_logs
+│   │   ├── ai_prompt.py          # 🧪 ai_prompts, ai_prompt_versions
+│   │   ├── scenario.py           # 📦 scenarios, scenario_steps
+│   │   └── theme.py              # ⚙️ themes, theme_versions
 │   ├── schemas/                  # Pydantic 스키마
 │   │   ├── __init__.py
 │   │   ├── common.py             # 공통 스키마 (Pagination, Response)
 │   │   ├── user.py
-│   │   ├── theme.py
-│   │   └── lesson.py
+│   │   ├── experiment.py
+│   │   ├── prompt.py
+│   │   ├── scenario.py
+│   │   └── theme.py
 │   ├── services/                 # 비즈니스 로직
 │   │   ├── __init__.py
-│   │   ├── user_service.py
-│   │   ├── theme_service.py
+│   │   ├── experiment_service.py # 🧪 실험 생성/관리
+│   │   ├── variable_service.py   # 🧪 변수 조회/수정
+│   │   ├── cohort_service.py     # 🧪 코호트 배정
+│   │   ├── prompt_service.py     # 🧪 프롬프트 관리
+│   │   ├── scenario_service.py   # 📦 시나리오 CRUD
+│   │   ├── analytics_service.py  # 🧪 분석/통계
 │   │   └── ai/
 │   │       ├── __init__.py
 │   │       ├── agent.py          # LangChain 에이전트
-│   │       ├── prompts.py        # 프롬프트 템플릿
 │   │       └── chains.py         # LangChain 체인
 │   ├── repositories/             # 데이터 접근 (선택)
-│   │   └── user_repository.py
+│   │   └── experiment_repository.py
 │   └── main.py                   # FastAPI 앱 진입점
 ├── migrations/                   # Alembic 마이그레이션
 │   ├── versions/
