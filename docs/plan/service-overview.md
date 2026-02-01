@@ -60,15 +60,20 @@
 |------|------|------|--------|
 | 온보딩 플로우 | AI | 🟢 완료 | [app-screens-learning-flow.md](./app-screens-learning-flow.md) |
 | 레벨/진도 시스템 | AI (벤치마킹) | 🟢 완료 | [level-system.md](./level-system.md) |
-| 데이터 스키마 | AI | 🔴 Not Started | data-schema.md |
-| 관리자 페이지 | AI | 🔴 Not Started | admin-page.md |
+| 시스템 아키텍처 | AI | 🟢 완료 | [architecture.md](./architecture.md) |
+| 데이터 스키마 | AI | 🟢 완료 | [data-schema.md](./data-schema.md) |
+| 관리자 페이지 | AI | 🟢 완료 | [admin-page.md](./admin-page.md) |
 
 ---
 
 ## 🔜 다음 단계 (Next Steps)
 
-1. [ ] 온보딩 플로우 기획 (SSO 포함)
-2. [ ] 영어 회화 서비스 벤치마킹 (레벨/진도 시스템)
-3. [ ] 데이터 스키마 설계
-4. [ ] 관리자 페이지 기획
-5. [ ] MVP 개발 시작
+1. [x] 온보딩 플로우 기획 (SSO 포함)
+2. [x] 영어 회화 서비스 벤치마킹 (레벨/진도 시스템)
+3. [x] 시스템 아키텍처 설계
+4. [x] 데이터 스키마 설계
+5. [x] 관리자 페이지 기획
+6. [ ] **백엔드 서버 구축** (`apps/server` - FastAPI)
+7. [ ] **관리자 앱 구축** (`apps/admin` - Next.js)
+8. [ ] 모바일 앱 연동
+

@@ -33,11 +33,12 @@
 ### 1.3. Infrastructure
 | 구분 | 기술 | 비고 |
 |------|------|------|
-| **Auth/DB** | Supabase | PostgreSQL + Auth (소셜 로그인) |
-| **AI** | Google Gemini 3.0 Pro/Flash | Native Audio 멀티모달 |
+| **Database** | PostgreSQL | SQLAlchemy ORM, Alembic 마이그레이션 |
+| **Cache** | Redis | 세션, 캐싱 |
+| **AI** | Google Gemini + LangChain | 멀티모달, 에이전트 프레임워크 |
 | **TTS** | Google Cloud TTS | 음성 변환 (100만 자/월 무료) |
 | **Payment** | PortOne V2 | 국내 결제 (카카오페이, 네이버페이) |
-| **Admin** | Retool | 노코드 운영 툴 |
+| **Admin** | Next.js + shadcn/ui | 자체 개발 관리자 웹 앱 |
 | **Monitoring** | Sentry | 크래시 리포팅 |
 
 ### 1.4. Deployment
@@ -54,16 +55,22 @@
 ```
 root/
 ├── apps/
-│   └── mobile/            # React Native (FSD 아키텍처)
-├── backend/               # FastAPI (모듈러 모놀리스)
-│   └── app/modules/
-│       ├── auth/          # 인증
-│       ├── simulation/    # 1:1 회화
-│       └── classroom/     # 그룹 회화 (Socket)
+│   ├── mobile/            # React Native (FSD 아키텍처)
+│   ├── admin/             # Next.js 관리자 웹 (shadcn/ui)
+│   └── server/            # FastAPI (모듈러 모놀리스)
+│       ├── app/
+│       │   ├── api/       # API 라우트
+│       │   ├── models/    # SQLAlchemy 모델
+│       │   ├── services/  # 비즈니스 로직, AI
+│       │   └── core/      # 설정, 보안, DB
+│       └── migrations/    # Alembic 마이그레이션
 ├── packages/
-│   └── api-client/        # TS 타입 자동 생성 (OpenAPI Generator)
+│   ├── eslint-config/     # 공유 ESLint 설정
+│   ├── typescript-config/ # 공유 TypeScript 설정
+│   └── ui/                # 공유 UI 컴포넌트
+├── docs/plan/             # 기획 문서
 ├── turbo.json
-└── package.json           # "npm run dev:all"
+└── package.json           # pnpm workspace
 ```
 
 ### 타입 자동 동기화 워크플로우
