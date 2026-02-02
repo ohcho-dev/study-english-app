@@ -1,15 +1,25 @@
 import { Text, TextClassContext } from '@/shared/reusables/ui/text';
 import { cn } from '@/shared/reusables/lib/utils';
 import { View, type ViewProps } from 'react-native';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
-function Card({ className, ...props }: ViewProps & React.RefAttributes<View>) {
+function Card({ className, style, ...props }: ViewProps & React.RefAttributes<View>) {
+  const colors = useThemeColors();
+
   return (
-    <TextClassContext.Provider value="text-card-foreground">
+    <TextClassContext.Provider value={{ style: { color: colors.cardForeground } }}>
       <View
         className={cn(
-          'bg-card border-border flex flex-col gap-6 rounded-xl border py-6 shadow-sm shadow-black/5',
+          'flex flex-col gap-6 rounded-xl border py-6 shadow-sm shadow-black/5',
           className
         )}
+        style={[
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+          style,
+        ]}
         {...props}
       />
     </TextClassContext.Provider>
@@ -36,9 +46,18 @@ function CardTitle({
 
 function CardDescription({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
-  return <Text className={cn('text-muted-foreground text-sm', className)} {...props} />;
+  const colors = useThemeColors();
+
+  return (
+    <Text
+      className={cn('text-sm', className)}
+      style={[{ color: colors.mutedForeground }, style]}
+      {...props}
+    />
+  );
 }
 
 function CardContent({ className, ...props }: ViewProps & React.RefAttributes<View>) {

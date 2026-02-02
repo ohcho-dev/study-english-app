@@ -9,8 +9,8 @@ import { PortalHost } from '@rn-primitives/portal';
 import '../global.css';
 
 import { useAppFonts } from '@/shared';
-import { useColorScheme } from '@/shared/lib/useColorScheme';
 import { NAV_THEME } from '@/shared/lib/constants';
+import { DynamicThemeProvider, useTheme } from '@/shared/providers';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -27,12 +27,6 @@ SplashScreen.preventAutoHideAsync();
 
 const RootLayout = () => {
   const [loaded, error] = useAppFonts();
-  const currentColorScheme = useColorScheme();
-
-  // NativeWind의 colorScheme 설정 (앱 시작시 적용)
-  useEffect(() => {
-    colorScheme.set(currentColorScheme);
-  }, [currentColorScheme]);
 
   // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
@@ -49,15 +43,24 @@ const RootLayout = () => {
     return null;
   }
 
-  return <RootLayoutNav />;
+  return (
+    <DynamicThemeProvider>
+      <RootLayoutNav />
+    </DynamicThemeProvider>
+  );
 };
 
 const RootLayoutNav = () => {
-  const currentColorScheme = useColorScheme();
-  const isDark = currentColorScheme === 'dark';
+  const { effectiveColorScheme } = useTheme();
+  const isDark = effectiveColorScheme === 'dark';
+
+  // NativeWind의 colorScheme 설정 (dark/light mode 전환용)
+  useEffect(() => {
+    colorScheme.set(effectiveColorScheme);
+  }, [effectiveColorScheme]);
 
   return (
-    <ThemeProvider value={NAV_THEME[currentColorScheme]}>
+    <ThemeProvider value={NAV_THEME[effectiveColorScheme]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -70,4 +73,3 @@ const RootLayoutNav = () => {
 
 // Expo Router requires default export for route components
 export default RootLayout;
-

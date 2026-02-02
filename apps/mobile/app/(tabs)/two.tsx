@@ -1,10 +1,11 @@
-import { View, Text } from 'react-native';
+import { Screen } from '@/shared/reusables/ui/screen';
+import { Text } from '@/shared/reusables/ui/text';
 
 const TabTwoScreen = () => {
   return (
-    <View className="flex-1 items-center justify-center bg-background">
-      <Text className="text-xl font-bold text-foreground">Tab Two</Text>
-    </View>
+    <Screen className="items-center justify-center">
+      <Text variant="h3">Tab Two</Text>
+    </Screen>
   );
 };
 

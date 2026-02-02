@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
-import { useColorScheme } from '@/shared/lib/useColorScheme';
+import { useTheme } from '@/shared/providers';
+import { useThemeColors } from '@/shared';
 import { THEME } from '@/shared/lib/constants';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
@@ -15,8 +16,7 @@ const TabBarIcon = (props: {
 };
 
 const TabLayout = () => {
-  const colorScheme = useColorScheme();
-  const colors = THEME[colorScheme];
+  const colors = useThemeColors();
 
   return (
     <Tabs

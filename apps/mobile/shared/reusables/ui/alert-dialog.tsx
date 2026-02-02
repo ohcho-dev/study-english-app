@@ -1,12 +1,12 @@
-import { buttonTextVariants, buttonVariants } from '@/shared/reusables/ui/button';
 import { NativeOnlyAnimatedView } from '@/shared/reusables/ui/native-only-animated-view';
 import { TextClassContext } from '@/shared/reusables/ui/text';
 import { cn } from '@/shared/reusables/lib/utils';
 import * as AlertDialogPrimitive from '@rn-primitives/alert-dialog';
 import * as React from 'react';
-import { Platform, View, type ViewProps } from 'react-native';
+import { Platform, View, type ViewProps, type ViewStyle } from 'react-native';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 const AlertDialog = AlertDialogPrimitive.Root;
 
@@ -49,22 +49,29 @@ function AlertDialogOverlay({
 function AlertDialogContent({
   className,
   portalHost,
+  style,
   ...props
 }: AlertDialogPrimitive.ContentProps &
   React.RefAttributes<AlertDialogPrimitive.ContentRef> & {
     portalHost?: string;
   }) {
+  const colors = useThemeColors();
+
   return (
     <AlertDialogPortal hostName={portalHost}>
       <AlertDialogOverlay>
         <AlertDialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'z-50 flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
             Platform.select({
               web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
             className
           )}
+          style={[
+            { backgroundColor: colors.background, borderColor: colors.border },
+            style,
+          ]}
           {...props}
         />
       </AlertDialogOverlay>
@@ -74,7 +81,7 @@ function AlertDialogContent({
 
 function AlertDialogHeader({ className, ...props }: ViewProps) {
   return (
-    <TextClassContext.Provider value="text-center sm:text-left">
+    <TextClassContext.Provider value={{ className: 'text-center sm:text-left' }}>
       <View className={cn('flex flex-col gap-2', className)} {...props} />
     </TextClassContext.Provider>
   );
@@ -91,11 +98,15 @@ function AlertDialogFooter({ className, ...props }: ViewProps) {
 
 function AlertDialogTitle({
   className,
+  style,
   ...props
 }: AlertDialogPrimitive.TitleProps & React.RefAttributes<AlertDialogPrimitive.TitleRef>) {
+  const colors = useThemeColors();
+
   return (
     <AlertDialogPrimitive.Title
-      className={cn('text-foreground text-lg font-semibold', className)}
+      className={cn('text-lg font-semibold', className)}
+      style={[{ color: colors.foreground }, style]}
       {...props}
     />
   );
@@ -103,12 +114,16 @@ function AlertDialogTitle({
 
 function AlertDialogDescription({
   className,
+  style,
   ...props
 }: AlertDialogPrimitive.DescriptionProps &
   React.RefAttributes<AlertDialogPrimitive.DescriptionRef>) {
+  const colors = useThemeColors();
+
   return (
     <AlertDialogPrimitive.Description
-      className={cn('text-muted-foreground text-sm', className)}
+      className={cn('text-sm', className)}
+      style={[{ color: colors.mutedForeground }, style]}
       {...props}
     />
   );
@@ -116,23 +131,64 @@ function AlertDialogDescription({
 
 function AlertDialogAction({
   className,
+  style,
   ...props
 }: AlertDialogPrimitive.ActionProps & React.RefAttributes<AlertDialogPrimitive.ActionRef>) {
+  const colors = useThemeColors();
+
+  const buttonStyle: ViewStyle = {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ className })}>
-      <AlertDialogPrimitive.Action className={cn(buttonVariants(), className)} {...props} />
+    <TextClassContext.Provider
+      value={{
+        className: 'text-sm font-medium',
+        style: { color: colors.primaryForeground },
+      }}
+    >
+      <AlertDialogPrimitive.Action
+        className={cn('flex-row items-center justify-center', className)}
+        style={[buttonStyle, style]}
+        {...props}
+      />
     </TextClassContext.Provider>
   );
 }
 
 function AlertDialogCancel({
   className,
+  style,
   ...props
 }: AlertDialogPrimitive.CancelProps & React.RefAttributes<AlertDialogPrimitive.CancelRef>) {
+  const colors = useThemeColors();
+
+  const buttonStyle: ViewStyle = {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ className, variant: 'outline' })}>
+    <TextClassContext.Provider
+      value={{
+        className: 'text-sm font-medium',
+        style: { color: colors.foreground },
+      }}
+    >
       <AlertDialogPrimitive.Cancel
-        className={cn(buttonVariants({ variant: 'outline' }), className)}
+        className={cn('flex-row items-center justify-center', className)}
+        style={[buttonStyle, style]}
         {...props}
       />
     </TextClassContext.Provider>

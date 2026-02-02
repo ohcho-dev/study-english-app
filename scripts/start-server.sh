@@ -30,6 +30,7 @@ echo "🔄 Applying migrations..."
 poetry run alembic upgrade head
 
 # 서버 실행
-echo "🚀 Starting server at http://localhost:8000"
+echo "🚀 Starting server at http://0.0.0.0:8000"
 echo "📚 API docs: http://localhost:8000/docs"
-poetry run uvicorn app.main:app --reload --port 8000
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+

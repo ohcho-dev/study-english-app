@@ -4,6 +4,7 @@ import { cn } from '@/shared/reusables/lib/utils';
 import type { LucideIcon } from 'lucide-react-native';
 import * as React from 'react';
 import { View, type ViewProps } from 'react-native';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 function Alert({
   className,
@@ -11,6 +12,7 @@ function Alert({
   children,
   icon,
   iconClassName,
+  style,
   ...props
 }: ViewProps &
   React.RefAttributes<View> & {
@@ -18,24 +20,35 @@ function Alert({
     variant?: 'default' | 'destructive';
     iconClassName?: string;
   }) {
+  const colors = useThemeColors();
+
+  const bgColor = colors.card;
+  const borderColor = colors.border;
+  const iconColor = variant === 'destructive' ? colors.destructive : colors.foreground;
+  const textColor = variant === 'destructive' ? colors.destructive : colors.foreground;
+
   return (
     <TextClassContext.Provider
-      value={cn(
-        'text-sm text-foreground',
-        variant === 'destructive' && 'text-destructive',
-        className
-      )}>
+      value={{
+        className: 'text-sm',
+        style: { color: textColor },
+      }}>
       <View
         role="alert"
         className={cn(
-          'bg-card border-border relative w-full rounded-lg border px-4 pb-2 pt-3.5',
+          'relative w-full rounded-lg border px-4 pb-2 pt-3.5',
           className
         )}
+        style={[
+          { backgroundColor: bgColor, borderColor: borderColor },
+          style,
+        ]}
         {...props}>
         <View className="absolute left-3.5 top-3">
           <Icon
             as={icon}
-            className={cn('size-4', variant === 'destructive' && 'text-destructive', iconClassName)}
+            className={cn('size-4', iconClassName)}
+            style={{ color: iconColor }}
           />
         </View>
         {children}
@@ -58,16 +71,18 @@ function AlertTitle({
 
 function AlertDescription({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
-  const textClass = React.useContext(TextClassContext);
+  const colors = useThemeColors();
+
   return (
     <Text
       className={cn(
-        'text-muted-foreground ml-0.5 pb-1.5 pl-6 text-sm leading-relaxed',
-        textClass?.includes('text-destructive') && 'text-destructive/90',
+        'ml-0.5 pb-1.5 pl-6 text-sm leading-relaxed',
         className
       )}
+      style={[{ color: colors.mutedForeground }, style]}
       {...props}
     />
   );

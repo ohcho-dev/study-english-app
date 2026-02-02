@@ -8,6 +8,7 @@ import * as React from 'react';
 import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 type Option = SelectPrimitive.Option;
 
@@ -23,15 +24,17 @@ function SelectValue({
   React.RefAttributes<SelectPrimitive.ValueRef> & {
     className?: string;
   }) {
+  const colors = useThemeColors();
   const { value } = SelectPrimitive.useRootContext();
+
   return (
     <SelectPrimitive.Value
       ref={ref}
       className={cn(
-        'text-foreground line-clamp-1 flex flex-row items-center gap-2 text-sm',
-        !value && 'text-muted-foreground',
+        'line-clamp-1 flex flex-row items-center gap-2 text-sm',
         className
       )}
+      style={{ color: value ? colors.foreground : colors.mutedForeground }}
       {...props}
     />
   );
@@ -42,27 +45,37 @@ function SelectTrigger({
   className,
   children,
   size = 'default',
+  style,
   ...props
 }: SelectPrimitive.TriggerProps &
   React.RefAttributes<SelectPrimitive.TriggerRef> & {
     children?: React.ReactNode;
     size?: 'default' | 'sm';
   }) {
+  const colors = useThemeColors();
+
   return (
     <SelectPrimitive.Trigger
       ref={ref}
       className={cn(
-        'border-input dark:bg-input/30 dark:active:bg-input/50 bg-background flex h-10 flex-row items-center justify-between gap-2 rounded-md border px-3 py-2 shadow-sm shadow-black/5 sm:h-9',
+        'flex h-10 flex-row items-center justify-between gap-2 rounded-md border px-3 py-2 shadow-sm shadow-black/5 sm:h-9',
         Platform.select({
-          web: 'focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:hover:bg-input/50 w-fit whitespace-nowrap text-sm outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:shrink-0',
+          web: 'w-fit whitespace-nowrap text-sm outline-none transition-[color,box-shadow] disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:shrink-0',
         }),
         props.disabled && 'opacity-50',
         size === 'sm' && 'h-8 py-2 sm:py-1.5',
         className
       )}
+      style={[
+        {
+          backgroundColor: colors.background,
+          borderColor: colors.input,
+        },
+        style,
+      ]}
       {...props}>
       <>{children}</>
-      <Icon as={ChevronDown} aria-hidden={true} className="text-muted-foreground size-4" />
+      <Icon as={ChevronDown} aria-hidden={true} className="size-4" color={colors.mutedForeground} />
     </SelectPrimitive.Trigger>
   );
 }
@@ -74,21 +87,24 @@ function SelectContent({
   children,
   position = 'popper',
   portalHost,
+  style,
   ...props
 }: SelectPrimitive.ContentProps &
   React.RefAttributes<SelectPrimitive.ContentRef> & {
     className?: string;
     portalHost?: string;
   }) {
+  const colors = useThemeColors();
+
   return (
     <SelectPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
         <SelectPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
-          <TextClassContext.Provider value="text-popover-foreground">
+          <TextClassContext.Provider value={{ style: { color: colors.popoverForeground } }}>
             <NativeOnlyAnimatedView className="z-50" entering={FadeIn} exiting={FadeOut}>
               <SelectPrimitive.Content
                 className={cn(
-                  'bg-popover border-border relative z-50 min-w-[8rem] rounded-md border shadow-md shadow-black/5',
+                  'relative z-50 min-w-[8rem] rounded-md border shadow-md shadow-black/5',
                   Platform.select({
                     web: cn(
                       'animate-in fade-in-0 zoom-in-95 origin-(--radix-select-content-transform-origin) max-h-52 overflow-y-auto overflow-x-hidden',
@@ -98,14 +114,18 @@ function SelectContent({
                     native: 'p-1',
                   }),
                   position === 'popper' &&
-                    Platform.select({
-                      web: cn(
-                        props.side === 'bottom' && 'translate-y-1',
-                        props.side === 'top' && '-translate-y-1'
-                      ),
-                    }),
+                  Platform.select({
+                    web: cn(
+                      props.side === 'bottom' && 'translate-y-1',
+                      props.side === 'top' && '-translate-y-1'
+                    ),
+                  }),
                   className
                 )}
+                style={[
+                  { backgroundColor: colors.popover, borderColor: colors.border },
+                  style,
+                ]}
                 position={position}
                 {...props}>
                 <SelectScrollUpButton />
@@ -113,12 +133,12 @@ function SelectContent({
                   className={cn(
                     'p-1',
                     position === 'popper' &&
-                      cn(
-                        'w-full',
-                        Platform.select({
-                          web: 'h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]',
-                        })
-                      )
+                    cn(
+                      'w-full',
+                      Platform.select({
+                        web: 'h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]',
+                      })
+                    )
                   )}>
                   {children}
                 </SelectPrimitive.Viewport>
@@ -134,11 +154,15 @@ function SelectContent({
 
 function SelectLabel({
   className,
+  style,
   ...props
 }: SelectPrimitive.LabelProps & React.RefAttributes<SelectPrimitive.LabelRef>) {
+  const colors = useThemeColors();
+
   return (
     <SelectPrimitive.Label
-      className={cn('text-muted-foreground px-2 py-2 text-xs sm:py-1.5', className)}
+      className={cn('px-2 py-2 text-xs sm:py-1.5', className)}
+      style={[{ color: colors.mutedForeground }, style]}
       {...props}
     />
   );
@@ -147,40 +171,51 @@ function SelectLabel({
 function SelectItem({
   className,
   children,
+  style,
   ...props
 }: SelectPrimitive.ItemProps & React.RefAttributes<SelectPrimitive.ItemRef>) {
+  const colors = useThemeColors();
+
   return (
     <SelectPrimitive.Item
       className={cn(
-        'active:bg-accent group relative flex w-full flex-row items-center gap-2 rounded-sm py-2 pl-2 pr-8 sm:py-1.5',
+        'group relative flex w-full flex-row items-center gap-2 rounded-sm py-2 pl-2 pr-8 sm:py-1.5',
         Platform.select({
-          web: 'focus:bg-accent focus:text-accent-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2 cursor-default outline-none data-[disabled]:pointer-events-none [&_svg]:pointer-events-none',
+          web: 'cursor-default outline-none data-[disabled]:pointer-events-none [&_svg]:pointer-events-none',
         }),
         props.disabled && 'opacity-50',
         className
       )}
+      style={style}
       {...props}>
       <View className="absolute right-2 flex size-3.5 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Icon as={Check} className="text-muted-foreground size-4 shrink-0" />
+          <Icon as={Check} className="size-4 shrink-0" color={colors.mutedForeground} />
         </SelectPrimitive.ItemIndicator>
       </View>
-      <SelectPrimitive.ItemText className="text-foreground group-active:text-accent-foreground select-none text-sm" />
+      <SelectPrimitive.ItemText
+        className="select-none text-sm"
+        style={{ color: colors.foreground }}
+      />
     </SelectPrimitive.Item>
   );
 }
 
 function SelectSeparator({
   className,
+  style,
   ...props
 }: SelectPrimitive.SeparatorProps & React.RefAttributes<SelectPrimitive.SeparatorRef>) {
+  const colors = useThemeColors();
+
   return (
     <SelectPrimitive.Separator
       className={cn(
-        'bg-border -mx-1 my-1 h-px',
+        '-mx-1 my-1 h-px',
         Platform.select({ web: 'pointer-events-none' }),
         className
       )}
+      style={[{ backgroundColor: colors.border }, style]}
       {...props}
     />
   );
@@ -194,6 +229,8 @@ function SelectScrollUpButton({
   className,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
+  const colors = useThemeColors();
+
   if (Platform.OS !== 'web') {
     return null;
   }
@@ -201,7 +238,7 @@ function SelectScrollUpButton({
     <SelectPrimitive.ScrollUpButton
       className={cn('flex cursor-default items-center justify-center py-1', className)}
       {...props}>
-      <Icon as={ChevronUpIcon} className="size-4" />
+      <Icon as={ChevronUpIcon} className="size-4" color={colors.foreground} />
     </SelectPrimitive.ScrollUpButton>
   );
 }
@@ -214,6 +251,8 @@ function SelectScrollDownButton({
   className,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
+  const colors = useThemeColors();
+
   if (Platform.OS !== 'web') {
     return null;
   }
@@ -221,7 +260,7 @@ function SelectScrollDownButton({
     <SelectPrimitive.ScrollDownButton
       className={cn('flex cursor-default items-center justify-center py-1', className)}
       {...props}>
-      <Icon as={ChevronDownIcon} className="size-4" />
+      <Icon as={ChevronDownIcon} className="size-4" color={colors.foreground} />
     </SelectPrimitive.ScrollDownButton>
   );
 }

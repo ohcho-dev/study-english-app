@@ -1,8 +1,8 @@
 import { TextClassContext } from '@/shared/reusables/ui/text';
 import { cn } from '@/shared/reusables/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Platform, Pressable } from 'react-native';
-
+import { Platform, Pressable, View, type ViewStyle } from 'react-native';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 const buttonVariants = cva(
   cn(
@@ -15,30 +15,30 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: cn(
-          'bg-primary active:bg-primary/90 shadow-sm shadow-black/5',
-          Platform.select({ web: 'hover:bg-primary/90' })
+          'shadow-sm shadow-black/5 active:opacity-80',
+          Platform.select({ web: 'hover:opacity-90' })
         ),
         destructive: cn(
-          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60 shadow-sm shadow-black/5',
+          'shadow-sm shadow-black/5 active:opacity-80',
           Platform.select({
-            web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
+            web: 'hover:opacity-90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
           })
         ),
         outline: cn(
-          'border-border bg-background active:bg-accent dark:bg-input/30 dark:border-input dark:active:bg-input/50 border shadow-sm shadow-black/5',
+          'border shadow-sm shadow-black/5 active:opacity-80',
           Platform.select({
-            web: 'hover:bg-accent dark:hover:bg-input/50',
+            web: 'hover:opacity-90',
           })
         ),
         secondary: cn(
-          'bg-secondary active:bg-secondary/80 shadow-sm shadow-black/5',
-          Platform.select({ web: 'hover:bg-secondary/80' })
+          'shadow-sm shadow-black/5 active:opacity-80',
+          Platform.select({ web: 'hover:opacity-80' })
         ),
         ghost: cn(
-          'active:bg-accent dark:active:bg-accent/50',
-          Platform.select({ web: 'hover:bg-accent dark:hover:bg-accent/50' })
+          'active:opacity-70',
+          Platform.select({ web: 'hover:opacity-80' })
         ),
-        link: '',
+        link: 'active:opacity-70',
       },
       size: {
         default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
@@ -56,22 +56,19 @@ const buttonVariants = cva(
 
 const buttonTextVariants = cva(
   cn(
-    'text-foreground text-sm font-medium',
+    'text-sm font-medium',
     Platform.select({ web: 'pointer-events-none transition-colors' })
   ),
   {
     variants: {
       variant: {
-        default: 'text-primary-foreground',
-        destructive: 'text-white',
-        outline: cn(
-          'group-active:text-accent-foreground',
-          Platform.select({ web: 'group-hover:text-accent-foreground' })
-        ),
-        secondary: 'text-secondary-foreground',
-        ghost: 'group-active:text-accent-foreground',
+        default: '',
+        destructive: '',
+        outline: '',
+        secondary: '',
+        ghost: '',
         link: cn(
-          'text-primary group-active:underline',
+          'underline',
           Platform.select({ web: 'underline-offset-4 hover:underline group-hover:underline' })
         ),
       },
@@ -93,14 +90,76 @@ type ButtonProps = React.ComponentProps<typeof Pressable> &
   React.RefAttributes<typeof Pressable> &
   VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, ...props }: ButtonProps) {
+function Button({ className, variant, size, style, ...props }: ButtonProps) {
+  const colors = useThemeColors();
+
+  // Get background and text colors based on variant
+  // 배경이 채워진 버튼 = 흰색/밝은 텍스트
+  // 배경이 투명한 버튼 = foreground 색상 텍스트
+  const getVariantStyles = (): { bg: ViewStyle; textColor: string; iconColor: string } => {
+    switch (variant) {
+      case 'destructive':
+        return {
+          bg: { backgroundColor: colors.destructive },
+          textColor: colors.destructiveForeground,
+          iconColor: colors.destructiveForeground,
+        };
+      case 'outline':
+        return {
+          bg: { backgroundColor: 'transparent', borderColor: colors.border, borderWidth: 1 },
+          textColor: colors.foreground,
+          iconColor: colors.foreground,
+        };
+      case 'secondary':
+        return {
+          bg: { backgroundColor: colors.secondary },
+          textColor: colors.secondaryForeground,
+          iconColor: colors.secondaryForeground,
+        };
+      case 'ghost':
+        return {
+          bg: { backgroundColor: 'transparent' },
+          textColor: colors.foreground,
+          iconColor: colors.foreground,
+        };
+      case 'link':
+        return {
+          bg: { backgroundColor: 'transparent' },
+          textColor: colors.primary,
+          iconColor: colors.primary,
+        };
+      default: // 'default' variant - Primary 버튼
+        return {
+          bg: { backgroundColor: colors.primary },
+          textColor: colors.primaryForeground,
+          iconColor: colors.primaryForeground,
+        };
+    }
+  };
+
+  const variantStyles = getVariantStyles();
+
+  // NativeWind className이 style prop보다 우선하므로,
+  // View로 감싸서 배경색을 적용
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
-      <Pressable
-        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
-        role="button"
-        {...props}
-      />
+    <TextClassContext.Provider
+      value={{
+        className: buttonTextVariants({ variant, size }),
+        style: { color: variantStyles.textColor },
+        iconColor: variantStyles.iconColor,
+      }}
+    >
+      <View style={[variantStyles.bg, { borderRadius: 6, overflow: 'hidden' }]}>
+        <Pressable
+          className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
+          style={(state) => [
+            state.pressed && { opacity: 0.8 },
+            typeof style === 'function' ? style(state) : style,
+          ]}
+          role="button"
+          {...props}
+        />
+      </View>
     </TextClassContext.Provider>
   );
 }

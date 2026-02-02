@@ -15,6 +15,7 @@ class Theme(Base, UUIDMixin, TimestampMixin):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=False, nullable=False)
+    default_mode = Column(String(10), default='system', nullable=False)  # light, dark, system
     
     # Relationships
     versions = relationship(
@@ -37,6 +38,7 @@ class ThemeVersion(Base, UUIDMixin):
     
     theme_id = Column(UUID(as_uuid=True), ForeignKey("themes.id"), nullable=False)
     version = Column(Integer, nullable=False)
+    description = Column(Text, nullable=True)  # Version description/note
     light_mode = Column(JSONB, nullable=False)
     dark_mode = Column(JSONB, nullable=False)
     created_by = Column(UUID(as_uuid=True), nullable=True)  # Optional: admin user ID
@@ -44,3 +46,4 @@ class ThemeVersion(Base, UUIDMixin):
     
     # Relationships
     theme = relationship("Theme", back_populates="versions")
+

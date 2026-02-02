@@ -2,7 +2,9 @@
   "name": "study-english",
   "private": true,
   "scripts": {
-    "start": "pnpm --filter mobile start",
+    "start": "pnpm --filter mobile start -- --clear",
+    "start:admin": "pnpm --filter admin dev",
+    "start:app": "pnpm --filter mobile start -- --clear",
     "ios": "pnpm --filter mobile run:ios",
     "android": "pnpm --filter mobile run:android",
     "build": "turbo run build",

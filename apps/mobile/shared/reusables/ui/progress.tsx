@@ -8,21 +8,29 @@ import Animated, {
   useDerivedValue,
   withSpring,
 } from 'react-native-reanimated';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 function Progress({
   className,
   value,
   indicatorClassName,
+  style,
   ...props
 }: ProgressPrimitive.RootProps &
   React.RefAttributes<ProgressPrimitive.RootRef> & {
     indicatorClassName?: string;
   }) {
+  const colors = useThemeColors();
+
+  // Create a lighter version of primary for the track
+  const trackColor = `${colors.primary}33`; // 20% opacity
+
   return (
     <ProgressPrimitive.Root
-      className={cn('bg-primary/20 relative h-2 w-full overflow-hidden rounded-full', className)}
+      className={cn('relative h-2 w-full overflow-hidden rounded-full', className)}
+      style={[{ backgroundColor: trackColor }, style]}
       {...props}>
-      <Indicator value={value} className={indicatorClassName} />
+      <Indicator value={value} className={indicatorClassName} primaryColor={colors.primary} />
     </ProgressPrimitive.Root>
   );
 }
@@ -38,23 +46,27 @@ const Indicator = Platform.select({
 type IndicatorProps = {
   value: number | undefined | null;
   className?: string;
+  primaryColor: string;
 };
 
-function WebIndicator({ value, className }: IndicatorProps) {
+function WebIndicator({ value, className, primaryColor }: IndicatorProps) {
   if (Platform.OS !== 'web') {
     return null;
   }
 
   return (
     <View
-      className={cn('bg-primary h-full w-full flex-1 transition-all', className)}
-      style={{ transform: `translateX(-${100 - (value ?? 0)}%)` }}>
+      className={cn('h-full w-full flex-1 transition-all', className)}
+      style={{
+        backgroundColor: primaryColor,
+        transform: `translateX(-${100 - (value ?? 0)}%)`
+      }}>
       <ProgressPrimitive.Indicator className={cn('h-full w-full', className)} />
     </View>
   );
 }
 
-function NativeIndicator({ value, className }: IndicatorProps) {
+function NativeIndicator({ value, className, primaryColor }: IndicatorProps) {
   const progress = useDerivedValue(() => value ?? 0);
 
   const indicator = useAnimatedStyle(() => {
@@ -72,7 +84,10 @@ function NativeIndicator({ value, className }: IndicatorProps) {
 
   return (
     <ProgressPrimitive.Indicator asChild>
-      <Animated.View style={indicator} className={cn('bg-primary h-full', className)} />
+      <Animated.View
+        style={[indicator, { backgroundColor: primaryColor }]}
+        className={cn('h-full', className)}
+      />
     </ProgressPrimitive.Indicator>
   );
 }

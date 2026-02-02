@@ -12,6 +12,7 @@ from app.models.experiment import (
 )
 from app.models.experiment_log import ExperimentLog
 from app.models.scenario import Scenario, ScenarioStatus, ScenarioStep, ScenarioStepType
+from app.models.theme import Theme, ThemeVersion
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -31,4 +32,7 @@ __all__ = [
     "ScenarioStep",
     "ScenarioStepType",
     "ExperimentLog",
+    "Theme",
+    "ThemeVersion",
 ]
+

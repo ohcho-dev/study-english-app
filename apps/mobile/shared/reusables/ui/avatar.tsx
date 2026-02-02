@@ -1,5 +1,6 @@
 import { cn } from '@/shared/reusables/lib/utils';
 import * as AvatarPrimitive from '@rn-primitives/avatar';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 function Avatar({
   className,
@@ -22,14 +23,18 @@ function AvatarImage({
 
 function AvatarFallback({
   className,
+  style,
   ...props
 }: AvatarPrimitive.FallbackProps & React.RefAttributes<AvatarPrimitive.FallbackRef>) {
+  const colors = useThemeColors();
+
   return (
     <AvatarPrimitive.Fallback
       className={cn(
-        'bg-muted flex size-full flex-row items-center justify-center rounded-full',
+        'flex size-full flex-row items-center justify-center rounded-full',
         className
       )}
+      style={[{ backgroundColor: colors.muted }, style]}
       {...props}
     />
   );

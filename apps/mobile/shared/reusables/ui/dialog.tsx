@@ -7,6 +7,7 @@ import * as React from 'react';
 import { Platform, Text, View, type ViewProps } from 'react-native';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 const Dialog = DialogPrimitive.Root;
 
@@ -47,39 +48,48 @@ function DialogOverlay({
     </FullWindowOverlay>
   );
 }
+
 function DialogContent({
   className,
   portalHost,
   children,
+  style,
   ...props
 }: DialogPrimitive.ContentProps &
   React.RefAttributes<DialogPrimitive.ContentRef> & {
     portalHost?: string;
   }) {
+  const colors = useThemeColors();
+
   return (
     <DialogPortal hostName={portalHost}>
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
             Platform.select({
               web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
             className
           )}
+          style={[
+            { backgroundColor: colors.background, borderColor: colors.border },
+            style,
+          ]}
           {...props}>
           <>{children}</>
           <DialogPrimitive.Close
             className={cn(
               'absolute right-4 top-4 rounded opacity-70 active:opacity-100',
               Platform.select({
-                web: 'ring-offset-background focus:ring-ring data-[state=open]:bg-accent transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2',
+                web: 'transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2',
               })
             )}
             hitSlop={12}>
             <Icon
               as={X}
-              className={cn('text-accent-foreground web:pointer-events-none size-4 shrink-0')}
+              className={cn('web:pointer-events-none size-4 shrink-0')}
+              color={colors.accentForeground}
             />
             <Text className="sr-only">Close</Text>
           </DialogPrimitive.Close>
@@ -106,11 +116,15 @@ function DialogFooter({ className, ...props }: ViewProps) {
 
 function DialogTitle({
   className,
+  style,
   ...props
 }: DialogPrimitive.TitleProps & React.RefAttributes<DialogPrimitive.TitleRef>) {
+  const colors = useThemeColors();
+
   return (
     <DialogPrimitive.Title
-      className={cn('text-foreground text-lg font-semibold leading-none', className)}
+      className={cn('text-lg font-semibold leading-none', className)}
+      style={[{ color: colors.foreground }, style]}
       {...props}
     />
   );
@@ -118,11 +132,15 @@ function DialogTitle({
 
 function DialogDescription({
   className,
+  style,
   ...props
 }: DialogPrimitive.DescriptionProps & React.RefAttributes<DialogPrimitive.DescriptionRef>) {
+  const colors = useThemeColors();
+
   return (
     <DialogPrimitive.Description
-      className={cn('text-muted-foreground text-sm', className)}
+      className={cn('text-sm', className)}
+      style={[{ color: colors.mutedForeground }, style]}
       {...props}
     />
   );

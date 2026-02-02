@@ -4,6 +4,7 @@ import { Input } from '@/shared/ui/input';
 import { Avatar, AvatarFallback } from '@/shared/ui/avatar';
 import { SidebarTrigger } from '@/shared/ui/sidebar';
 import { Search } from 'lucide-react';
+import { ModeToggle } from '@/features/mode-toggle';
 
 export const AppHeader = () => {
     return (
@@ -19,7 +20,8 @@ export const AppHeader = () => {
                     />
                 </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+                <ModeToggle />
                 <Avatar className="h-8 w-8">
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                         AD
@@ -29,3 +31,4 @@ export const AppHeader = () => {
         </header>
     );
 };
+

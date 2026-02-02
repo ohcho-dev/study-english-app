@@ -1,6 +1,8 @@
 import { cn } from '@/shared/reusables/lib/utils';
 import type { LucideIcon, LucideProps } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
+import { useThemeColors } from '@/shared/hooks/useThemeColors';
+import { useTextClassContext } from '@/shared/reusables/ui/text';
 
 type IconProps = LucideProps & {
   as: LucideIcon;
@@ -35,17 +37,27 @@ cssInterop(IconImpl, {
  * <Icon as={ArrowRight} className="text-red-500" size={16} />
  * ```
  *
+ * 버튼 내부에서 사용 시 자동으로 버튼 변형에 맞는 색상을 적용합니다.
+ *
  * @param {LucideIcon} as - The Lucide icon component to render.
  * @param {string} className - Utility classes to style the icon using Nativewind.
  * @param {number} size - Icon size (defaults to 14).
  * @param {...LucideProps} ...props - Additional Lucide icon props passed to the "as" icon.
  */
-function Icon({ as: IconComponent, className, size = 14, ...props }: IconProps) {
+function Icon({ as: IconComponent, className, size = 14, style, color, ...props }: IconProps) {
+  const colors = useThemeColors();
+  const textContext = useTextClassContext();
+
+  // Priority: 1) explicit color prop, 2) iconColor from context (Button), 3) default foreground
+  const iconColor = color || textContext?.iconColor || colors.foreground;
+
   return (
     <IconImpl
       as={IconComponent}
-      className={cn('text-foreground', className)}
+      className={cn(className)}
       size={size}
+      color={iconColor}
+      style={style}
       {...props}
     />
   );

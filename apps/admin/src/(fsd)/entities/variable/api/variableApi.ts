@@ -1,14 +1,15 @@
 import { api } from '@/shared/lib/api';
-import type { Variable, VariableUpdate } from '../model/types';
+import type { ExperimentVariable, ExperimentVariableUpdate } from '../model/types';
 
 const ENDPOINT = '/api/v1/variables';
 
 export const variableApi = {
-    getAll: () => api.get<Variable[]>(ENDPOINT),
+    getAll: () => api.get<ExperimentVariable[]>(ENDPOINT),
 
     getByTheme: (theme: string) =>
-        api.get<Variable[]>(`${ENDPOINT}/theme/${theme}`),
+        api.get<ExperimentVariable[]>(`${ENDPOINT}/theme/${theme}`),
 
-    update: (id: string, data: VariableUpdate) =>
-        api.patch<Variable>(`${ENDPOINT}/${id}`, data),
+    update: (id: string, data: ExperimentVariableUpdate) =>
+        api.patch<ExperimentVariable>(`${ENDPOINT}/${id}`, data),
 };
+
