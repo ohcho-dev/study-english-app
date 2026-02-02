@@ -9,14 +9,18 @@ export interface ThemeColors {
     'popover-foreground': string;
     primary: string;
     'primary-foreground': string;
+    'primary-light'?: string;
     secondary: string;
     'secondary-foreground': string;
+    'secondary-light'?: string;
     muted: string;
     'muted-foreground': string;
     accent: string;
     'accent-foreground': string;
+    'accent-light'?: string;
     destructive: string;
     'destructive-foreground': string;
+    'destructive-light'?: string;
     success: string;
     'success-foreground': string;
     warning: string;
@@ -73,86 +77,66 @@ export interface ThemeVersionCreate {
     dark_mode: ThemeColors;
 }
 
-// Default theme template (Premium Slate) - HEX format
+// Default theme template (User Provided - Orange Primary) - HEX format
 // 원본 HSL 값을 정확히 변환한 HEX 색상
 export const DEFAULT_THEME_TEMPLATE = {
     light_mode: {
-        // 원본: 0 0% 100% → 흰색
         background: '#ffffff',
-        // 원본: 220 10% 10% → 아주 어두운 회청색
-        foreground: '#17191c',
-        // 원본: 0 0% 100%
+        foreground: '#020817',
         card: '#ffffff',
-        'card-foreground': '#17191c',
+        'card-foreground': '#020817',
         popover: '#ffffff',
-        'popover-foreground': '#17191c',
-        // 원본: 220 80% 55% → 파란색 (기본 강조)
-        primary: '#2e6fe6',
+        'popover-foreground': '#020817',
+        primary: '#f97316',
         'primary-foreground': '#ffffff',
-        // 원본: 220 10% 96% → 아주 밝은 회색
-        secondary: '#f2f3f4',
-        // 원본: 220 10% 40%
-        'secondary-foreground': '#5c6166',
-        // 원본: 220 10% 96%
-        muted: '#f2f3f4',
-        // 원본: 220 10% 45%
-        'muted-foreground': '#686d73',
-        // 원본: 220 10% 94%
-        accent: '#edeff0',
-        'accent-foreground': '#17191c',
-        // 원본: 0 84% 60% → 빨간색
-        destructive: '#ed3f3f',
+        'primary-light': '#fb9248', // calculated
+        secondary: '#3b82f6',
+        'secondary-foreground': '#ffffff',
+        'secondary-light': '#609bf8', // calculated
+        muted: '#f1f5f9',
+        'muted-foreground': '#64748b',
+        accent: '#e2e8f0',
+        'accent-foreground': '#0f172a',
+        'accent-light': '#eef2f6', // calculated
+        destructive: '#ef4444',
         'destructive-foreground': '#ffffff',
-        // 원본: 142 76% 36% → 녹색
+        'destructive-light': '#f36b6b', // calculated
         success: '#16a34a',
         'success-foreground': '#ffffff',
-        // 원본: 38 92% 50% → 주황/노란색
-        warning: '#f5a623',
+        warning: '#f97316',
         'warning-foreground': '#ffffff',
-        // 원본: 220 10% 90%
-        border: '#e2e4e6',
-        input: '#e2e4e6',
-        // 원본: 220 80% 55%
-        ring: '#2e6fe6',
+        border: '#cbd5e1',
+        input: '#cbd5e1',
+        ring: '#f97316',
     },
     dark_mode: {
-        // 원본: 224 30% 8% → 매우 어두운 남색
-        background: '#0e1117',
-        // 원본: 220 10% 98%
-        foreground: '#f9fafb',
-        // 원본: 224 25% 12%
-        card: '#181c24',
-        'card-foreground': '#f9fafb',
-        popover: '#181c24',
-        'popover-foreground': '#f9fafb',
-        // 원본: 220 80% 60%
-        primary: '#4285f4',
+        background: '#020817',
+        foreground: '#f8fafc',
+        card: '#1e293b',
+        'card-foreground': '#f8fafc',
+        popover: '#020817',
+        'popover-foreground': '#f8fafc',
+        primary: '#f97316',
         'primary-foreground': '#ffffff',
-        // 원본: 224 20% 18%
-        secondary: '#252a34',
-        // 원본: 220 10% 80%
-        'secondary-foreground': '#c9ccce',
-        // 원본: 224 20% 18%
-        muted: '#252a34',
-        // 원본: 220 10% 55%
-        'muted-foreground': '#858a8f',
-        // 원본: 224 20% 22%
-        accent: '#2d3340',
-        'accent-foreground': '#f9fafb',
-        // 원본: 0 84% 60%
-        destructive: '#ed3f3f',
+        'primary-light': '#fb9248', // calculated
+        secondary: '#3b82f6',
+        'secondary-foreground': '#ffffff',
+        'secondary-light': '#609bf8', // calculated
+        muted: '#1e293b',
+        'muted-foreground': '#94a3b8',
+        accent: '#334155',
+        'accent-foreground': '#f8fafc',
+        'accent-light': '#515d6e', // calculated
+        destructive: '#7f1d1d',
         'destructive-foreground': '#ffffff',
-        // 원본: 142 70% 45%
-        success: '#22c55e',
+        'destructive-light': '#a13e3e', // calculated
+        success: '#166534',
         'success-foreground': '#ffffff',
-        // 원본: 38 92% 50%
-        warning: '#f5a623',
+        warning: '#f97316',
         'warning-foreground': '#ffffff',
-        // 원본: 224 20% 18%
-        border: '#252a34',
-        input: '#252a34',
-        // 원본: 220 80% 60%
-        ring: '#4285f4',
+        border: '#334155',
+        input: '#334155',
+        ring: '#f97316',
     },
 } as const;
 
@@ -166,14 +150,18 @@ export const THEME_COLOR_KEYS: (keyof ThemeColors)[] = [
     'popover-foreground',
     'primary',
     'primary-foreground',
+    'primary-light',
     'secondary',
     'secondary-foreground',
+    'secondary-light',
     'muted',
     'muted-foreground',
     'accent',
     'accent-foreground',
+    'accent-light',
     'destructive',
     'destructive-foreground',
+    'destructive-light',
     'success',
     'success-foreground',
     'warning',
@@ -192,14 +180,18 @@ export const COLOR_LABELS: Record<keyof ThemeColors, string> = {
     'popover-foreground': '팝오버 텍스트',
     primary: '기본 강조',
     'primary-foreground': '기본 강조 텍스트',
+    'primary-light': '기본 강조 (Light)',
     secondary: '보조',
     'secondary-foreground': '보조 텍스트',
+    'secondary-light': '보조 (Light)',
     muted: '음소거 배경',
     'muted-foreground': '음소거 텍스트',
     accent: '액센트',
     'accent-foreground': '액센트 텍스트',
+    'accent-light': '액센트 (Light)',
     destructive: '위험/삭제',
     'destructive-foreground': '위험/삭제 텍스트',
+    'destructive-light': '위험/삭제 (Light)',
     success: '성공',
     'success-foreground': '성공 텍스트',
     warning: '경고',

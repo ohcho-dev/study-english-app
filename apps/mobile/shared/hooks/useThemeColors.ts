@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react';
 import { useTheme } from '../providers';
+import { lightenColor } from '../reusables/lib/colorUtils';
 
 export interface ThemeColors {
     background: string;
@@ -15,14 +16,18 @@ export interface ThemeColors {
     popoverForeground: string;
     primary: string;
     primaryForeground: string;
+    primaryLight: string;
     secondary: string;
     secondaryForeground: string;
+    secondaryLight: string;
     muted: string;
     mutedForeground: string;
     accent: string;
     accentForeground: string;
+    accentLight: string;
     destructive: string;
     destructiveForeground: string;
+    destructiveLight: string;
     border: string;
     input: string;
     ring: string;
@@ -113,57 +118,65 @@ const toHex = (value: string | undefined | null): string | undefined => {
     return trimmed;
 };
 
-// Default fallback colors (Premium Slate theme - HEX)
+// Default fallback colors (User Provided - Orange Primary) - HEX format
 const DEFAULT_LIGHT: ThemeColors = {
     background: '#ffffff',
-    foreground: '#17191c',
+    foreground: '#020817',
     card: '#ffffff',
-    cardForeground: '#17191c',
+    cardForeground: '#020817',
     popover: '#ffffff',
-    popoverForeground: '#17191c',
-    primary: '#2e6fe6',
+    popoverForeground: '#020817',
+    primary: '#f97316',
     primaryForeground: '#ffffff',
-    secondary: '#f2f3f4',
-    secondaryForeground: '#5c6166',
-    muted: '#f2f3f4',
-    mutedForeground: '#686d73',
-    accent: '#edeff0',
-    accentForeground: '#17191c',
-    destructive: '#ed3f3f',
+    primaryLight: '#fb9248', // calculated
+    secondary: '#3b82f6',
+    secondaryForeground: '#ffffff',
+    secondaryLight: '#609bf8', // calculated
+    muted: '#f1f5f9',
+    mutedForeground: '#64748b',
+    accent: '#e2e8f0',
+    accentForeground: '#0f172a',
+    accentLight: '#eef2f6', // calculated
+    destructive: '#ef4444',
     destructiveForeground: '#ffffff',
-    border: '#e2e4e6',
-    input: '#e2e4e6',
-    ring: '#2e6fe6',
+    destructiveLight: '#f36b6b', // calculated
     success: '#16a34a',
     successForeground: '#ffffff',
-    warning: '#f5a623',
+    warning: '#f97316',
     warningForeground: '#ffffff',
+    border: '#cbd5e1',
+    input: '#cbd5e1',
+    ring: '#f97316',
 };
 
 const DEFAULT_DARK: ThemeColors = {
-    background: '#0e1117',
-    foreground: '#f9fafb',
-    card: '#181c24',
-    cardForeground: '#f9fafb',
-    popover: '#181c24',
-    popoverForeground: '#f9fafb',
-    primary: '#4285f4',
+    background: '#020817',
+    foreground: '#f8fafc',
+    card: '#1e293b',
+    cardForeground: '#f8fafc',
+    popover: '#020817',
+    popoverForeground: '#f8fafc',
+    primary: '#f97316',
     primaryForeground: '#ffffff',
-    secondary: '#252a34',
-    secondaryForeground: '#c9ccce',
-    muted: '#252a34',
-    mutedForeground: '#858a8f',
-    accent: '#2d3340',
-    accentForeground: '#f9fafb',
-    destructive: '#ed3f3f',
+    primaryLight: '#fb9248', // calculated
+    secondary: '#3b82f6',
+    secondaryForeground: '#ffffff',
+    secondaryLight: '#609bf8', // calculated
+    muted: '#1e293b',
+    mutedForeground: '#94a3b8',
+    accent: '#334155',
+    accentForeground: '#f8fafc',
+    accentLight: '#515d6e', // calculated
+    destructive: '#7f1d1d',
     destructiveForeground: '#ffffff',
-    border: '#252a34',
-    input: '#252a34',
-    ring: '#4285f4',
-    success: '#22c55e',
+    destructiveLight: '#a13e3e', // calculated
+    success: '#166534',
     successForeground: '#ffffff',
-    warning: '#f5a623',
+    warning: '#f97316',
     warningForeground: '#ffffff',
+    border: '#334155',
+    input: '#334155',
+    ring: '#f97316',
 };
 
 /**
@@ -185,6 +198,11 @@ export const useThemeColors = (): ThemeColors => {
             : activeTheme.current_version.light_mode;
 
         // Convert all colors to hex (handles both HSL and hex input)
+        const primary = toHex(apiColors.primary) || defaults.primary;
+        const secondary = toHex(apiColors.secondary) || defaults.secondary;
+        const accent = toHex(apiColors.accent) || defaults.accent;
+        const destructive = toHex(apiColors.destructive) || defaults.destructive;
+
         return {
             background: toHex(apiColors.background) || defaults.background,
             foreground: toHex(apiColors.foreground) || defaults.foreground,
@@ -192,16 +210,20 @@ export const useThemeColors = (): ThemeColors => {
             cardForeground: toHex(apiColors['card-foreground']) || defaults.cardForeground,
             popover: toHex(apiColors.popover) || defaults.popover,
             popoverForeground: toHex(apiColors['popover-foreground']) || defaults.popoverForeground,
-            primary: toHex(apiColors.primary) || defaults.primary,
+            primary,
             primaryForeground: toHex(apiColors['primary-foreground']) || defaults.primaryForeground,
-            secondary: toHex(apiColors.secondary) || defaults.secondary,
+            primaryLight: toHex(apiColors['primary-light']) ?? lightenColor(primary, 15),
+            secondary,
             secondaryForeground: toHex(apiColors['secondary-foreground']) || defaults.secondaryForeground,
+            secondaryLight: toHex(apiColors['secondary-light']) ?? lightenColor(secondary, 15),
             muted: toHex(apiColors.muted) || defaults.muted,
             mutedForeground: toHex(apiColors['muted-foreground']) || defaults.mutedForeground,
-            accent: toHex(apiColors.accent) || defaults.accent,
+            accent,
             accentForeground: toHex(apiColors['accent-foreground']) || defaults.accentForeground,
-            destructive: toHex(apiColors.destructive) || defaults.destructive,
+            accentLight: toHex(apiColors['accent-light']) ?? lightenColor(accent, 15),
+            destructive,
             destructiveForeground: toHex(apiColors['destructive-foreground']) || defaults.destructiveForeground,
+            destructiveLight: toHex(apiColors['destructive-light']) ?? lightenColor(destructive, 15),
             border: toHex(apiColors.border) || defaults.border,
             input: toHex(apiColors.input) || defaults.input,
             ring: toHex(apiColors.ring) || defaults.ring,

@@ -1,7 +1,8 @@
 import { TextClassContext } from '@/shared/reusables/ui/text';
 import { cn } from '@/shared/reusables/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Platform, Pressable, View, type ViewStyle } from 'react-native';
+import { useState } from 'react';
+import { Platform, Pressable, type ViewStyle } from 'react-native';
 import { useThemeColors } from '@/shared/hooks/useThemeColors';
 
 const buttonVariants = cva(
@@ -14,31 +15,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: cn(
-          'shadow-sm shadow-black/5 active:opacity-80',
-          Platform.select({ web: 'hover:opacity-90' })
-        ),
+        default: 'shadow-sm shadow-black/5',
         destructive: cn(
-          'shadow-sm shadow-black/5 active:opacity-80',
+          'shadow-sm shadow-black/5',
           Platform.select({
-            web: 'hover:opacity-90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
+            web: 'focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
           })
         ),
-        outline: cn(
-          'border shadow-sm shadow-black/5 active:opacity-80',
-          Platform.select({
-            web: 'hover:opacity-90',
-          })
-        ),
-        secondary: cn(
-          'shadow-sm shadow-black/5 active:opacity-80',
-          Platform.select({ web: 'hover:opacity-80' })
-        ),
-        ghost: cn(
-          'active:opacity-70',
-          Platform.select({ web: 'hover:opacity-80' })
-        ),
-        link: 'active:opacity-70',
+        outline: 'border shadow-sm shadow-black/5',
+        secondary: 'shadow-sm shadow-black/5',
+        ghost: '',
+        link: '',
       },
       size: {
         default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
@@ -96,41 +83,47 @@ function Button({ className, variant, size, style, ...props }: ButtonProps) {
   // Get background and text colors based on variant
   // 배경이 채워진 버튼 = 흰색/밝은 텍스트
   // 배경이 투명한 버튼 = foreground 색상 텍스트
-  const getVariantStyles = (): { bg: ViewStyle; textColor: string; iconColor: string } => {
+  const getVariantStyles = (): { bg: ViewStyle; lightBg: string; textColor: string; iconColor: string } => {
     switch (variant) {
       case 'destructive':
         return {
           bg: { backgroundColor: colors.destructive },
+          lightBg: colors.destructiveLight,
           textColor: colors.destructiveForeground,
           iconColor: colors.destructiveForeground,
         };
       case 'outline':
         return {
           bg: { backgroundColor: 'transparent', borderColor: colors.border, borderWidth: 1 },
+          lightBg: colors.accentLight,
           textColor: colors.foreground,
           iconColor: colors.foreground,
         };
       case 'secondary':
         return {
           bg: { backgroundColor: colors.secondary },
+          lightBg: colors.secondaryLight,
           textColor: colors.secondaryForeground,
           iconColor: colors.secondaryForeground,
         };
       case 'ghost':
         return {
           bg: { backgroundColor: 'transparent' },
+          lightBg: colors.accentLight,
           textColor: colors.foreground,
           iconColor: colors.foreground,
         };
       case 'link':
         return {
           bg: { backgroundColor: 'transparent' },
+          lightBg: colors.accentLight,
           textColor: colors.primary,
           iconColor: colors.primary,
         };
       default: // 'default' variant - Primary 버튼
         return {
           bg: { backgroundColor: colors.primary },
+          lightBg: colors.primaryLight,
           textColor: colors.primaryForeground,
           iconColor: colors.primaryForeground,
         };
@@ -138,6 +131,8 @@ function Button({ className, variant, size, style, ...props }: ButtonProps) {
   };
 
   const variantStyles = getVariantStyles();
+
+  const [isPressed, setIsPressed] = useState(false);
 
   // NativeWind className이 style prop보다 우선하므로,
   // View로 감싸서 배경색을 적용
@@ -149,17 +144,29 @@ function Button({ className, variant, size, style, ...props }: ButtonProps) {
         iconColor: variantStyles.iconColor,
       }}
     >
-      <View style={[variantStyles.bg, { borderRadius: 6, overflow: 'hidden' }]}>
-        <Pressable
-          className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
-          style={(state) => [
-            state.pressed && { opacity: 0.8 },
-            typeof style === 'function' ? style(state) : style,
-          ]}
-          role="button"
-          {...props}
-        />
-      </View>
+      <Pressable
+        className={cn(
+          props.disabled && 'opacity-50',
+          buttonVariants({ variant, size }),
+          className
+        )}
+        style={[
+          variantStyles.bg,
+          { borderRadius: 6, overflow: 'hidden' },
+          isPressed && { backgroundColor: variantStyles.lightBg },
+          style as ViewStyle,
+        ]}
+        onPressIn={(e) => {
+          setIsPressed(true);
+          props.onPressIn?.(e);
+        }}
+        onPressOut={(e) => {
+          setIsPressed(false);
+          props.onPressOut?.(e);
+        }}
+        role="button"
+        {...props}
+      />
     </TextClassContext.Provider>
   );
 }

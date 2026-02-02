@@ -18,15 +18,19 @@ class ThemeColors(BaseModel):
     popover_foreground: str = Field(alias="popover-foreground", default="#17191c", description="Popover text color")
     primary: str = Field(description="Primary accent color")
     primary_foreground: str = Field(alias="primary-foreground", description="Primary text color")
+    primary_light: str | None = Field(alias="primary-light", default=None, description="Primary pressed/hover color")
 
     secondary: str = Field(description="Secondary color")
     secondary_foreground: str = Field(alias="secondary-foreground", description="Secondary text color")
+    secondary_light: str | None = Field(alias="secondary-light", default=None, description="Secondary pressed/hover color")
     muted: str = Field(description="Muted background color")
     muted_foreground: str = Field(alias="muted-foreground", description="Muted text color")
     accent: str = Field(description="Accent color")
     accent_foreground: str = Field(alias="accent-foreground", description="Accent text color")
+    accent_light: str | None = Field(alias="accent-light", default=None, description="Accent pressed/hover color")
     destructive: str = Field(description="Destructive/error color")
     destructive_foreground: str = Field(alias="destructive-foreground", description="Destructive text color")
+    destructive_light: str | None = Field(alias="destructive-light", default=None, description="Destructive pressed/hover color")
     success: str = Field(default="#16a34a", description="Success color")
     success_foreground: str = Field(alias="success-foreground", default="#ffffff", description="Success text color")
     warning: str = Field(default="#f5a623", description="Warning color")
@@ -121,62 +125,64 @@ class ThemeRollbackRequest(BaseModel):
     version_id: UUID = Field(description="Version ID to rollback to")
 
 
-# JSON Template - HEX format (원본 HSL 색상을 정확히 변환)
+# JSON Template - HEX format (Matching User CSS - Orange Primary)
 THEME_JSON_TEMPLATE = {
     "light_mode": {
-        # 원본: 0 0% 100% → 흰색
         "background": "#ffffff",
-        # 원본: 220 10% 10% → 아주 어두운 회청색
-        "foreground": "#17191c",
+        "foreground": "#020817",
         "card": "#ffffff",
-        "card-foreground": "#17191c",
+        "card-foreground": "#020817",
         "popover": "#ffffff",
-        "popover-foreground": "#17191c",
-        # 원본: 220 80% 55% → 파란색
-        "primary": "#2e6fe6",
+        "popover-foreground": "#020817",
+        "primary": "#f97316",
         "primary-foreground": "#ffffff",
-        # 원본: 220 10% 96%
-        "secondary": "#f2f3f4",
-        "secondary-foreground": "#5c6166",
-        "muted": "#f2f3f4",
-        "muted-foreground": "#686d73",
-        "accent": "#edeff0",
-        "accent-foreground": "#17191c",
-        "destructive": "#ed3f3f",
+        "primary-light": "#fb9248",  # calculated
+        "secondary": "#3b82f6",
+        "secondary-foreground": "#ffffff",
+        "secondary-light": "#609bf8",  # calculated
+        "muted": "#f1f5f9",
+        "muted-foreground": "#64748b",
+        "accent": "#e2e8f0",  # Slate-200 (Darker for visibility)
+        "accent-foreground": "#0f172a",
+        "accent-light": "#eef2f6",  # calculated from new accent
+        "destructive": "#ef4444",
         "destructive-foreground": "#ffffff",
+        "destructive-light": "#f36b6b",
         "success": "#16a34a",
         "success-foreground": "#ffffff",
-        "warning": "#f5a623",
+        "warning": "#f97316",
         "warning-foreground": "#ffffff",
-        "border": "#e2e4e6",
-        "input": "#e2e4e6",
-        "ring": "#2e6fe6",
+        "border": "#cbd5e1",  # Slate-300 (Darker for visibility)
+        "input": "#cbd5e1",
+        "ring": "#f97316",
     },
     "dark_mode": {
-        # 원본: 224 30% 8% → 매우 어두운 남색
-        "background": "#0e1117",
-        "foreground": "#f9fafb",
-        "card": "#181c24",
-        "card-foreground": "#f9fafb",
-        "popover": "#181c24",
-        "popover-foreground": "#f9fafb",
-        # 원본: 220 80% 60%
-        "primary": "#4285f4",
+        "background": "#020817",
+        "foreground": "#f8fafc",
+        "card": "#1e293b",
+        "card-foreground": "#f8fafc",
+        "popover": "#020817",
+        "popover-foreground": "#f8fafc",
+        "primary": "#f97316",
         "primary-foreground": "#ffffff",
-        "secondary": "#252a34",
-        "secondary-foreground": "#c9ccce",
-        "muted": "#252a34",
-        "muted-foreground": "#858a8f",
-        "accent": "#2d3340",
-        "accent-foreground": "#f9fafb",
-        "destructive": "#ed3f3f",
+        "primary-light": "#fb9248",
+        "secondary": "#3b82f6",
+        "secondary-foreground": "#ffffff",
+        "secondary-light": "#609bf8",
+        "muted": "#1e293b",
+        "muted-foreground": "#94a3b8",
+        "accent": "#334155",  # Slate-700 (Lighter for visibility on dark)
+        "accent-foreground": "#f8fafc",
+        "accent-light": "#515d6e",  # calculated
+        "destructive": "#7f1d1d",
         "destructive-foreground": "#ffffff",
-        "success": "#22c55e",
+        "destructive-light": "#a13e3e",
+        "success": "#166534",
         "success-foreground": "#ffffff",
-        "warning": "#f5a623",
+        "warning": "#f97316",
         "warning-foreground": "#ffffff",
-        "border": "#252a34",
-        "input": "#252a34",
-        "ring": "#4285f4",
+        "border": "#334155",  # Slate-700 (Lighter for visibility on dark)
+        "input": "#334155",
+        "ring": "#f97316",
     },
 }
