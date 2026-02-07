@@ -2,13 +2,19 @@
 
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.schemas.common import HealthResponse
+
+# Audio directory for TTS files
+AUDIO_DIR = Path(__file__).parent.parent / "static" / "audio"
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
@@ -43,6 +49,9 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
+
+# Mount static files for audio
+app.mount("/static", StaticFiles(directory=Path(__file__).parent.parent / "static"), name="static")
 
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])

@@ -10,3 +10,7 @@ export * from './badge';
 export * from './switch';
 export * from './dialog';
 export * from './tabs';
+export * from './tooltip';
+export * from './separator';
+export * from './skeleton';
+export * from './progress';

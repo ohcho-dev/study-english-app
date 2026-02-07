@@ -4,6 +4,8 @@
   "scripts": {
     "start": "pnpm --filter mobile start -- --clear",
     "start:admin": "pnpm --filter admin dev",
+    "start:admin:https": "pnpm --filter admin dev:https",
+    "start:admin:share": "bash scripts/start-admin-shared.sh",
     "start:app": "pnpm --filter mobile start -- --clear",
     "ios": "pnpm --filter mobile run:ios",
     "android": "pnpm --filter mobile run:android",

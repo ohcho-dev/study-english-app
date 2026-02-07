@@ -52,6 +52,20 @@ export const api = {
         return response.json();
     },
 
+    put: async <T>(endpoint: string, data?: unknown, options?: FetchOptions): Promise<T> => {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...options?.headers,
+            },
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        return response.json();
+    },
+
     delete: async <T>(endpoint: string, options?: FetchOptions): Promise<T> => {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,

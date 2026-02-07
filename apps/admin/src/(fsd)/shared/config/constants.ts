@@ -7,6 +7,11 @@ export const ROUTES = {
         prompts: '/lab/prompts',
         analytics: '/lab/analytics',
     },
+    aiLab: {
+        pipelines: '/ai-lab/pipelines',
+        experiment: '/ai-lab/experiment',
+        logs: '/ai-lab/logs',
+    },
     contents: {
         scenarios: '/contents/scenarios',
     },
@@ -15,3 +20,4 @@ export const ROUTES = {
         users: '/settings/users',
     },
 } as const;
+

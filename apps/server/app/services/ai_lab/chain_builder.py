@@ -1,0 +1,434 @@
+import base64
+import httpx
+import mimetypes
+from pathlib import Path
+from typing import Any
+
+from google import genai
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from app.core.config import settings
+
+
+class ChainBuilder:
+    """Build and configure LangChain chains for AI Lab experiments.
+    
+    Handles model instantiation and chain construction based on
+    pipeline configuration.
+    
+    Args:
+        model_name: Name of the AI model to use.
+    """
+    
+    def __init__(self, model_name: str) -> None:
+        """Initialize the chain builder with a specific model.
+        
+        Args:
+            model_name: Model identifier (e.g., gemini-pro, gpt-4o).
+        """
+        self.model_name = model_name
+        self.model = self._get_model(model_name)
+        # Initialize GenAI client for token counting fallback
+        try:
+            self.client = genai.Client(api_key=settings.GOOGLE_AI_API_KEY)
+        except Exception:
+            self.client = None
+    
+    def _get_model(self, model_name: str) -> Any:
+        """Get the appropriate LLM instance based on model name.
+        
+        Args:
+            model_name: Model identifier.
+            
+        Returns:
+            LLM instance.
+            
+        Raises:
+            ValueError: If model is not supported.
+        """
+        if model_name.startswith("gemini"):
+            return ChatGoogleGenerativeAI(
+                model=model_name,
+                google_api_key=settings.GOOGLE_AI_API_KEY,
+                temperature=0,
+                convert_system_message_to_human=True,
+            )
+        elif model_name.startswith("gpt"):
+            # OpenAI support - to be implemented
+            raise ValueError(
+                f"OpenAI models are not yet supported. Model: {model_name}"
+            )
+        else:
+            raise ValueError(f"Unknown model: {model_name}")
+    
+    async def invoke_agent(
+        self,
+        system_prompt: str,
+        agent_prompt: str,
+        user_input: str,
+        attached_files: list[dict] | None = None,
+    ) -> tuple[str, int, int]:
+        """Invoke a single agent with the given prompts and input.
+        
+        Args:
+            system_prompt: Shared system prompt for all agents.
+            agent_prompt: Individual agent prompt.
+            user_input: User input or previous agent output.
+            attached_files: Optional attached files info.
+            
+        Returns:
+            Tuple of (output_text, input_tokens, output_tokens).
+        """
+        # Build multimodal content if files are attached
+        human_content = await self._build_multimodal_content(user_input, attached_files)
+        
+        # Debug: log what's being sent
+        if attached_files:
+            import logging
+            logging.warning(f"[DEBUG] Attached files: {attached_files}")
+            if isinstance(human_content, list):
+                content_summary = [
+                    {k: v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v 
+                     for k, v in part.items()} 
+                    for part in human_content
+                ]
+                logging.warning(f"[DEBUG] Multimodal content types: {[p.get('type') for p in human_content]}")
+        
+        # Check if we have multimodal content (audio/video)
+        has_media = isinstance(human_content, list) and any(
+            p.get("type") == "media" for p in human_content
+        )
+        
+        if has_media and self.client:
+            # Use GenAI SDK directly for multimodal content
+            logging.warning("[DEBUG] Using GenAI SDK for multimodal content")
+            try:
+                response_text, input_tokens, output_tokens = await self._invoke_with_genai_sdk(
+                    system_prompt, agent_prompt, human_content
+                )
+                return response_text, input_tokens, output_tokens
+            except Exception as e:
+                logging.error(f"[DEBUG] GenAI SDK error: {e}")
+                raise
+        
+        messages = [
+            SystemMessage(content=f"{system_prompt}\n\n{agent_prompt}"),
+            HumanMessage(content=human_content),
+        ]
+        
+        try:
+            response = await self.model.ainvoke(messages)
+        except Exception as e:
+            import logging
+            logging.error(f"[DEBUG] LangChain invoke error: {e}")
+            raise
+        
+        # Extract token usage from response metadata (handle various Gemini versions)
+        input_tokens = 0
+        output_tokens = 0
+        
+        # Try usage_metadata first (LangChain standard)
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            if isinstance(usage, dict):
+                input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or usage.get("prompt_token_count") or 0
+                output_tokens = usage.get("output_tokens") or usage.get("completion_tokens") or usage.get("candidates_token_count") or 0
+            else:
+                # Object-style access - check multiple possible attribute names
+                input_tokens = (
+                    getattr(usage, "input_tokens", None) or 
+                    getattr(usage, "prompt_tokens", None) or 
+                    getattr(usage, "prompt_token_count", None) or 0
+                )
+                output_tokens = (
+                    getattr(usage, "output_tokens", None) or 
+                    getattr(usage, "completion_tokens", None) or 
+                    getattr(usage, "candidates_token_count", None) or 0
+                )
+        
+        # Fallback to response_metadata
+        if input_tokens == 0 and hasattr(response, "response_metadata"):
+            meta = response.response_metadata
+            # OpenAI style
+            if "usage" in meta:
+                usage = meta["usage"]
+                input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+                output_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+            # Gemini style - check for token_count
+            if input_tokens == 0 and "token_count" in meta:
+                input_tokens = meta["token_count"].get("input_tokens") or meta["token_count"].get("prompt_token_count") or 0
+                output_tokens = meta["token_count"].get("output_tokens") or meta["token_count"].get("candidates_token_count") or 0
+            # Gemini 3 style - check for usage_metadata in response_metadata
+            if input_tokens == 0 and "usage_metadata" in meta:
+                usage = meta["usage_metadata"]
+                input_tokens = usage.get("prompt_token_count") or usage.get("input_tokens") or 0
+                output_tokens = usage.get("candidates_token_count") or usage.get("output_tokens") or 0
+                
+        # Final Fallback: Calculate manually using GenAI SDK if available and counts are still 0
+        if (input_tokens == 0 or output_tokens == 0) and self.client and self.model_name.startswith("gemini"):
+            try:
+                # Map preview model names to stable names for token counting
+                token_count_model = self.model_name
+                if "preview" in self.model_name:
+                    # gemini-3-flash-preview -> gemini-2.0-flash (fallback for counting)
+                    if "flash" in self.model_name:
+                        token_count_model = "gemini-2.0-flash"
+                    elif "pro" in self.model_name:
+                        token_count_model = "gemini-2.5-pro"
+                
+                # Calculate input tokens
+                if input_tokens == 0:
+                    full_prompt = f"{system_prompt}\n\n{agent_prompt}\n\n{user_input}"
+                    count_resp = self.client.models.count_tokens(
+                        model=token_count_model,
+                        contents=full_prompt
+                    )
+                    input_tokens = count_resp.total_tokens
+                
+                # Calculate output tokens
+                if output_tokens == 0 and response.content:
+                    count_resp_out = self.client.models.count_tokens(
+                        model=token_count_model,
+                        contents=response.content
+                    )
+                    output_tokens = count_resp_out.total_tokens
+            except Exception as e:
+                import logging
+                logging.warning(f"Token counting via SDK failed for {self.model_name}: {e}")
+                # Last resort estimation (char count / 4)
+                if input_tokens == 0:
+                    input_tokens = len(f"{system_prompt}\n\n{agent_prompt}\n\n{user_input}") // 4
+                if output_tokens == 0:
+                    output_tokens = len(str(response.content)) // 4
+        
+        return response.content, input_tokens, output_tokens
+    
+    async def _invoke_with_genai_sdk(
+        self,
+        system_prompt: str,
+        agent_prompt: str,
+        human_content: list[dict],
+    ) -> tuple[str, int, int]:
+        """Invoke the model using GenAI SDK directly for multimodal content.
+        
+        Args:
+            system_prompt: System prompt.
+            agent_prompt: Agent prompt.
+            human_content: List of content parts (text, media).
+            
+        Returns:
+            Tuple of (output_text, input_tokens, output_tokens).
+        """
+        from google.genai import types
+        import asyncio
+        
+        # Build contents for GenAI SDK
+        contents = []
+        
+        for part in human_content:
+            part_type = part.get("type")
+            if part_type == "text":
+                contents.append(types.Part.from_text(text=part.get("text", "")))
+            elif part_type == "media":
+                # Audio/video as inline data
+                mime_type = part.get("mime_type", "audio/webm")
+                data = part.get("data", "")
+                contents.append(types.Part.from_bytes(
+                    data=base64.b64decode(data),
+                    mime_type=mime_type,
+                ))
+        
+        # Get model name for GenAI SDK (handle preview model names)
+        sdk_model_name = self.model_name
+        if sdk_model_name.endswith("-preview"):
+            sdk_model_name = sdk_model_name  # Keep as-is, SDK should handle it
+        
+        # Invoke the model synchronously (wrap in executor for async)
+        def sync_generate():
+            return self.client.models.generate_content(
+                model=sdk_model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=f"{system_prompt}\n\n{agent_prompt}",
+                    temperature=0.0,
+                ),
+            )
+        
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, sync_generate)
+        
+        # Extract response text
+        response_text = response.text if response.text else ""
+        
+        # Extract token usage
+        input_tokens = 0
+        output_tokens = 0
+        
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+        
+        return response_text, input_tokens, output_tokens
+    
+    async def _build_multimodal_content(
+        self,
+        user_input: str,
+        attached_files: list[dict] | None = None,
+    ) -> list[dict] | str:
+        """Build multimodal content for Gemini API.
+        
+        Args:
+            user_input: User's text input.
+            attached_files: Optional attached files info.
+            
+        Returns:
+            List of content parts for multimodal, or string for text-only.
+        """
+        if not attached_files:
+            return user_input
+        
+        content_parts: list[dict] = []
+        
+        # Add text part
+        content_parts.append({"type": "text", "text": user_input})
+        
+        # Add file parts
+        for file in attached_files:
+            file_type = file.get("type", "unknown")
+            file_url = file.get("url", "")
+            
+            if not file_url:
+                continue
+            
+            try:
+                # Determine MIME type
+                mime_type = self._get_mime_type(file_type, file_url)
+                
+                # Load file data
+                file_data = await self._load_file_data(file_url)
+                
+                if file_data:
+                    # Handle different file types appropriately
+                    if file_type == "image":
+                        # Images use image_url format
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{file_data}"
+                            }
+                        })
+                    elif file_type in ("audio", "video"):
+                        # Audio and video use media format for LangChain/Gemini
+                        content_parts.append({
+                            "type": "media",
+                            "data": file_data,
+                            "mime_type": mime_type,
+                        })
+                    else:
+                        # Fallback to image_url format
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{file_data}"
+                            }
+                        })
+            except Exception as e:
+                # If file loading fails, add as text reference
+                file_name = file.get("name", "unknown")
+                content_parts.append({
+                    "type": "text",
+                    "text": f"[Attached {file_type}: {file_name}] (Failed to load: {str(e)})"
+                })
+        
+        return content_parts
+    
+    def _get_mime_type(self, file_type: str, file_url: str) -> str:
+        """Get MIME type from file type and URL."""
+        mime_map = {
+            "image": "image/jpeg",
+            "video": "video/mp4",
+            "audio": "audio/mpeg",
+        }
+        
+        # Try to get from URL extension
+        ext = Path(file_url).suffix.lower()
+        guessed = mimetypes.guess_type(file_url)[0]
+        
+        if guessed:
+            return guessed
+        
+        return mime_map.get(file_type, "application/octet-stream")
+    
+    async def _load_file_data(self, file_url: str) -> str | None:
+        """Load file data and return as base64."""
+        import logging
+        
+        # Handle local files (both /static/ and /uploads/ paths)
+        if file_url.startswith(("/static/", "static/", "/uploads/", "uploads/")):
+            # Construct local path - go up to the server app root
+            local_path = Path(__file__).parent.parent.parent.parent / file_url.lstrip("/")
+            logging.warning(f"[DEBUG] Trying to load file from: {local_path}")
+            if local_path.exists():
+                with open(local_path, "rb") as f:
+                    data = base64.b64encode(f.read()).decode("utf-8")
+                    logging.warning(f"[DEBUG] File loaded successfully, size: {len(data)} chars")
+                    return data
+            else:
+                logging.warning(f"[DEBUG] File not found at: {local_path}")
+        
+        # Handle remote URLs
+        if file_url.startswith(("http://", "https://")):
+            async with httpx.AsyncClient() as client:
+                response = await client.get(file_url, timeout=30.0)
+                if response.status_code == 200:
+                    return base64.b64encode(response.content).decode("utf-8")
+        
+        return None
+
+
+def prepare_next_input(
+    data_transfer_mode: str,
+    original_input: str,
+    prev_output: str,
+    history: list[dict] | None = None,
+    include_original_input: bool = True,
+) -> str:
+    """Prepare input for the next agent based on transfer mode.
+    
+    Args:
+        data_transfer_mode: A or B.
+        original_input: Original user input.
+        prev_output: Previous agent's output.
+        history: List of previous step results (for mode B).
+        include_original_input: Whether to include original input in context.
+        
+    Returns:
+        Prepared input string for the next agent.
+    """
+    if data_transfer_mode == "A":
+        # Mode A: Pass the output from previous agent
+        if include_original_input:
+            return f"[Original Input]:\n{original_input}\n\n[Previous Agent Output]:\n{prev_output}"
+        return prev_output
+    
+    elif data_transfer_mode == "B":
+        # Mode B: Pass entire conversation history
+        if not history:
+            return prev_output
+        
+        conversation = [f"[Original Input]: {original_input}"]
+        for step in history:
+            role = step.get("agent_role", "Agent")
+            output = step.get("output", "")
+            conversation.append(f"[{role}]: {output}")
+        
+        return "\n\n".join(conversation)
+    
+    else:
+        # Fallback to mode A behavior
+        if include_original_input:
+            return f"[Original Input]:\n{original_input}\n\n[Previous Agent Output]:\n{prev_output}"
+        return prev_output
+

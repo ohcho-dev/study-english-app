@@ -1,5 +1,11 @@
 """Models module - SQLAlchemy ORM models."""
 
+from app.models.ai_lab_experiment import (
+    AILabExperimentLog,
+    AILabExperimentLogStep,
+    DataTransferMode,
+)
+from app.models.ai_lab_pipeline import Pipeline, PipelineAgent
 from app.models.ai_prompt import AIPrompt, AIPromptVersion
 from app.models.base import Base
 from app.models.experiment import (
@@ -34,5 +40,12 @@ __all__ = [
     "ExperimentLog",
     "Theme",
     "ThemeVersion",
+    # AI Lab models
+    "Pipeline",
+    "PipelineAgent",
+    "AILabExperimentLog",
+    "AILabExperimentLogStep",
+    "DataTransferMode",
 ]
+
 
