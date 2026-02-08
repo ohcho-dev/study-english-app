@@ -264,6 +264,8 @@ async def process_voice(
     template_id: UUID | None = Form(None, description="Template ID for new session"),
     voice_id: str = Form("en-US-Wavenet-F", description="TTS voice ID"),
     system_prompt: str | None = Form(None, description="Custom system prompt"),
+    difficulty: int | None = Form(None, ge=1, le=5, description="Difficulty level (1-5)"),
+    estimated_minutes: int | None = Form(None, ge=1, description="Estimated session duration"),
 ):
     """Process voice input through STT → LLM → TTS pipeline.
     
@@ -276,6 +278,8 @@ async def process_voice(
         template_id: Template to use for new session.
         voice_id: TTS voice ID for response.
         system_prompt: Optional custom prompt.
+        difficulty: Difficulty level (1-5) for new session.
+        estimated_minutes: Estimated duration for new session.
         
     Returns:
         Voice response with transcript, reply, audio, and timing metrics.
@@ -311,6 +315,8 @@ async def process_voice(
             template_id=template_id,
             voice_id=voice_id,
             system_prompt=system_prompt,
+            difficulty=difficulty,
+            estimated_minutes=estimated_minutes,
         )
         return result
     except ValueError as e:

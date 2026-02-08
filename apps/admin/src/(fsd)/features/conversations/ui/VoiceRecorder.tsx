@@ -66,7 +66,7 @@ export const VoiceRecorder = ({
                 {/* Audio Level Ring */}
                 {recorder.isRecording && showAudioLevel && (
                     <div
-                        className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse"
+                        className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse pointer-events-none"
                         style={{
                             transform: `scale(${1 + recorder.audioLevel * 0.3})`,
                             opacity: 0.5 + recorder.audioLevel * 0.5,
@@ -80,7 +80,16 @@ export const VoiceRecorder = ({
                     size="icon"
                     className={`${sizeClasses[size]} rounded-full transition-all ${recorder.isRecording ? 'shadow-lg shadow-red-500/30' : ''
                         }`}
-                    onClick={recorder.isRecording ? recorder.stopRecording : recorder.startRecording}
+                    onClick={() => {
+                        console.log('[VoiceRecorder] Button clicked, isRecording:', recorder.isRecording);
+                        if (recorder.isRecording) {
+                            console.log('[VoiceRecorder] Calling stopRecording');
+                            recorder.stopRecording();
+                        } else {
+                            console.log('[VoiceRecorder] Calling startRecording');
+                            recorder.startRecording();
+                        }
+                    }}
                     disabled={disabled}
                 >
                     {recorder.isRecording ? (
@@ -129,8 +138,8 @@ export const VoiceRecorder = ({
                         <div
                             key={i}
                             className={`w-2 rounded-full transition-all duration-75 ${i < levelBars
-                                    ? 'bg-red-500'
-                                    : 'bg-gray-200 dark:bg-gray-700'
+                                ? 'bg-red-500'
+                                : 'bg-gray-200 dark:bg-gray-700'
                                 }`}
                             style={{
                                 height: `${(i + 1) * 3}px`,

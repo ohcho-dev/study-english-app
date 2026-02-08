@@ -130,6 +130,8 @@ export interface Session {
     device_type: string | null;
     browser: string | null;
     variant: string | null;
+    difficulty: number | null;
+    estimated_minutes: number | null;
     error_message: string | null;
     created_at: string;
     updated_at: string;
@@ -151,6 +153,8 @@ export interface SessionCreate {
     device_type?: string;
     browser?: string;
     variant?: string;
+    difficulty?: number;
+    estimated_minutes?: number;
 }
 
 // ============================================================================

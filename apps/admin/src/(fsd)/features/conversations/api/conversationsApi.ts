@@ -132,6 +132,8 @@ export const processVoice = async (
         templateId?: string;
         voiceId?: string;
         systemPrompt?: string;
+        difficulty?: number;
+        estimatedMinutes?: number;
     }
 ): Promise<Run0VoiceResponse> => {
     const formData = new FormData();
@@ -149,6 +151,12 @@ export const processVoice = async (
     }
     if (options.systemPrompt) {
         formData.append('system_prompt', options.systemPrompt);
+    }
+    if (options.difficulty) {
+        formData.append('difficulty', options.difficulty.toString());
+    }
+    if (options.estimatedMinutes) {
+        formData.append('estimated_minutes', options.estimatedMinutes.toString());
     }
 
     const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/run0/voice`, {

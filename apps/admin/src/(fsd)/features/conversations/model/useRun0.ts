@@ -36,6 +36,10 @@ export interface Run0Config {
     targetLatencyMs: number;
     /** Max acceptable E2E latency (ms) */
     maxLatencyMs: number;
+    /** Difficulty level (1-5) */
+    difficulty: number;
+    /** Estimated session duration in minutes */
+    estimatedMinutes: number;
 }
 
 export const DEFAULT_RUN0_CONFIG: Run0Config = {
@@ -51,6 +55,8 @@ Respond naturally to what the user says.`,
     testIterations: 10,
     targetLatencyMs: 3000,
     maxLatencyMs: 5000,
+    difficulty: 3,
+    estimatedMinutes: 5,
 };
 
 // ============================================================================
@@ -152,6 +158,8 @@ export const useRun0 = (templateId?: string) => {
                 templateId,
                 voiceId: config.voiceId,
                 systemPrompt: config.systemPrompt,
+                difficulty: config.difficulty,
+                estimatedMinutes: config.estimatedMinutes,
             });
         },
         onSuccess: async (response) => {
@@ -185,38 +193,54 @@ export const useRun0 = (templateId?: string) => {
             }));
 
             // Auto-play audio if enabled
-            if (config.autoPlayAudio && response.audio_url) {
+            if (config.autoPlayAudio) {
                 const audio = audioRef();
                 if (audio) {
-                    audio.src = response.audio_url;
-                    audio.onplay = () => {
-                        // Log t3 timestamp
-                        if (config.enableTimestampLogging) {
-                            const t3 = Date.now();
-                            logClientTimestamp({
-                                session_id: response.session_id,
-                                turn_id: response.turn_id,
-                                t3_audio_play_start: t3,
-                            }).then((logResult) => {
-                                // Update E2E latency in results
-                                setState((prev) => ({
-                                    ...prev,
-                                    results: prev.results.map((r, i) =>
-                                        i === prev.results.length - 1
-                                            ? {
-                                                ...r,
-                                                metrics: {
-                                                    ...r.metrics,
-                                                    e2eMs: logResult.e2e_latency_ms,
-                                                },
-                                            }
-                                            : r
-                                    ),
-                                }));
-                            });
-                        }
-                    };
-                    audio.play();
+                    // Build audio source - prefer audio_base64 for immediate playback
+                    let audioSrc: string | null = null;
+
+                    if (response.audio_base64) {
+                        // Use base64 data URL directly for fastest playback
+                        audioSrc = `data:audio/mp3;base64,${response.audio_base64}`;
+                    } else if (response.audio_url) {
+                        // Prepend server URL to relative path
+                        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+                        audioSrc = response.audio_url.startsWith('http')
+                            ? response.audio_url
+                            : `${serverUrl}${response.audio_url}`;
+                    }
+
+                    if (audioSrc) {
+                        audio.src = audioSrc;
+                        audio.onplay = () => {
+                            // Log t3 timestamp
+                            if (config.enableTimestampLogging) {
+                                const t3 = Date.now();
+                                logClientTimestamp({
+                                    session_id: response.session_id,
+                                    turn_id: response.turn_id,
+                                    t3_audio_play_start: t3,
+                                }).then((logResult) => {
+                                    // Update E2E latency in results
+                                    setState((prev) => ({
+                                        ...prev,
+                                        results: prev.results.map((r, i) =>
+                                            i === prev.results.length - 1
+                                                ? {
+                                                    ...r,
+                                                    metrics: {
+                                                        ...r.metrics,
+                                                        e2eMs: logResult.e2e_latency_ms,
+                                                    },
+                                                }
+                                                : r
+                                        ),
+                                    }));
+                                });
+                            }
+                        };
+                        audio.play().catch(console.error);
+                    }
                 }
             }
         },

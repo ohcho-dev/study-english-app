@@ -75,8 +75,11 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
 
     // Internal stop function (defined early so startRecording can reference it)
     const performStop = useCallback(() => {
-        if (mediaRecorderRef.current && isRecordingRef.current) {
-            mediaRecorderRef.current.stop();
+        const mediaRecorder = mediaRecorderRef.current;
+
+        // Check actual MediaRecorder state instead of ref (more reliable)
+        if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+            mediaRecorder.stop();
 
             // Clear intervals
             if (durationIntervalRef.current) {

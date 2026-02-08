@@ -236,6 +236,11 @@ class ConversationSession(Base):
     browser = Column(String(100), nullable=True)
     variant = Column(String(10), nullable=True)  # A, B for A/B testing
     error_message = Column(Text, nullable=True)
+    
+    # Experiment settings (can override template defaults)
+    difficulty = Column(Integer, nullable=True)  # 1-5
+    estimated_minutes = Column(Integer, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,

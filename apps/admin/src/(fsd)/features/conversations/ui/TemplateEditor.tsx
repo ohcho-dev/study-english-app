@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Input } from '@/shared/ui/input';
 import { Badge } from '@/shared/ui/badge';
 
-import { useVoices } from '../model/useRun0';
+// Voice settings are controlled in experiment page, not template
 import type {
     Template,
     TemplateCreate,
@@ -47,7 +47,6 @@ export const TemplateEditor = ({
     isLoading = false,
 }: TemplateEditorProps) => {
     const isNew = !template;
-    const { data: voices = [] } = useVoices();
 
     // Form state
     const [name, setName] = useState(template?.name || '');
@@ -61,15 +60,14 @@ Keep responses concise (1-3 sentences) and conversational.`
     );
     const [greetingMessage, setGreetingMessage] = useState(template?.greeting_message || '');
     const [topic, setTopic] = useState(template?.topic || '');
-    const [difficulty, setDifficulty] = useState(template?.difficulty || 3);
-    const [estimatedMinutes, setEstimatedMinutes] = useState(template?.estimated_minutes || 5);
+    // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
         template?.participants?.map((p) => ({
             participant_type: p.participant_type,
             name: p.name,
             persona: p.persona || undefined,
-            voice_id: p.voice_id || undefined,
+            // voice_id is set in experiment page
             order_index: p.order_index,
         })) || [
             { participant_type: 'ai', name: 'AI Tutor', order_index: 0 },
@@ -128,8 +126,7 @@ Keep responses concise (1-3 sentences) and conversational.`
             system_prompt: systemPrompt,
             greeting_message: greetingMessage || undefined,
             topic: topic || undefined,
-            difficulty,
-            estimated_minutes: estimatedMinutes,
+            // difficulty and estimated_minutes are set in experiment page
             is_active: isActive,
             participants,
         };
@@ -218,35 +215,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-medium block mb-1.5">
-                                        난이도 (1-5)
-                                    </label>
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        max={5}
-                                        value={difficulty}
-                                        onChange={(e) => setDifficulty(parseInt(e.target.value) || 1)}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-sm font-medium block mb-1.5">
-                                        예상 시간 (분)
-                                    </label>
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        max={60}
-                                        value={estimatedMinutes}
-                                        onChange={(e) =>
-                                            setEstimatedMinutes(parseInt(e.target.value) || 1)
-                                        }
-                                    />
-                                </div>
-                            </div>
+                            {/* Note: difficulty and estimated_minutes are set in experiment page */}
 
                             <div className="flex items-center gap-2">
                                 <input
@@ -398,48 +367,29 @@ Keep responses concise (1-3 sentences) and conversational.`
                                         </div>
                                     </div>
 
-                                    {participant.participant_type === 'ai' && (
-                                        <>
-                                            <div>
-                                                <label className="text-xs text-muted-foreground block mb-1">
-                                                    페르소나
-                                                </label>
-                                                <textarea
-                                                    value={participant.persona || ''}
-                                                    onChange={(e) =>
-                                                        updateParticipant(index, {
-                                                            persona: e.target.value,
-                                                        })
-                                                    }
-                                                    placeholder="AI 캐릭터 설명..."
-                                                    rows={2}
-                                                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="text-xs text-muted-foreground block mb-1">
-                                                    TTS 음성
-                                                </label>
-                                                <select
-                                                    value={participant.voice_id || ''}
-                                                    onChange={(e) =>
-                                                        updateParticipant(index, {
-                                                            voice_id: e.target.value || undefined,
-                                                        })
-                                                    }
-                                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                                                >
-                                                    <option value="">기본 음성</option>
-                                                    {voices.map((v) => (
-                                                        <option key={v.id} value={v.id}>
-                                                            {v.name} ({v.gender})
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
+                                    {/* Persona for all participant types */}
+                                    <div>
+                                        <label className="text-xs text-muted-foreground block mb-1">
+                                            페르소나
+                                        </label>
+                                        <textarea
+                                            value={participant.persona || ''}
+                                            onChange={(e) =>
+                                                updateParticipant(index, {
+                                                    persona: e.target.value,
+                                                })
+                                            }
+                                            placeholder={
+                                                participant.participant_type === 'ai'
+                                                    ? 'AI 캐릭터 설명...'
+                                                    : participant.participant_type === 'moderator'
+                                                        ? '진행자 역할 설명...'
+                                                        : '사용자 역할 설명...'
+                                            }
+                                            rows={2}
+                                            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                        />
+                                    </div>
                                 </div>
                             ))}
 

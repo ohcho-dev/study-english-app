@@ -7,7 +7,7 @@
  * a cohesive experiment interface.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Play, Square, RotateCcw, Download, MessageSquare } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
@@ -20,14 +20,28 @@ import { Run0ConfigPanel } from './Run0ConfigPanel';
 import { MetricsDashboard } from './MetricsDashboard';
 import type { Template } from '../model/types';
 
+interface ParticipantVoiceSetting {
+    participantName: string;
+    participantType: string;
+    voiceId: string;
+}
+
+interface ExperimentSettings {
+    difficulty: number;
+    estimatedMinutes: number;
+    participantVoices: ParticipantVoiceSetting[];
+}
+
 interface Run0RunnerProps {
     /** Template to use for the experiment */
     template?: Template;
     /** Template ID for new sessions */
     templateId?: string;
+    /** Experiment settings from parent */
+    experimentSettings?: ExperimentSettings;
 }
 
-export const Run0Runner = ({ template, templateId }: Run0RunnerProps) => {
+export const Run0Runner = ({ template, templateId, experimentSettings }: Run0RunnerProps) => {
     const effectiveTemplateId = template?.id || templateId;
 
     const run0 = useRun0(effectiveTemplateId);
@@ -35,6 +49,36 @@ export const Run0Runner = ({ template, templateId }: Run0RunnerProps) => {
 
     const [selectedPhrase, setSelectedPhrase] = useState<string | null>(null);
     const [showConversation, setShowConversation] = useState(true);
+
+    // Sync experiment settings and template to run0 config
+    useEffect(() => {
+        const updates: Partial<typeof run0.config> = {};
+
+        // Apply template's system prompt
+        if (template?.system_prompt) {
+            updates.systemPrompt = template.system_prompt;
+        }
+
+        // Apply voice from experiment settings (first AI participant)
+        if (experimentSettings?.participantVoices?.length) {
+            const firstVoice = experimentSettings.participantVoices[0];
+            if (firstVoice.voiceId) {
+                updates.voiceId = firstVoice.voiceId;
+            }
+        }
+
+        // Apply difficulty and estimated time
+        if (experimentSettings?.difficulty) {
+            updates.difficulty = experimentSettings.difficulty;
+        }
+        if (experimentSettings?.estimatedMinutes) {
+            updates.estimatedMinutes = experimentSettings.estimatedMinutes;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            run0.updateConfig(updates);
+        }
+    }, [template?.system_prompt, experimentSettings]);
 
     // Handle recording completion
     const handleRecordingComplete = (blob: Blob, t0UserEnd: number) => {
@@ -198,7 +242,7 @@ export const Run0Runner = ({ template, templateId }: Run0RunnerProps) => {
                                 {/* Voice Recorder */}
                                 <VoiceRecorder
                                     onRecordingComplete={handleRecordingComplete}
-                                    disabled={!run0.isRunning || run0.isProcessing}
+                                    disabled={!run0.isRunning}
                                     size="lg"
                                     options={{
                                         maxDuration: 30,
@@ -257,9 +301,15 @@ export const Run0Runner = ({ template, templateId }: Run0RunnerProps) => {
                                     </div>
 
                                     {/* Audio Player */}
-                                    {run0.lastResponse.audio_url && (
+                                    {(run0.lastResponse.audio_base64 || run0.lastResponse.audio_url) && (
                                         <audio
-                                            src={run0.lastResponse.audio_url}
+                                            src={
+                                                run0.lastResponse.audio_base64
+                                                    ? `data:audio/mp3;base64,${run0.lastResponse.audio_base64}`
+                                                    : run0.lastResponse.audio_url?.startsWith('http')
+                                                        ? run0.lastResponse.audio_url
+                                                        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${run0.lastResponse.audio_url}`
+                                            }
                                             controls
                                             className="w-full h-8"
                                         />

@@ -38,10 +38,11 @@ class Run0Service:
     """
     
     # Default system prompt for RUN0 testing
-    DEFAULT_SYSTEM_PROMPT = """You are a friendly English conversation partner. 
+    DEFAULT_SYSTEM_PROMPT = """You are a friendly English conversation partner.
 You help users practice English through natural conversation.
 Keep responses concise (1-3 sentences) and conversational.
-Respond naturally to what the user says."""
+Respond naturally to what the user says.
+IMPORTANT: Always respond in English only, regardless of what language the user speaks."""
     
     def __init__(self, db: AsyncSession) -> None:
         """Initialize the RUN0 service.
@@ -66,6 +67,8 @@ Respond naturally to what the user says."""
         template_id: UUID | None = None,
         voice_id: str = "en-US-Wavenet-F",
         system_prompt: str | None = None,
+        difficulty: int | None = None,
+        estimated_minutes: int | None = None,
     ) -> Run0VoiceResponse:
         """Process voice input through the full pipeline.
         
@@ -77,6 +80,8 @@ Respond naturally to what the user says."""
             template_id: Template ID for new session (optional).
             voice_id: TTS voice ID.
             system_prompt: Custom system prompt (optional).
+            difficulty: Difficulty level for new session (1-5).
+            estimated_minutes: Estimated session duration.
             
         Returns:
             Run0VoiceResponse with results and timing.
@@ -92,7 +97,11 @@ Respond naturally to what the user says."""
         elif template_id:
             from app.schemas.conversation import SessionCreate
             session = await self.session_service.create(
-                SessionCreate(template_id=template_id)
+                SessionCreate(
+                    template_id=template_id,
+                    difficulty=difficulty,
+                    estimated_minutes=estimated_minutes,
+                )
             )
             session_id = session.id
         else:
@@ -241,17 +250,25 @@ Respond naturally to what the user says."""
             elif turn.turn_type == "ai":
                 history.append({"role": "model", "parts": [turn.content_text or ""]})
         
-        # Create model
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=system_prompt,
-        )
+        # Create model (system prompts handled via first message)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         
         # Start chat with history
         chat = model.start_chat(history=history)
         
+        # Build message with system context for first turn
+        if not history:
+            # First turn - include system prompt
+            message = f"""[System Instructions]
+{system_prompt}
+
+[User Message]
+{user_input}"""
+        else:
+            message = user_input
+        
         # Generate response
-        response = chat.send_message(user_input)
+        response = chat.send_message(message)
         
         return response.text.strip()
     

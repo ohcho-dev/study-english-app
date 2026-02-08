@@ -239,6 +239,8 @@ class SessionCreate(BaseModel):
     device_type: str | None = Field(None, description="Client device type (pc, mobile)")
     browser: str | None = Field(None, description="Client browser info")
     variant: str | None = Field(None, description="A/B test variant")
+    difficulty: int | None = Field(None, ge=1, le=5, description="Difficulty level (1-5)")
+    estimated_minutes: int | None = Field(None, ge=1, description="Estimated session duration")
 
 
 class SessionResponse(BaseModel):
@@ -255,6 +257,8 @@ class SessionResponse(BaseModel):
     device_type: str | None
     browser: str | None
     variant: str | None
+    difficulty: int | None
+    estimated_minutes: int | None
     error_message: str | None
     created_at: datetime
     updated_at: datetime

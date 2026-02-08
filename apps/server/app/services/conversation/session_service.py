@@ -153,6 +153,8 @@ class SessionService:
             device_type=session.device_type,
             browser=session.browser,
             variant=session.variant,
+            difficulty=session.difficulty,
+            estimated_minutes=session.estimated_minutes,
             error_message=session.error_message,
             created_at=session.created_at,
             updated_at=session.updated_at,
@@ -174,6 +176,8 @@ class SessionService:
             device_type=data.device_type,
             browser=data.browser,
             variant=data.variant,
+            difficulty=data.difficulty,
+            estimated_minutes=data.estimated_minutes,
         )
         self.db.add(session)
         await self.db.commit()

@@ -66,7 +66,7 @@ export const api = {
         return response.json();
     },
 
-    delete: async <T>(endpoint: string, options?: FetchOptions): Promise<T> => {
+    delete: async <T>(endpoint: string, options?: FetchOptions): Promise<T | void> => {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
             method: 'DELETE',
@@ -76,6 +76,11 @@ export const api = {
             },
         });
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        return response.json();
+        // Handle 204 No Content
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return undefined as T;
+        }
+        const text = await response.text();
+        return text ? JSON.parse(text) : undefined;
     },
 };
