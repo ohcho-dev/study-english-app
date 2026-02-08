@@ -95,30 +95,15 @@ class ChainBuilder:
                 ]
                 logging.warning(f"[DEBUG] Multimodal content types: {[p.get('type') for p in human_content]}")
         
-        # Check if we have multimodal content (audio/video)
-        has_media = isinstance(human_content, list) and any(
-            p.get("type") == "media" for p in human_content
-        )
-        
-        if has_media and self.client:
-            # Use GenAI SDK directly for multimodal content
-            logging.warning("[DEBUG] Using GenAI SDK for multimodal content")
-            try:
-                response_text, input_tokens, output_tokens = await self._invoke_with_genai_sdk(
-                    system_prompt, agent_prompt, human_content
-                )
-                return response_text, input_tokens, output_tokens
-            except Exception as e:
-                logging.error(f"[DEBUG] GenAI SDK error: {e}")
-                raise
-        
         messages = [
             SystemMessage(content=f"{system_prompt}\n\n{agent_prompt}"),
             HumanMessage(content=human_content),
         ]
         
+        model_to_use = self.model
+
         try:
-            response = await self.model.ainvoke(messages)
+            response = await model_to_use.ainvoke(messages)
         except Exception as e:
             import logging
             logging.error(f"[DEBUG] LangChain invoke error: {e}")
@@ -204,74 +189,6 @@ class ChainBuilder:
         
         return response.content, input_tokens, output_tokens
     
-    async def _invoke_with_genai_sdk(
-        self,
-        system_prompt: str,
-        agent_prompt: str,
-        human_content: list[dict],
-    ) -> tuple[str, int, int]:
-        """Invoke the model using GenAI SDK directly for multimodal content.
-        
-        Args:
-            system_prompt: System prompt.
-            agent_prompt: Agent prompt.
-            human_content: List of content parts (text, media).
-            
-        Returns:
-            Tuple of (output_text, input_tokens, output_tokens).
-        """
-        from google.genai import types
-        import asyncio
-        
-        # Build contents for GenAI SDK
-        contents = []
-        
-        for part in human_content:
-            part_type = part.get("type")
-            if part_type == "text":
-                contents.append(types.Part.from_text(text=part.get("text", "")))
-            elif part_type == "media":
-                # Audio/video as inline data
-                mime_type = part.get("mime_type", "audio/webm")
-                data = part.get("data", "")
-                contents.append(types.Part.from_bytes(
-                    data=base64.b64decode(data),
-                    mime_type=mime_type,
-                ))
-        
-        # Get model name for GenAI SDK (handle preview model names)
-        sdk_model_name = self.model_name
-        if sdk_model_name.endswith("-preview"):
-            sdk_model_name = sdk_model_name  # Keep as-is, SDK should handle it
-        
-        # Invoke the model synchronously (wrap in executor for async)
-        def sync_generate():
-            return self.client.models.generate_content(
-                model=sdk_model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=f"{system_prompt}\n\n{agent_prompt}",
-                    temperature=0.0,
-                ),
-            )
-        
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, sync_generate)
-        
-        # Extract response text
-        response_text = response.text if response.text else ""
-        
-        # Extract token usage
-        input_tokens = 0
-        output_tokens = 0
-        
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            input_tokens = getattr(usage, "prompt_token_count", 0) or 0
-            output_tokens = getattr(usage, "candidates_token_count", 0) or 0
-        
-        return response_text, input_tokens, output_tokens
-    
     async def _build_multimodal_content(
         self,
         user_input: str,
@@ -320,11 +237,15 @@ class ChainBuilder:
                             }
                         })
                     elif file_type in ("audio", "video"):
-                        # Audio and video use media format for LangChain/Gemini
+                        # Audio and video: Use raw Gemini Part format (bypass LangChain validation via 'inline_data')
+                        # We reverted File API because local library versions didn't support 'file_data' in dicts
+                        # and File API auto-detected 'video/webm' which caused 400 errors.
+                        # We MUST force 'audio/webm' for .webm files to work with Gemini 2.0 Flash Audio Understanding.
                         content_parts.append({
-                            "type": "media",
-                            "data": file_data,
-                            "mime_type": mime_type,
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": file_data
+                            }
                         })
                     else:
                         # Fallback to image_url format
@@ -354,13 +275,62 @@ class ChainBuilder:
         
         # Try to get from URL extension
         ext = Path(file_url).suffix.lower()
-        guessed = mimetypes.guess_type(file_url)[0]
+        if ext == ".webm":
+            return "audio/webm"  # Force audio/webm for Gemini 2.0 Flash Audio Understanding
         
-        if guessed:
-            return guessed
-        
-        return mime_map.get(file_type, "application/octet-stream")
+        mime_type, _ = mimetypes.guess_type(file_url)
+        return mime_type or "application/octet-stream"
     
+    def _convert_to_mp3(self, file_url: str) -> tuple[str, str]:
+        """Convert webm to mp3 using ffmpeg if possible.
+        
+        Returns:
+            (file_path, mime_type)
+        """
+        import os
+        import subprocess
+        
+        # Resolve absolute path
+        if file_url.startswith("/uploads/"):
+             base_path = os.getcwd() 
+             rel_path = file_url.lstrip("/")
+             input_path = os.path.join(base_path, rel_path)
+        else:
+            input_path = file_url
+            
+        if not os.path.exists(input_path):
+            return input_path, "audio/webm"
+            
+        # Only convert .webm
+        if not input_path.lower().endswith(".webm"):
+             # Return original path/mime (resolve absolute path anyway for loading)
+             mime, _ = mimetypes.guess_type(input_path)
+             return input_path, mime or "application/octet-stream"
+             
+        output_path = input_path.rsplit(".", 1)[0] + ".mp3"
+        
+        # Check if already converted
+        if os.path.exists(output_path):
+            return output_path, "audio/mp3"
+            
+        try:
+            # ffmpeg -i input.webm -vn -acodec libmp3lame -y output.mp3
+            subprocess.run(
+                ["ffmpeg", "-i", input_path, "-vn", "-acodec", "libmp3lame", "-y", output_path],
+                check=True,
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL
+            )
+            return output_path, "audio/mp3"
+        except FileNotFoundError:
+            import logging
+            logging.error("[DEBUG] FFMPEG not found. Skipping conversion.")
+            return input_path, "audio/webm"
+        except Exception as e:
+            import logging
+            logging.error(f"[DEBUG] Audio conversion failed: {e}")
+            return input_path, "audio/webm"
+
     async def _load_file_data(self, file_url: str) -> str | None:
         """Load file data and return as base64."""
         import logging
@@ -369,6 +339,14 @@ class ChainBuilder:
         if file_url.startswith(("/static/", "static/", "/uploads/", "uploads/")):
             # Construct local path - go up to the server app root
             local_path = Path(__file__).parent.parent.parent.parent / file_url.lstrip("/")
+            
+            # If it's an audio/video file, try to convert it to MP3 if it's webm
+            if local_path.suffix.lower() == ".webm":
+                converted_path, converted_mime = self._convert_to_mp3(str(local_path))
+                if converted_path != str(local_path): # Conversion happened
+                    local_path = Path(converted_path)
+                    # Update mime_type in the calling context if needed, though here we just load the data
+            
             logging.warning(f"[DEBUG] Trying to load file from: {local_path}")
             if local_path.exists():
                 with open(local_path, "rb") as f:

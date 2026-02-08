@@ -24,7 +24,7 @@ from app.schemas.ai_lab import (
     StepResult,
 )
 from app.services.ai_lab.chain_builder import ChainBuilder, prepare_next_input
-from app.services.ai_lab.model_registry import calculate_cost
+from app.services.ai_lab.model_registry import calculate_cost, calculate_tts_cost
 from app.services.ai_lab.tts_service import generate_speech_from_text
 
 
