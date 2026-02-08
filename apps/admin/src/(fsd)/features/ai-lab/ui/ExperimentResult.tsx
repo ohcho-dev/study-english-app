@@ -39,7 +39,10 @@ export const ExperimentResult = ({ result }: ExperimentResultProps) => {
                         </span>
                         <span className="flex items-center gap-1">
                             <MessageSquare className="h-4 w-4" />
-                            {result.total_input_tokens + result.total_output_tokens} tokens
+                            {result.total_input_tokens + result.total_output_tokens}{' '}
+                            <span className="text-xs text-muted-foreground ml-1">
+                                (In: {result.total_input_tokens} / Out: {result.total_output_tokens})
+                            </span>
                         </span>
                         <span className="flex items-center gap-1">
                             <Coins className="h-4 w-4" />

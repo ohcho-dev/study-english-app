@@ -128,6 +128,8 @@ export interface ExperimentLogSummary {
     include_original_input: boolean;
     generate_audio: boolean;
     total_tokens: number;
+    total_input_tokens: number;
+    total_output_tokens: number;
     estimated_cost_usd: number;
     execution_time_ms: number;
     created_at: string;
@@ -153,8 +155,6 @@ export interface ExperimentLogDetail extends Omit<ExperimentLogSummary, 'total_t
     final_result: string;
     audio_url: string | null;
     audio_base64: string | null;
-    total_input_tokens: number;
-    total_output_tokens: number;
     steps: ExperimentLogStep[];
 }
 

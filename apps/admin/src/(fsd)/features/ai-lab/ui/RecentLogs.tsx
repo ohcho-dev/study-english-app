@@ -114,10 +114,15 @@ export const RecentLogs = ({ limit = 10, pipelineId }: RecentLogsProps) => {
                                         )}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <span className="flex items-center justify-end gap-1">
-                                            <MessageSquare className="h-3 w-3" />
-                                            {log.total_tokens}
-                                        </span>
+                                        <div className="flex flex-col items-end gap-0.5">
+                                            <span className="font-medium flex items-center gap-1">
+                                                <MessageSquare className="h-3 w-3" />
+                                                {log.total_tokens}
+                                            </span>
+                                            <span className="text-[10px] text-muted-foreground">
+                                                In: {log.total_input_tokens} / Out: {log.total_output_tokens}
+                                            </span>
+                                        </div>
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <span className="flex items-center justify-end gap-1">

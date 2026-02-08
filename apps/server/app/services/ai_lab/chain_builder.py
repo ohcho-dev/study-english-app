@@ -187,6 +187,13 @@ class ChainBuilder:
                 if output_tokens == 0:
                     output_tokens = len(str(response.content)) // 4
         
+        if input_tokens == 0:
+            import logging
+            logging.warning(f"[DEBUG] Input tokens 0! Response Meta: {response.response_metadata if hasattr(response, 'response_metadata') else 'None'}")
+
+        import logging
+        logging.info(f"[TOKEN USAGE] Model: {self.model_name}, Input: {input_tokens}, Output: {output_tokens}")
+        
         return response.content, input_tokens, output_tokens
     
     async def _build_multimodal_content(

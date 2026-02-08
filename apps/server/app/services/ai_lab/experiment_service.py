@@ -382,6 +382,8 @@ class ExperimentService:
                 include_original_input=log.include_original_input,
                 generate_audio=log.generate_audio,
                 total_tokens=log.total_input_tokens + log.total_output_tokens,
+                total_input_tokens=log.total_input_tokens,
+                total_output_tokens=log.total_output_tokens,
                 estimated_cost_usd=float(log.estimated_cost_usd),
                 execution_time_ms=log.execution_time_ms,
                 created_at=log.created_at,

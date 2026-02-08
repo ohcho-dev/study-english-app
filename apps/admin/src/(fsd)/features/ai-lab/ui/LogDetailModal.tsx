@@ -46,7 +46,10 @@ export const LogDetailModal = ({ log, open, onClose }: LogDetailModalProps) => {
                             </span>
                             <span className="flex items-center gap-1">
                                 <MessageSquare className="h-4 w-4" />
-                                {log.total_input_tokens + log.total_output_tokens} tokens
+                                {log.total_input_tokens + log.total_output_tokens}{' '}
+                                <span className="text-xs text-muted-foreground ml-1">
+                                    (In: {log.total_input_tokens} / Out: {log.total_output_tokens})
+                                </span>
                             </span>
                             <span className="flex items-center gap-1">
                                 <Coins className="h-4 w-4" />

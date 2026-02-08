@@ -261,6 +261,8 @@ class ExperimentLogSummary(BaseModel):
     include_original_input: bool = Field(default=True)
     generate_audio: bool = Field(default=False)
     total_tokens: int = Field(description="Total tokens used")
+    total_input_tokens: int = Field(description="Total input tokens")
+    total_output_tokens: int = Field(description="Total output tokens")
     estimated_cost_usd: float
     execution_time_ms: int
     created_at: datetime
