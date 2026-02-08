@@ -21,8 +21,10 @@ from app.schemas.ai_lab import (
     ExperimentLogSummary,
     ExperimentRunRequest,
     ExperimentRunResponse,
+    StepBenchmark,
     StepResult,
 )
+from app.services.ai_lab.benchmark_calculator import calculate_step_benchmark
 from app.services.ai_lab.chain_builder import ChainBuilder, prepare_next_input
 from app.services.ai_lab.model_registry import calculate_cost, calculate_tts_cost
 from app.services.ai_lab.tts_service import generate_speech_from_text
@@ -109,18 +111,39 @@ class ExperimentService:
             
             step_time_ms = int((time.time() - step_start) * 1000)
             
+            # Calculate step cost for benchmark
+            step_cost = calculate_cost(agent_model, input_tokens, output_tokens)
+            
+            # Calculate benchmark metrics for this step
+            step_benchmark = calculate_step_benchmark(
+                execution_time_ms=step_time_ms,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                output_text=output,
+                estimated_cost=step_cost,
+            )
+            
             # Record step result
             step_result = StepResult(
                 step_index=idx,
                 agent_role=agent.role_name,
+                model_name=agent_model,
                 output=output,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 execution_time_ms=step_time_ms,
+                benchmark=StepBenchmark(
+                    latency_ms=step_benchmark.latency_ms,
+                    tokens_per_second=step_benchmark.tokens_per_second,
+                    input_output_ratio=step_benchmark.input_output_ratio,
+                    cost_per_1k_tokens=step_benchmark.cost_per_1k_tokens,
+                    output_length=step_benchmark.output_length,
+                    response_density=step_benchmark.response_density,
+                ),
             )
             steps.append(step_result)
             
-            # Store details for logging (including model_name)
+            # Store details for logging (including model_name and benchmark)
             step_details.append({
                 "step_index": idx,
                 "agent_role": agent.role_name,
@@ -131,6 +154,7 @@ class ExperimentService:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "execution_time_ms": step_time_ms,
+                "benchmark": step_benchmark.to_dict(),
             })
             
             # Accumulate tokens
@@ -322,6 +346,7 @@ class ExperimentService:
                 input_tokens=step["input_tokens"],
                 output_tokens=step["output_tokens"],
                 execution_time_ms=step["execution_time_ms"],
+                benchmark=step.get("benchmark"),
             )
             self.db.add(log_step)
         
@@ -345,10 +370,13 @@ class ExperimentService:
         Returns:
             Tuple of (logs, total_count).
         """
-        # Base query
+        # Base query - load steps to get used_models
         query = (
             select(AILabExperimentLog)
-            .options(selectinload(AILabExperimentLog.pipeline))
+            .options(
+                selectinload(AILabExperimentLog.pipeline),
+                selectinload(AILabExperimentLog.steps),
+            )
             .order_by(AILabExperimentLog.created_at.desc())
         )
         
@@ -372,24 +400,37 @@ class ExperimentService:
         result = await self.db.execute(query)
         logs = result.scalars().all()
         
-        return [
-            ExperimentLogSummary(
-                id=log.id,
-                pipeline_id=log.pipeline_id,
-                pipeline_name=log.pipeline.name if log.pipeline else None,
-                model_name=log.model_name,
-                data_transfer_mode=log.data_transfer_mode.value,
-                include_original_input=log.include_original_input,
-                generate_audio=log.generate_audio,
-                total_tokens=log.total_input_tokens + log.total_output_tokens,
-                total_input_tokens=log.total_input_tokens,
-                total_output_tokens=log.total_output_tokens,
-                estimated_cost_usd=float(log.estimated_cost_usd),
-                execution_time_ms=log.execution_time_ms,
-                created_at=log.created_at,
+        # Build response with used_models for each log
+        summaries = []
+        for log in logs:
+            # Get unique models used in steps (need to load steps)
+            used_models = None
+            if hasattr(log, 'steps') and log.steps:
+                used_models = list(set(
+                    step.model_name for step in log.steps 
+                    if step.model_name and step.agent_role != "TTS Generator"
+                ))
+            
+            summaries.append(
+                ExperimentLogSummary(
+                    id=log.id,
+                    pipeline_id=log.pipeline_id,
+                    pipeline_name=log.pipeline.name if log.pipeline else None,
+                    model_name=log.model_name,
+                    data_transfer_mode=log.data_transfer_mode.value,
+                    include_original_input=log.include_original_input,
+                    used_models=used_models,
+                    generate_audio=log.generate_audio,
+                    total_tokens=log.total_input_tokens + log.total_output_tokens,
+                    total_input_tokens=log.total_input_tokens,
+                    total_output_tokens=log.total_output_tokens,
+                    estimated_cost_usd=float(log.estimated_cost_usd),
+                    execution_time_ms=log.execution_time_ms,
+                    created_at=log.created_at,
+                )
             )
-            for log in logs
-        ], total
+        
+        return summaries, total
     
     async def get_log_detail(self, log_id: UUID) -> ExperimentLogDetail | None:
         """Get detailed experiment log.
@@ -415,6 +456,12 @@ class ExperimentService:
         if not log:
             return None
         
+        # Get unique models used in steps
+        used_models = list(set(
+            step.model_name for step in log.steps 
+            if step.model_name and step.agent_role != "TTS Generator"
+        )) if log.steps else None
+        
         return ExperimentLogDetail(
             id=log.id,
             pipeline_id=log.pipeline_id,
@@ -422,6 +469,7 @@ class ExperimentService:
             model_name=log.model_name,
             data_transfer_mode=log.data_transfer_mode.value,
             include_original_input=log.include_original_input,
+            used_models=used_models,
             user_input=log.user_input,
             attached_files=(
                 [AttachedFile(**f) for f in log.attached_files]
@@ -448,6 +496,7 @@ class ExperimentService:
                     input_tokens=step.input_tokens,
                     output_tokens=step.output_tokens,
                     execution_time_ms=step.execution_time_ms,
+                    benchmark=StepBenchmark(**step.benchmark) if step.benchmark else None,
                     created_at=step.created_at,
                 )
                 for step in sorted(log.steps, key=lambda s: s.step_index)

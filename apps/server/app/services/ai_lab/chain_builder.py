@@ -383,7 +383,7 @@ def prepare_next_input(
     """Prepare input for the next agent based on transfer mode.
     
     Args:
-        data_transfer_mode: A or B.
+        data_transfer_mode: A, B, or C.
         original_input: Original user input.
         prev_output: Previous agent's output.
         history: List of previous step results (for mode B).
@@ -410,6 +410,11 @@ def prepare_next_input(
             conversation.append(f"[{role}]: {output}")
         
         return "\n\n".join(conversation)
+    
+    elif data_transfer_mode == "C":
+        # Mode C: Pass original input only (for model comparison)
+        # All agents receive the same original input regardless of previous outputs
+        return original_input
     
     else:
         # Fallback to mode A behavior

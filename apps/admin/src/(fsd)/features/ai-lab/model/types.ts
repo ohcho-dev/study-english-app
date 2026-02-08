@@ -62,7 +62,7 @@ export interface PipelineUpdate {
 // Experiment Types
 // ============================================================================
 
-export type DataTransferMode = 'A' | 'B';
+export type DataTransferMode = 'A' | 'B' | 'C';
 export type ModelName =
     | 'gemini-3-pro-preview' | 'gemini-3-flash-preview'
     | 'gemini-2.5-pro' | 'gemini-2.5-flash'
@@ -94,13 +94,24 @@ export interface ExperimentRunRequest {
     agent_models?: AgentModelOverride[] | null;
 }
 
+export interface StepBenchmark {
+    latency_ms: number;
+    tokens_per_second: number;
+    input_output_ratio: number;
+    cost_per_1k_tokens: number;
+    output_length: number;
+    response_density: number;
+}
+
 export interface StepResult {
     step_index: number;
     agent_role: string;
+    model_name: string;
     output: string;
     input_tokens: number;
     output_tokens: number;
     execution_time_ms: number;
+    benchmark?: StepBenchmark | null;
 }
 
 export interface ExperimentRunResponse {
@@ -126,6 +137,7 @@ export interface ExperimentLogSummary {
     model_name: string;
     data_transfer_mode: DataTransferMode;
     include_original_input: boolean;
+    used_models?: string[] | null;
     generate_audio: boolean;
     total_tokens: number;
     total_input_tokens: number;
@@ -146,6 +158,7 @@ export interface ExperimentLogStep {
     input_tokens: number;
     output_tokens: number;
     execution_time_ms: number;
+    benchmark?: StepBenchmark | null;
     created_at: string;
 }
 
@@ -155,6 +168,7 @@ export interface ExperimentLogDetail extends Omit<ExperimentLogSummary, 'total_t
     final_result: string;
     audio_url: string | null;
     audio_base64: string | null;
+    used_models?: string[] | null;
     steps: ExperimentLogStep[];
 }
 

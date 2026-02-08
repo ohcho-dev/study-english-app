@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Clock, Coins, Eye, MessageSquare, Volume2 } from 'lucide-react';
 
+import { Badge } from '@/shared/ui/badge';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import {
@@ -15,6 +16,12 @@ import {
     TableHeader,
     TableRow,
 } from '@/shared/ui/table';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/shared/ui/tooltip';
 
 import { useLogDetail, useLogs } from '../model/useExperiment';
 import type { ExperimentLogSummary } from '../model/types';
@@ -71,98 +78,145 @@ export const RecentLogs = ({ limit = 10, pipelineId }: RecentLogsProps) => {
     }
 
     return (
-        <>
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                        <span>최근 실험 로그</span>
-                        <span className="text-sm font-normal text-muted-foreground">
-                            총 {data.total}개
-                        </span>
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>파이프라인</TableHead>
-                                <TableHead>모델</TableHead>
-                                <TableHead>전달 방식</TableHead>
-                                <TableHead className="text-center">음성</TableHead>
-                                <TableHead className="text-right">토큰</TableHead>
-                                <TableHead className="text-right">비용</TableHead>
-                                <TableHead className="text-right">시간</TableHead>
-                                <TableHead className="text-right">실행일</TableHead>
-                                <TableHead className="w-[50px]"></TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {data.items.map((log) => (
-                                <TableRow key={log.id}>
-                                    <TableCell className="font-medium">
-                                        {log.pipeline_name || '-'}
-                                    </TableCell>
-                                    <TableCell>{log.model_name}</TableCell>
-                                    <TableCell>{log.data_transfer_mode}</TableCell>
-                                    <TableCell className="text-center">
-                                        {log.generate_audio ? (
-                                            <span className="text-green-600">
-                                                <Volume2 className="h-4 w-4 inline" />
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted-foreground">-</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex flex-col items-end gap-0.5">
-                                            <span className="font-medium flex items-center gap-1">
-                                                <MessageSquare className="h-3 w-3" />
-                                                {log.total_tokens}
-                                            </span>
-                                            <span className="text-[10px] text-muted-foreground">
-                                                In: {log.total_input_tokens} / Out: {log.total_output_tokens}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <span className="flex items-center justify-end gap-1">
-                                            <Coins className="h-3 w-3" />
-                                            {formatCost(log.estimated_cost_usd)}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <span className="flex items-center justify-end gap-1">
-                                            <Clock className="h-3 w-3" />
-                                            {formatTime(log.execution_time_ms)}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-right text-muted-foreground text-xs">
-                                        {formatDistanceToNow(new Date(log.created_at), {
-                                            addSuffix: true,
-                                            locale: ko,
-                                        })}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon-xs"
-                                            onClick={() => setSelectedLogId(log.id)}
-                                        >
-                                            <Eye className="h-4 w-4" />
-                                        </Button>
-                                    </TableCell>
+        <TooltipProvider>
+            <>
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center justify-between">
+                            <span>최근 실험 로그</span>
+                            <span className="text-sm font-normal text-muted-foreground">
+                                총 {data.total}개
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>파이프라인</TableHead>
+                                    <TableHead>모델</TableHead>
+                                    <TableHead>전달 방식</TableHead>
+                                    <TableHead className="text-center">음성</TableHead>
+                                    <TableHead className="text-right">토큰</TableHead>
+                                    <TableHead className="text-right">비용</TableHead>
+                                    <TableHead className="text-right">시간</TableHead>
+                                    <TableHead className="text-right">실행일</TableHead>
+                                    <TableHead className="w-[50px]"></TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+                            </TableHeader>
+                            <TableBody>
+                                {data.items.map((log) => (
+                                    <TableRow key={log.id}>
+                                        <TableCell className="font-medium">
+                                            {log.pipeline_name || '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                            <ModelDisplay
+                                                defaultModel={log.model_name}
+                                                usedModels={log.used_models}
+                                            />
+                                        </TableCell>
+                                        <TableCell>{log.data_transfer_mode}</TableCell>
+                                        <TableCell className="text-center">
+                                            {log.generate_audio ? (
+                                                <span className="text-green-600">
+                                                    <Volume2 className="h-4 w-4 inline" />
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground">-</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                <span className="font-medium flex items-center gap-1">
+                                                    <MessageSquare className="h-3 w-3" />
+                                                    {log.total_tokens}
+                                                </span>
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    In: {log.total_input_tokens} / Out: {log.total_output_tokens}
+                                                </span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <span className="flex items-center justify-end gap-1">
+                                                <Coins className="h-3 w-3" />
+                                                {formatCost(log.estimated_cost_usd)}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <span className="flex items-center justify-end gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {formatTime(log.execution_time_ms)}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-right text-muted-foreground text-xs">
+                                            {formatDistanceToNow(new Date(log.created_at), {
+                                                addSuffix: true,
+                                                locale: ko,
+                                            })}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-xs"
+                                                onClick={() => setSelectedLogId(log.id)}
+                                            >
+                                                <Eye className="h-4 w-4" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
 
-            <LogDetailModal
-                log={logDetail || null}
-                open={!!selectedLogId}
-                onClose={() => setSelectedLogId(null)}
-            />
-        </>
+                <LogDetailModal
+                    log={logDetail || null}
+                    open={!!selectedLogId}
+                    onClose={() => setSelectedLogId(null)}
+                />
+            </>
+        </TooltipProvider>
+    );
+};
+
+/**
+ * Helper component to display model info with tooltip
+ */
+const ModelDisplay = ({
+    defaultModel,
+    usedModels
+}: {
+    defaultModel: string;
+    usedModels?: string[] | null;
+}) => {
+    // If no used_models or only one model, show default model
+    if (!usedModels || usedModels.length <= 1) {
+        return <span className="text-sm">{defaultModel}</span>;
+    }
+
+    // Multiple models - show first model with count badge and tooltip
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 cursor-help">
+                    <span className="text-sm">{usedModels[0]}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5">
+                        +{usedModels.length - 1}
+                    </Badge>
+                </div>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+                <div className="text-sm">
+                    <div className="font-medium mb-1">사용된 모델들:</div>
+                    <ul className="list-disc pl-4">
+                        {usedModels.map((model) => (
+                            <li key={model}>{model}</li>
+                        ))}
+                    </ul>
+                </div>
+            </TooltipContent>
+        </Tooltip>
     );
 };

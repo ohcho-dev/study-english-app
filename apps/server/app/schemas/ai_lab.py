@@ -160,8 +160,8 @@ class ExperimentRunRequest(BaseModel):
     ] = Field(
         description="AI model to use"
     )
-    data_transfer_mode: Literal["A", "B"] = Field(
-        description="Data transfer mode between agents (A: last output only, B: full history)"
+    data_transfer_mode: Literal["A", "B", "C"] = Field(
+        description="Data transfer mode between agents (A: last output only, B: full history, C: original input only)"
     )
     include_original_input: bool = Field(
         default=True,
@@ -193,15 +193,28 @@ class ExperimentRunRequest(BaseModel):
     )
 
 
+class StepBenchmark(BaseModel):
+    """Schema for step benchmark metrics."""
+    
+    latency_ms: int = Field(description="Response time in milliseconds")
+    tokens_per_second: float = Field(description="Throughput - tokens processed per second")
+    input_output_ratio: float = Field(description="Output to input token ratio")
+    cost_per_1k_tokens: float = Field(description="Cost per 1000 tokens in USD")
+    output_length: int = Field(description="Output text length in characters")
+    response_density: float = Field(description="Characters per output token")
+
+
 class StepResult(BaseModel):
     """Schema for individual step result."""
     
     step_index: int
     agent_role: str
+    model_name: str = Field(description="Model used for this step")
     output: str
     input_tokens: int
     output_tokens: int
     execution_time_ms: int
+    benchmark: StepBenchmark | None = Field(default=None, description="Benchmark metrics for this step")
 
 
 class ExperimentRunResponse(BaseModel):
@@ -242,6 +255,7 @@ class ExperimentLogStepResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     execution_time_ms: int
+    benchmark: StepBenchmark | None = Field(default=None, description="Benchmark metrics")
     created_at: datetime
     
     class Config:
@@ -259,6 +273,7 @@ class ExperimentLogSummary(BaseModel):
     model_name: str
     data_transfer_mode: Literal["A", "B", "C"]
     include_original_input: bool = Field(default=True)
+    used_models: list[str] | None = Field(default=None, description="List of unique models used")
     generate_audio: bool = Field(default=False)
     total_tokens: int = Field(description="Total tokens used")
     total_input_tokens: int = Field(description="Total input tokens")
@@ -282,6 +297,7 @@ class ExperimentLogDetail(BaseModel):
     model_name: str
     data_transfer_mode: Literal["A", "B", "C"]
     include_original_input: bool = Field(default=True)
+    used_models: list[str] | None = Field(default=None, description="List of unique models used")
     user_input: str
     attached_files: list[AttachedFile] | None
     final_result: str

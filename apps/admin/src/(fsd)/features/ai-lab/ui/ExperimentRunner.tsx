@@ -31,6 +31,7 @@ interface ExperimentRunnerProps {
 const DATA_TRANSFER_OPTIONS: { value: DataTransferMode; label: string; description: string }[] = [
     { value: 'A', label: 'A: 최종 출력만', description: '이전 에이전트의 마지막 응답만 전달' },
     { value: 'B', label: 'B: 전체 히스토리', description: '누적된 모든 대화 내용 전달' },
+    { value: 'C', label: 'C: 원본 입력만 (모델 비교용)', description: '모든 에이전트에 동일한 원본 입력만 전달' },
 ];
 
 /**
@@ -292,6 +293,15 @@ export const ExperimentRunner = ({
                                             에이전트 간 데이터 전달 시 원본 입력 포함
                                         </label>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* Mode C Description */}
+                            {dataTransferMode === 'C' && (
+                                <div className="mt-2 p-2 rounded-md bg-blue-500/10 text-xs text-blue-700 dark:text-blue-300">
+                                    <p>🔬 <strong>모델 비교 모드:</strong> 각 에이전트가 동일한 원본 입력을 받아
+                                        모델별 성능을 직접 비교할 수 있습니다. 벤치마크 메트릭을 통해
+                                        응답 시간, 처리량, 비용 등을 확인하세요.</p>
                                 </div>
                             )}
                         </div>

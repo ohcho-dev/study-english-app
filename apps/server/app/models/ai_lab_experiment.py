@@ -17,12 +17,12 @@ class DataTransferMode(str, enum.Enum):
     Attributes:
         A: Pass only the final output from the previous agent.
         B: Pass the entire conversation history.
-        C: Extract and pass specific JSON fields.
+        C: Pass original input only (for model comparison).
     """
     
     A = "A"  # Final output only
     B = "B"  # Full history
-    C = "C"  # Custom fields
+    C = "C"  # Original input only (for model comparison)
 
 
 class AILabExperimentLog(Base):
@@ -117,6 +117,7 @@ class AILabExperimentLogStep(Base):
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
     execution_time_ms = Column(Integer, nullable=False, default=0)
+    benchmark = Column(JSONB, nullable=True)  # Benchmark metrics for this step
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
