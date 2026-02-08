@@ -67,9 +67,59 @@
 | 예상 시간 | `15분` |
 | 시스템 프롬프트 | `You are a conversational AI practicing English with the user. Be engaging, ask follow-up questions, and keep the conversation flowing naturally.` |
 | 인사말 | `Hey! What's on your mind today? Feel free to talk about anything.` |
-| 참여자 | AI: en-US-Wavenet-C (여성 음성) |
 
 **테스트 발화**: "I went to a really nice restaurant yesterday."
+
+---
+
+## 👥 참여자 설정 예시
+
+### 템플릿 1: 기본 인사 - 참여자 설정
+
+| 순서 | 역할 | 이름 | TTS 음성 | 설명 |
+|------|------|------|----------|------|
+| 1 | AI | Emma | `Emma (FEMALE)` | 여성, 친근한 튜터 역할 |
+
+**참여자 추가 방법**:
+1. "추가" 버튼 클릭
+2. 타입: `AI` 선택
+3. 이름: `Emma` 입력
+4. TTS 음성: `Emma (FEMALE)` 선택
+
+---
+
+### 템플릿 2: 카페 주문 - 참여자 설정
+
+| 순서 | 역할 | 이름 | TTS 음성 | 설명 |
+|------|------|------|----------|------|
+| 1 | AI | Jake | `Mike (MALE)` | 남성 바리스타 역할 |
+
+---
+
+### 템플릿 3: 자유 대화 - 참여자 설정
+
+| 순서 | 역할 | 이름 | TTS 음성 | 설명 |
+|------|------|------|----------|------|
+| 1 | AI | Sophie | `Sophia (FEMALE)` | 여성, 대화 상대 역할 |
+
+---
+
+### 🔊 TTS 음성 목록 (참고)
+
+| 음성 이름 | 성별 | 특징 |
+|-----------|------|------|
+| Sarah | FEMALE | 차분한 톤 |
+| Emma | FEMALE | 밝고 친근한 톤 |
+| Olivia | FEMALE | 부드러운 톤 |
+| Sophia | FEMALE | 자연스러운 톤 |
+| Mike | MALE | 표준 남성 톤 |
+| James | MALE | 차분한 톤 |
+| David | MALE | 친근한 톤 |
+| Daniel | MALE | 전문적인 톤 |
+| Emily | FEMALE | 명랑한 톤 |
+| Oliver | MALE | 젊은 남성 톤 |
+| Charlotte | FEMALE | 영국식 발음 |
+| Jack | MALE | 영국식 발음 |
 
 ---
 

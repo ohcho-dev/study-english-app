@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { Plus, Trash2, GripVertical, Save, X } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Save, X } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
@@ -96,6 +96,20 @@ Keep responses concise (1-3 sentences) and conversational.`
                 .filter((_, i) => i !== index)
                 .map((p, i) => ({ ...p, order_index: i }))
         );
+    };
+
+    // Move participant up/down
+    const moveParticipant = (index: number, direction: 'up' | 'down') => {
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= participants.length) return;
+
+        const newParticipants = [...participants];
+        const temp = newParticipants[index];
+        newParticipants[index] = newParticipants[newIndex];
+        newParticipants[newIndex] = temp;
+
+        // Update order_index
+        setParticipants(newParticipants.map((p, i) => ({ ...p, order_index: i })));
     };
 
     // Update participant
@@ -299,8 +313,30 @@ Keep responses concise (1-3 sentences) and conversational.`
                                     className="p-4 border rounded-lg space-y-3 relative"
                                 >
                                     <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+                                        <div className="flex items-center gap-1">
+                                            <div className="flex flex-col">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-5 w-5"
+                                                    onClick={() => moveParticipant(index, 'up')}
+                                                    disabled={index === 0}
+                                                >
+                                                    <ChevronUp className="h-3 w-3" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-5 w-5"
+                                                    onClick={() => moveParticipant(index, 'down')}
+                                                    disabled={index === participants.length - 1}
+                                                >
+                                                    <ChevronDown className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                            <span className="text-xs text-muted-foreground w-4">
+                                                {index + 1}
+                                            </span>
                                             <Badge
                                                 className={
                                                     PARTICIPANT_TYPES.find(
