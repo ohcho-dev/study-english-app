@@ -1,135 +1,180 @@
-# Turborepo starter
+# Study English with AI (Antigravity Project)
 
-This Turborepo starter is maintained by the Turborepo core team.
+> **AI 기반 영어 학습 서비스 & 실험 랩 (AI Lab)**
+> 
+> 최신 Generative AI 기술(Gemini, GPT)을 활용하여 개인화된 영어 학습 경험을 제공하고, 다양한 AI 실험을 수행할 수 있는 통합 플랫폼입니다.
 
-## Using this example
+---
 
-Run the following command:
+## 📚 1. Project Overview
 
-```sh
-npx create-turbo@latest
+이 프로젝트는 **Monorepo** 구조로 설계되었으며, 효율적인 개발과 배포를 위해 `pnpm workspaces`와 `Turborepo`를 사용합니다.
+
+### 🏛 System Architecture
+전체 시스템은 **Client Layer**, **Server Layer**, **Data Layer**, **External Services**로 구성됩니다.
+
+- **Client Layer**: React Native (Mobile), Next.js (Admin)
+- **Server Layer**: FastAPI (REST API, WebSocket), AI Service (LangChain)
+- **Data Layer**: PostgreSQL (Main DB), Redis (Cache), File Storage
+- **External Services**: OpenAI, Google Gemini, OAuth Providers (Kakao/Naver/Google)
+
+---
+
+## 📂 2. Project Structure (Monorepo)
+
+```bash
+study-english/
+├── apps/
+│   ├── mobile/              # 📱 iOS/Android App (React Native + Expo)
+│   ├── admin/               # 🖥 Admin Dashboard (Next.js)
+│   └── server/              # ⚡ Backend API (FastAPI)
+├── packages/
+│   ├── ui/                  # 🎨 Shared UI Components (Mobile/Admin 공용)
+│   ├── eslint-config/       # 🛠 Shared ESLint Configuration
+│   └── typescript-config/   # 📘 Shared TypeScript Configuration
+├── .agent/                  # 🤖 AI Agent Resources
+└── docs/                    # 📄 Project Documentation
 ```
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## 🛠 3. Tech Stack & Features by App
 
-### Apps and Packages
+### 📱 Apps: Mobile (`apps/mobile`)
+학습자가 영어를 학습하는 메인 모바일 애플리케이션입니다.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+- **Framework**: **React Native** (Expo SDK 50+)
+- **Architecture**: **FSD (Feature-Sliced Design)**
+  - `app/` (Routing), `pages/`, `widgets/`, `features/`, `entities/`, `shared/` 계층 구조
+- **Language**: TypeScript
+- **Styling**: **NativeWind** (Tailwind CSS for RN)
+- **State Management**: Zustand (Global), TanStack Query (Server)
+- **Navigation**: Expo Router (File-based routing)
+- **UI Components**: React Native Reusables (shadcn/ui port)
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+### 🖥 Apps: Admin (`apps/admin`)
+학습 콘텐츠 관리 및 AI 실험(AI Lab)을 위한 웹 대시보드입니다.
 
-### Utilities
+- **Framework**: **Next.js 14+** (App Router)
+- **Architecture**: **FSD (Feature-Sliced Design)** (Mobile과 동일 구조)
+- **Styling**: Tailwind CSS, **shadcn/ui**
+- **State Management**: Zustand, TanStack Query
+- **Features**:
+  - **AI Lab**: AI 파이프라인 설계, 에이전트 관리, 실험 실행 및 로그 분석
+  - **Content Management**: 레슨, 시나리오, 테마 관리
+  - **User Management**: 사용자 학습 현황 모니터링
 
-This Turborepo has some additional tools already setup for you:
+### ⚡ Apps: Server (`apps/server`)
+핵심 비즈니스 로직과 AI 파이프라인을 처리하는 백엔드 서버입니다.
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+- **Language**: Python 3.11+
+- **Framework**: **FastAPI**
+- **Architecture**: **Layered Architecture** (Router -> Service -> Repository/Model)
+- **Database**: PostgreSQL (AsyncPG), Redis
+- **ORM**: SQLAlchemy 2.0+ (Async)
+- **AI Stack**:
+  - **LangChain / LangGraph**: AI 에이전트 및 워크플로우 관리
+  - **Google GenAI (Gemini)** / **OpenAI (GPT-4)**: LLM 통합
+- **Tools**: Poetry (Dependency), Alembic (Migration), Pytest
 
-### Build
+---
 
-To build all apps and packages, run the following command:
+## 🚀 4. Getting Started
 
-```
-cd my-turborepo
+### Prerequisites
+- **Node.js**: v20+
+- **pnpm**: v8+
+- **Python**: 3.11+ (Poetry 설치 필수)
+- **Docker**: DB/Redis 컨테이너 실행용
+- **FFmpeg**: 오디오 처리를 위한 필수 도구 (`brew install ffmpeg`)
 
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
+### Installation & Setup
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
-```
+1. **Repository Clone & Install Dependencies**
+   ```bash
+   git clone <repo-url>
+   cd study-english
+   
+   # Frontend (Node.js) 의존성 설치
+   pnpm install
+   
+   # Backend (Python) 의존성 설치
+   cd apps/server
+   poetry install
+   ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+2. **Environment Variables**
+   각 앱의 `.env` 파일을 생성하고 설정합니다. (각 폴더의 `.env.example` 참조)
+   - `apps/server/.env`: DB, Redis, API Keys (OpenAI, Gemini)
+   - `apps/mobile/.env`: API URL
+   - `apps/admin/.env.local`: API URL
 
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
+3. **Database Setup (Docker)**
+   ```bash
+   cd apps/server
+   docker-compose up -d  # Postgres, Redis 실행
+   poetry run alembic upgrade head  # DB 마이그레이션 적용
+   ```
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+### Running the Project
 
-### Develop
-
-To develop all apps and packages, run the following command:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
+**TurboRepo를 이용한 전체 실행** (권장)
+```bash
+# 루트 디렉토리에서
+pnpm dev
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+**개별 실행**
+- **Server**: `cd apps/server && poetry run uvicorn app.main:app --reload`
+- **Admin**: `cd apps/admin && pnpm dev`
+- **Mobile**: `cd apps/mobile && pnpm start`
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+---
 
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
+## 📏 5. Development Conventions
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
+### 🌐 Common (Client - Mobile/Admin)
+**FSD (Feature-Sliced Design) 아키텍처**를 엄격히 준수합니다.
 
-## Useful Links
+1. **레이어 의존성 규칙**: 상위 레이어만 하위 레이어를 import 할 수 있습니다.
+   - `app` → `pages` → `widgets` → `features` → `entities` → `shared`
+2. **Export 규칙**:
+   - `app/` (라우트) 폴더: `export default` 사용 (Framework 요구사항)
+   - 그 외 모든 폴더: **Named Export (`export const`)** 사용 (Tree-shaking 최적화)
+3. **Import 규칙**:
+   - 내부 모듈은 반드시 `@/` Alias 사용 (`@/features/chat`)
+   - 상대 경로(`../../`) 사용 지양 (같은 기능 폴더 내에서만 허용)
+4. **스타일링**:
+   - Tailwind CSS (Mobile은 NativeWind) 클래스 사용
+   - 색상/간격 등은 하드코딩 금지 (테마 변수 사용)
 
-Learn more about the power of Turborepo:
+### 🐍 Server (Python/FastAPI)
+1. **Type Hints**: 모든 함수에 Type Hint 및 Return Type 명시 필수
+2. **Dependency Injection**: FastAPI `Depends`를 적극 활용하여 결합도 낮춤
+3. **Pydantic Schemas**: 모든 요청/응답은 Pydantic 모델로 정의 및 검증
+4. **Async/Await**: DB I/O 등 블로킹 작업은 반드시 비동기로 처리
+5. **Docstrings**: Google Style Docstring 작성 권장
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+---
+
+## 🧪 6. AI Lab Features
+
+Admin 페이지에서 제공하는 **AI 실험실(AI Lab)**은 다음과 같은 강력한 기능을 제공합니다.
+
+- **Pipeline Builder**: 여러 AI 페르소나(Agent)를 연결하여 복잡한 대화/처리 로직 설계
+- **Multimodal Support**: 텍스트뿐만 아니라 **이미지, 오디오** 입력을 처리하고 분석 가능
+- **Interactive Testing**: 채팅 인터페이스를 통해 실시간으로 파이프라인 테스트 및 디버깅
+- **Detailed Logs**:
+  - 단계별(Step-by-step) 실행 결과 확인
+  - **Token Usage**: 입력/출력 토큰 및 총 토큰 사용량 상세 모니터링
+  - **Cost Estimation**: 모델별 가격 정책에 따른 예상 비용 계산
+- **Data Transfer Modes**:
+  - **Mode A**: 이전 단계의 최종 결과만 전달
+  - **Mode B**: 전체 누적 대화 기록(Context) 전달
+
+---
+
+## 📝 License
+
+This project is private property of Antigravity.
+Unauthorized copying or distribution is strictly prohibited.
