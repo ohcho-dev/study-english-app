@@ -20,6 +20,18 @@ from app.models.experiment_log import ExperimentLog
 from app.models.scenario import Scenario, ScenarioStatus, ScenarioStep, ScenarioStepType
 from app.models.theme import Theme, ThemeVersion
 from app.models.user import User, UserRole
+from app.models.conversation import (
+    ConversationMode,
+    ConversationParticipant,
+    ConversationSession,
+    ConversationTemplate,
+    ConversationTurn,
+    MeasurementConfig,
+    ParticipantType,
+    SessionMetrics,
+    SessionStatus,
+    TurnType,
+)
 
 __all__ = [
     "Base",
@@ -46,6 +58,17 @@ __all__ = [
     "AILabExperimentLog",
     "AILabExperimentLogStep",
     "DataTransferMode",
+    # Conversation models
+    "ConversationMode",
+    "ConversationParticipant",
+    "ConversationSession",
+    "ConversationTemplate",
+    "ConversationTurn",
+    "MeasurementConfig",
+    "ParticipantType",
+    "SessionMetrics",
+    "SessionStatus",
+    "TurnType",
 ]
 
 

@@ -12,6 +12,11 @@ export const ROUTES = {
         experiment: '/ai-lab/experiment',
         logs: '/ai-lab/logs',
     },
+    conversations: {
+        run0: '/conversations/run0',
+        templates: '/conversations/templates',
+        sessions: '/conversations/sessions',
+    },
     contents: {
         scenarios: '/contents/scenarios',
     },

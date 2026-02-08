@@ -22,10 +22,12 @@ import {
     FileText,
     Palette,
     Users,
-    Bot,
     Link as LinkIcon,
     TestTube,
     ScrollText,
+    Mic,
+    Layout,
+    Clock,
 } from 'lucide-react';
 
 import { APP_NAME, ROUTES } from '@/shared/config';
@@ -56,6 +58,14 @@ const menuItems: MenuGroup[] = [
             { title: '파이프라인', href: ROUTES.aiLab.pipelines, icon: LinkIcon },
             { title: '실험 테스트', href: ROUTES.aiLab.experiment, icon: TestTube },
             { title: '실험 로그', href: ROUTES.aiLab.logs, icon: ScrollText },
+        ],
+    },
+    {
+        title: '🎙️ 대화 시나리오',
+        items: [
+            { title: '템플릿 관리', href: ROUTES.conversations.templates, icon: Layout },
+            { title: '대화 실험', href: ROUTES.conversations.run0, icon: Mic },
+            { title: '세션 기록', href: ROUTES.conversations.sessions, icon: Clock },
         ],
     },
     {

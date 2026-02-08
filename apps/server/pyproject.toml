@@ -29,6 +29,10 @@ structlog = "^24.1.0"
 asyncpg = "^0.31.0"
 google-genai = "^1.62.0"
 pillow = "^12.1.0"
+pydub = "^0.25.1"
+google-cloud-speech = "^2.36.1"
+google-cloud-texttospeech = "^2.34.0"
+audioop-lts = {version = ">=0.2.1", markers = "python_version >= \"3.13\""}
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.14"

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     
     # AI
     GOOGLE_AI_API_KEY: str = ""
+    GOOGLE_CLOUD_STT_TTS_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
 
