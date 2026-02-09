@@ -156,9 +156,35 @@ class SessionService:
             difficulty=session.difficulty,
             estimated_minutes=session.estimated_minutes,
             error_message=session.error_message,
+            user_name=session.user_name,
+            current_speaker_type=session.current_speaker_type,
             created_at=session.created_at,
             updated_at=session.updated_at,
         )
+    
+    async def get_by_id_with_template(
+        self, session_id: UUID
+    ) -> ConversationSession | None:
+        """Get a session with template and participants loaded.
+        
+        Args:
+            session_id: Session UUID.
+            
+        Returns:
+            Session ORM object with relationships if found.
+        """
+        query = (
+            select(ConversationSession)
+            .options(
+                selectinload(ConversationSession.template).selectinload(
+                    ConversationTemplate.participants
+                )
+            )
+            .where(ConversationSession.id == session_id)
+        )
+        
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
     
     async def create(self, data: SessionCreate) -> SessionResponse:
         """Create a new session.
@@ -178,11 +204,46 @@ class SessionService:
             variant=data.variant,
             difficulty=data.difficulty,
             estimated_minutes=data.estimated_minutes,
+            user_name=data.user_name,
+            current_speaker_type="waiting",
         )
         self.db.add(session)
         await self.db.commit()
         
         return await self.get_by_id(session.id)
+    
+    async def update_current_speaker(
+        self,
+        session_id: UUID,
+        speaker_type: str,
+    ) -> SessionResponse | None:
+        """Update the current speaker type for a session.
+        
+        Args:
+            session_id: Session UUID.
+            speaker_type: Speaker type (moderator, ai, user, waiting).
+            
+        Returns:
+            Updated session if found.
+        """
+        query = select(ConversationSession).where(
+            ConversationSession.id == session_id
+        )
+        result = await self.db.execute(query)
+        session = result.scalar_one_or_none()
+        
+        if not session:
+            return None
+        
+        session.current_speaker_type = speaker_type
+        if speaker_type == "user":
+            session.status = SessionStatus.WAITING_USER
+        else:
+            session.status = SessionStatus.ACTIVE
+        
+        await self.db.commit()
+        
+        return await self.get_by_id(session_id)
     
     async def end_session(
         self,
@@ -217,7 +278,7 @@ class SessionService:
         await self.db.commit()
         
         # Calculate and save metrics
-        await self._calculate_metrics(session_id)
+        await self.calculate_metrics(session_id)
         
         return await self.get_by_id(session_id)
     
@@ -410,7 +471,7 @@ class SessionService:
             for turn in turns
         ]
     
-    async def _calculate_metrics(self, session_id: UUID) -> SessionMetrics | None:
+    async def calculate_metrics(self, session_id: UUID) -> SessionMetrics | None:
         """Calculate and save session metrics.
         
         Args:
@@ -546,3 +607,45 @@ class SessionService:
             estimated_cost_usd=metrics.estimated_cost_usd,
             created_at=metrics.created_at,
         )
+
+    async def check_session_timeout(
+        self,
+        session_id: UUID,
+        timeout_minutes: int = 30,
+    ) -> bool:
+        """Check if session has timed out and update status if needed.
+        
+        Args:
+            session_id: Session UUID.
+            timeout_minutes: Timeout duration in minutes (default: 30).
+            
+        Returns:
+            True if session is timed out, False otherwise.
+        """
+        query = select(ConversationSession).where(
+            ConversationSession.id == session_id
+        )
+        result = await self.db.execute(query)
+        session = result.scalar_one_or_none()
+        
+        if not session:
+            return True  # Treat non-existent session as timed out/invalid
+            
+        # If already completed or error, consider it timed out for new interactions
+        if session.status in [SessionStatus.COMPLETED, SessionStatus.ERROR]:
+            return True
+            
+        # Check time since last update
+        time_diff = datetime.utcnow() - session.updated_at
+        if time_diff.total_seconds() > (timeout_minutes * 60):
+            # Session timed out
+            session.status = SessionStatus.COMPLETED
+            session.ended_at = datetime.utcnow()
+            session.error_message = f"Session timed out after {timeout_minutes} minutes of inactivity"
+            await self.db.commit()
+            
+            # Calculate final metrics
+            await self.calculate_metrics(session_id)
+            return True
+            
+        return False

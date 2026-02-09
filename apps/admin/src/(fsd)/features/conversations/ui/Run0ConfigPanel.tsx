@@ -23,12 +23,15 @@ interface Run0ConfigPanelProps {
     onConfigChange: (updates: Partial<Run0Config>) => void;
     /** Collapse by default */
     defaultCollapsed?: boolean;
+    /** Disable all inputs */
+    disabled?: boolean;
 }
 
 export const Run0ConfigPanel = ({
     config,
     onConfigChange,
     defaultCollapsed = false,
+    disabled = false,
 }: Run0ConfigPanelProps) => {
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
@@ -76,6 +79,7 @@ export const Run0ConfigPanel = ({
                                             warmupIterations: parseInt(e.target.value) || 0,
                                         })
                                     }
+                                    disabled={disabled}
                                 />
                                 <p className="text-xs text-muted-foreground mt-1">
                                     결과에 포함되지 않는 준비 횟수
@@ -97,6 +101,7 @@ export const Run0ConfigPanel = ({
                                             testIterations: parseInt(e.target.value) || 1,
                                         })
                                     }
+                                    disabled={disabled}
                                 />
                                 <p className="text-xs text-muted-foreground mt-1">
                                     메트릭 계산에 사용되는 실제 테스트 횟수
@@ -130,6 +135,7 @@ export const Run0ConfigPanel = ({
                                             targetLatencyMs: parseInt(e.target.value) || 3000,
                                         })
                                     }
+                                    disabled={disabled}
                                 />
                                 <p className="text-xs text-muted-foreground mt-1">
                                     Green zone 기준 (통과)
@@ -151,6 +157,7 @@ export const Run0ConfigPanel = ({
                                             maxLatencyMs: parseInt(e.target.value) || 5000,
                                         })
                                     }
+                                    disabled={disabled}
                                 />
                                 <p className="text-xs text-muted-foreground mt-1">
                                     Red zone 기준 (실패)
@@ -191,6 +198,7 @@ export const Run0ConfigPanel = ({
                                 onCheckedChange={(checked) =>
                                     onConfigChange({ autoPlayAudio: checked })
                                 }
+                                disabled={disabled}
                             />
                         </div>
 
@@ -206,6 +214,7 @@ export const Run0ConfigPanel = ({
                                 onCheckedChange={(checked) =>
                                     onConfigChange({ showMetrics: checked })
                                 }
+                                disabled={disabled}
                             />
                         </div>
 
@@ -221,6 +230,7 @@ export const Run0ConfigPanel = ({
                                 onCheckedChange={(checked) =>
                                     onConfigChange({ enableTimestampLogging: checked })
                                 }
+                                disabled={disabled}
                             />
                         </div>
                     </div>

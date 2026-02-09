@@ -8,6 +8,7 @@ This module provides API endpoints for:
 """
 
 import math
+import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
@@ -237,15 +238,30 @@ async def get_session_turns(db: DbSession, session_id: UUID):
 
 @router.get("/sessions/{session_id}/metrics")
 async def get_session_metrics(db: DbSession, session_id: UUID):
-    """Get metrics for a session."""
+    """Get metrics for a session. Returns empty metrics if none exist."""
     service = SessionService(db)
     metrics = await service.get_session_metrics(session_id)
     
     if not metrics:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Metrics for session {session_id} not found",
-        )
+        # Return empty metrics instead of 404
+        return {
+            "id": uuid.uuid4(),  # Temporary ID since none exists
+            "session_id": session_id,
+            "e2e_avg_ms": None,
+            "e2e_p50_ms": None,
+            "e2e_p95_ms": None,
+            "asr_avg_ms": None,
+            "llm_avg_ms": None,
+            "tts_avg_ms": None,
+            "total_turns": 0,
+            "user_turns": 0,
+            "asr_retry_count": 0,
+            "error_count": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "created_at": datetime.utcnow(),
+        }
     
     return metrics
 
@@ -304,6 +320,11 @@ async def process_voice(
     else:
         audio_format = "webm"  # Default
     
+    # Log incoming parameters for debugging
+    print(f"RUN0 Request: voice_id={voice_id}, difficulty={difficulty}, has_prompt={bool(system_prompt)}")
+    if system_prompt:
+        print(f"RUN0 System Prompt Preview: {system_prompt[:50]}...")
+
     service = Run0Service(db)
     
     try:
@@ -324,6 +345,13 @@ async def process_voice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal Server Error: {str(e)}",
+        ) from e
 
 
 @router.post("/run0/log", response_model=Run0LogResponse)
@@ -334,6 +362,41 @@ async def log_client_timestamp(db: DbSession, request: Run0LogRequest):
     """
     service = Run0Service(db)
     return await service.log_client_timestamp(request)
+
+
+@router.post("/sessions/{session_id}/greeting")
+async def generate_session_greeting(
+    db: DbSession,
+    session_id: UUID,
+    voice_id: str | None = Query(None, description="TTS voice ID to use"),
+    custom_greeting: str | None = Query(None, description="Custom greeting text override"),
+):
+    """Generate and return the first speaker's greeting for a session.
+    
+    This endpoint should be called after creating a session to get
+    the auto-greeting from the first speaker (Moderator or AI).
+    
+    Args:
+        voice_id: Optional TTS voice ID override (e.g., 'en-US-Wavenet-D').
+        custom_greeting: Optional custom greeting text to use instead of template/generated.
+    
+    Returns:
+        Dict with greeting_text, audio_url, audio_base64, speaker_name, speaker_type.
+    """
+    service = Run0Service(db)
+    
+    try:
+        result = await service.generate_greeting(
+            session_id,
+            voice_id=voice_id,
+            custom_greeting=custom_greeting,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/run0/test-phrases", response_model=list[str])

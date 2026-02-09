@@ -19,6 +19,7 @@ ConversationModeType = Literal["turn_based", "free_form"]
 ParticipantTypeType = Literal["moderator", "ai", "user"]
 SessionStatusType = Literal["active", "waiting_user", "paused", "completed", "error"]
 TurnTypeType = Literal["system", "moderator", "ai", "user"]
+FirstSpeakerType = Literal["moderator_first", "ai_first", "user_first"]
 
 
 # ============================================================================
@@ -83,6 +84,15 @@ class ParticipantBase(BaseModel):
         ge=0,
         description="Display/turn order",
     )
+    # My Turn additions
+    greeting_message: str | None = Field(
+        None,
+        description="First greeting message for this participant",
+    )
+    avatar_url: str | None = Field(
+        None,
+        description="Avatar image URL",
+    )
 
 
 class ParticipantCreate(ParticipantBase):
@@ -100,6 +110,8 @@ class ParticipantUpdate(BaseModel):
     voice_id: str | None = None
     voice_settings: VoiceSettings | None = None
     order_index: int | None = Field(None, ge=0)
+    greeting_message: str | None = None
+    avatar_url: str | None = None
 
 
 class ParticipantResponse(ParticipantBase):
@@ -164,6 +176,15 @@ class TemplateBase(BaseModel):
         default=True,
         description="Whether template is available",
     )
+    # My Turn settings
+    first_speaker: FirstSpeakerType = Field(
+        default="moderator_first",
+        description="Who speaks first (moderator_first, ai_first, user_first)",
+    )
+    scene_context: str | None = Field(
+        None,
+        description="Shared context/scene description for all AI participants",
+    )
 
 
 class TemplateCreate(TemplateBase):
@@ -187,6 +208,8 @@ class TemplateUpdate(BaseModel):
     difficulty: int | None = Field(None, ge=1, le=5)
     estimated_minutes: int | None = Field(None, ge=1)
     is_active: bool | None = None
+    first_speaker: FirstSpeakerType | None = None
+    scene_context: str | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",
@@ -241,6 +264,8 @@ class SessionCreate(BaseModel):
     variant: str | None = Field(None, description="A/B test variant")
     difficulty: int | None = Field(None, ge=1, le=5, description="Difficulty level (1-5)")
     estimated_minutes: int | None = Field(None, ge=1, description="Estimated session duration")
+    # My Turn additions
+    user_name: str | None = Field(None, max_length=100, description="User's name for personalized conversation")
 
 
 class SessionResponse(BaseModel):
@@ -260,6 +285,9 @@ class SessionResponse(BaseModel):
     difficulty: int | None
     estimated_minutes: int | None
     error_message: str | None
+    # My Turn additions
+    user_name: str | None
+    current_speaker_type: str | None
     created_at: datetime
     updated_at: datetime
     

@@ -41,7 +41,8 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     const { data: turnsData, isLoading: turnsLoading } = useSessionTurns(id);
     const { data: metrics, isLoading: metricsLoading } = useSessionMetrics(id);
 
-    const turns = turnsData?.items || [];
+    // API returns Turn[] directly, not { items: Turn[] }
+    const turns = turnsData || [];
 
     // Format timestamp
     const formatTime = (dateString: string) => {
@@ -143,7 +144,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                             평균 E2E
                         </div>
                         <div className="font-medium text-xl">
-                            {formatDuration(metrics?.avg_e2e_latency_ms)}
+                            {formatDuration(metrics?.e2e_avg_ms)}
                         </div>
                     </CardContent>
                 </Card>
@@ -176,15 +177,15 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                 {turns.map((turn: Turn) => (
                                     <div
                                         key={turn.id}
-                                        className={`flex gap-3 ${turn.turn_type === 'user_speech'
-                                                ? 'flex-row-reverse'
-                                                : ''
+                                        className={`flex gap-3 ${turn.turn_type === 'USER'
+                                            ? 'flex-row-reverse'
+                                            : ''
                                             }`}
                                     >
                                         <div
-                                            className={`max-w-[70%] p-3 rounded-lg ${turn.turn_type === 'user_speech'
-                                                    ? 'bg-primary/10'
-                                                    : 'bg-muted'
+                                            className={`max-w-[70%] p-3 rounded-lg ${turn.turn_type === 'USER'
+                                                ? 'bg-primary/10'
+                                                : 'bg-muted'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2 mb-1">
@@ -192,10 +193,10 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     {turn.speaker_name}
                                                 </span>
                                                 <span className="text-xs text-muted-foreground">
-                                                    {formatTime(turn.timestamp)}
+                                                    {formatTime(turn.created_at)}
                                                 </span>
                                             </div>
-                                            <p className="text-sm">{turn.content}</p>
+                                            <p className="text-sm">{turn.content_text}</p>
                                             {turn.audio_url && (
                                                 <audio
                                                     src={turn.audio_url}
@@ -254,7 +255,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 E2E 평균
                                             </div>
                                             <div className="text-2xl font-bold">
-                                                {formatDuration(metrics.avg_e2e_latency_ms)}
+                                                {formatDuration(metrics.e2e_avg_ms)}
                                             </div>
                                         </div>
                                         <div>
@@ -262,7 +263,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 E2E P50
                                             </div>
                                             <div className="text-2xl font-bold">
-                                                {formatDuration(metrics.p50_e2e_latency_ms)}
+                                                {formatDuration(metrics.e2e_p50_ms)}
                                             </div>
                                         </div>
                                         <div>
@@ -270,7 +271,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 E2E P95
                                             </div>
                                             <div className="text-2xl font-bold">
-                                                {formatDuration(metrics.p95_e2e_latency_ms)}
+                                                {formatDuration(metrics.e2e_p95_ms)}
                                             </div>
                                         </div>
                                     </div>
@@ -289,7 +290,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 STT 평균
                                             </div>
                                             <div className="text-xl font-bold">
-                                                {formatDuration(metrics.avg_asr_latency_ms)}
+                                                {formatDuration(metrics.asr_avg_ms)}
                                             </div>
                                         </div>
                                         <div>
@@ -297,7 +298,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 LLM 평균
                                             </div>
                                             <div className="text-xl font-bold">
-                                                {formatDuration(metrics.avg_llm_latency_ms)}
+                                                {formatDuration(metrics.llm_avg_ms)}
                                             </div>
                                         </div>
                                         <div>
@@ -305,7 +306,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 TTS 평균
                                             </div>
                                             <div className="text-xl font-bold">
-                                                {formatDuration(metrics.avg_tts_latency_ms)}
+                                                {formatDuration(metrics.tts_avg_ms)}
                                             </div>
                                         </div>
                                     </div>

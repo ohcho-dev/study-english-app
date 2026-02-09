@@ -10,6 +10,7 @@ export type ConversationMode = 'turn_based' | 'free_form';
 export type ParticipantType = 'moderator' | 'ai' | 'user';
 export type SessionStatus = 'active' | 'waiting_user' | 'paused' | 'completed' | 'error';
 export type TurnType = 'system' | 'moderator' | 'ai' | 'user';
+export type FirstSpeaker = 'moderator_first' | 'ai_first' | 'user_first';
 
 // ============================================================================
 // Voice Settings
@@ -42,6 +43,9 @@ export interface Participant {
     voice_id: string | null;
     voice_settings: VoiceSettings | null;
     order_index: number;
+    // My Turn additions
+    greeting_message: string | null;
+    avatar_url: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -53,6 +57,9 @@ export interface ParticipantCreate {
     voice_id?: string;
     voice_settings?: VoiceSettings;
     order_index: number;
+    // My Turn additions
+    greeting_message?: string;
+    avatar_url?: string;
 }
 
 // ============================================================================
@@ -70,6 +77,9 @@ export interface Template {
     difficulty: number | null;
     estimated_minutes: number | null;
     is_active: boolean;
+    // My Turn additions
+    first_speaker: FirstSpeaker;
+    scene_context: string | null;
     participants: Participant[];
     created_at: string;
     updated_at: string;
@@ -98,6 +108,9 @@ export interface TemplateCreate {
     difficulty?: number;
     estimated_minutes?: number;
     is_active?: boolean;
+    // My Turn additions
+    first_speaker?: FirstSpeaker;
+    scene_context?: string;
     participants?: ParticipantCreate[];
 }
 
@@ -111,6 +124,9 @@ export interface TemplateUpdate {
     difficulty?: number;
     estimated_minutes?: number;
     is_active?: boolean;
+    // My Turn additions
+    first_speaker?: FirstSpeaker;
+    scene_context?: string;
     participants?: ParticipantCreate[];
 }
 
@@ -133,6 +149,9 @@ export interface Session {
     difficulty: number | null;
     estimated_minutes: number | null;
     error_message: string | null;
+    // My Turn additions
+    user_name: string | null;
+    current_speaker_type: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -155,6 +174,8 @@ export interface SessionCreate {
     variant?: string;
     difficulty?: number;
     estimated_minutes?: number;
+    // My Turn additions
+    user_name?: string;
 }
 
 // ============================================================================
@@ -211,6 +232,16 @@ export interface Run0LogRequest {
 export interface Run0LogResponse {
     success: boolean;
     e2e_latency_ms: number;
+}
+
+// My Turn - Greeting Response
+export interface GreetingResponse {
+    greeting_text: string | null;
+    audio_url: string | null;
+    audio_base64: string | null;
+    speaker_name: string | null;
+    speaker_type: ParticipantType | null;
+    audio_duration_ms: number | null;
 }
 
 // ============================================================================

@@ -6,12 +6,15 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
+    createSession,
+    endSession,
+    generateGreeting,
     getAvailableVoices,
     getTestPhrases,
     logClientTimestamp,
     processVoice,
 } from '../api/conversationsApi';
-import type { Run0VoiceResponse } from './types';
+import type { GreetingResponse, Run0VoiceResponse } from './types';
 
 // ============================================================================
 // Experiment Configuration Types
@@ -40,6 +43,8 @@ export interface Run0Config {
     difficulty: number;
     /** Estimated session duration in minutes */
     estimatedMinutes: number;
+    /** Custom greeting override */
+    customGreeting: string;
 }
 
 export const DEFAULT_RUN0_CONFIG: Run0Config = {
@@ -51,12 +56,13 @@ Respond naturally to what the user says.`,
     autoPlayAudio: true,
     showMetrics: true,
     enableTimestampLogging: true,
-    warmupIterations: 2,
-    testIterations: 10,
+    warmupIterations: 1,
+    testIterations: 4,
     targetLatencyMs: 3000,
     maxLatencyMs: 5000,
     difficulty: 3,
     estimatedMinutes: 5,
+    customGreeting: '',
 };
 
 // ============================================================================
@@ -95,6 +101,10 @@ export interface Run0State {
     lastResponse: Run0VoiceResponse | null;
     /** Error message if any */
     error: string | null;
+    /** Greeting response */
+    greeting: GreetingResponse | null;
+    /** Is greeting playing */
+    isGreetingPlaying: boolean;
 }
 
 // ============================================================================
@@ -134,6 +144,8 @@ export const useRun0 = (templateId?: string) => {
         results: [],
         lastResponse: null,
         error: null,
+        greeting: null,
+        isGreetingPlaying: false,
     });
 
     // Audio element for playback
@@ -184,12 +196,17 @@ export const useRun0 = (templateId?: string) => {
                 timestamp: Date.now(),
             };
 
+            const nextIteration = state.currentIteration + 1;
+            const totalIter = config.warmupIterations + config.testIterations;
+            const isComplete = nextIteration >= totalIter;
+
             setState((prev) => ({
                 ...prev,
                 lastResponse: response,
                 results: [...prev.results, testResult],
-                currentIteration: prev.currentIteration + 1,
+                currentIteration: nextIteration,
                 isProcessing: false,
+                isRunning: !isComplete, // Stop running if complete
             }));
 
             // Auto-play audio if enabled
@@ -243,18 +260,41 @@ export const useRun0 = (templateId?: string) => {
                     }
                 }
             }
+
+            // Handle completion (non-blocking)
+            if (isComplete) {
+                // Call endSession API
+                const sessionIdToEnd = state.sessionId || response.session_id;
+                setTimeout(async () => {
+                    try {
+                        await endSession(sessionIdToEnd, 'completed');
+                        alert('모든 테스트가 완료되었습니다.');
+                    } catch (error) {
+                        console.error('Failed to auto-end session:', error);
+                    }
+                }, 100);
+            }
         },
         onError: (error) => {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+            // Check for session timeout (409 Conflict)
+            if (errorMessage.includes('409') || errorMessage.toLowerCase().includes('time out')) {
+                alert('세션이 만료되었습니다. 페이지를 새로고침합니다.');
+                window.location.reload();
+                return;
+            }
+
             setState((prev) => ({
                 ...prev,
                 isProcessing: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: errorMessage,
             }));
         },
     });
 
-    // Start experiment
-    const startExperiment = useCallback(() => {
+    // Start experiment with optional user name
+    const startExperiment = useCallback(async () => {
         setState({
             sessionId: null,
             isRunning: true,
@@ -263,13 +303,73 @@ export const useRun0 = (templateId?: string) => {
             results: [],
             lastResponse: null,
             error: null,
+            greeting: null,
+            isGreetingPlaying: false,
         });
-    }, []);
+
+        // If we have a templateId, create a session and fetch greeting
+        if (templateId) {
+            try {
+                const session = await createSession({
+                    template_id: templateId,
+                    difficulty: config.difficulty,
+                    estimated_minutes: config.estimatedMinutes,
+                });
+
+                setState(prev => ({ ...prev, sessionId: session.id }));
+
+                // Fetch and play greeting with voiceId and customGreeting
+                const greetingResponse = await generateGreeting(session.id, {
+                    voiceId: config.voiceId,
+                    customGreeting: config.customGreeting || undefined,
+                });
+                setState(prev => ({ ...prev, greeting: greetingResponse }));
+
+                // Auto-play greeting if there is one
+                if (greetingResponse.greeting_text && config.autoPlayAudio) {
+                    const audio = audioRef();
+                    if (audio) {
+                        let audioSrc: string | null = null;
+                        if (greetingResponse.audio_base64) {
+                            audioSrc = `data:audio/mp3;base64,${greetingResponse.audio_base64}`;
+                        } else if (greetingResponse.audio_url) {
+                            const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+                            audioSrc = greetingResponse.audio_url.startsWith('http')
+                                ? greetingResponse.audio_url
+                                : `${serverUrl}${greetingResponse.audio_url}`;
+                        }
+
+                        if (audioSrc) {
+                            audio.src = audioSrc;
+                            setState(prev => ({ ...prev, isGreetingPlaying: true }));
+                            audio.onended = () => {
+                                setState(prev => ({ ...prev, isGreetingPlaying: false }));
+                            };
+                            audio.play().catch(console.error);
+                        }
+                    }
+                }
+            } catch (error) {
+                setState(prev => ({
+                    ...prev,
+                    error: error instanceof Error ? error.message : 'Failed to start session',
+                }));
+            }
+        }
+    }, [templateId, config, audioRef]);
 
     // Stop experiment
-    const stopExperiment = useCallback(() => {
+    const stopExperiment = useCallback(async () => {
+        // Call end session API to set ended_at and calculate metrics
+        if (state.sessionId) {
+            try {
+                await endSession(state.sessionId, 'completed');
+            } catch (error) {
+                console.error('Failed to end session:', error);
+            }
+        }
         setState((prev) => ({ ...prev, isRunning: false }));
-    }, []);
+    }, [state.sessionId]);
 
     // Process a voice recording
     const processRecording = useCallback(
@@ -295,6 +395,8 @@ export const useRun0 = (templateId?: string) => {
             results: [],
             lastResponse: null,
             error: null,
+            greeting: null,
+            isGreetingPlaying: false,
         });
     }, []);
 

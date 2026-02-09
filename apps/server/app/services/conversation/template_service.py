@@ -134,6 +134,8 @@ class TemplateService:
             difficulty=template.difficulty,
             estimated_minutes=template.estimated_minutes,
             is_active=template.is_active,
+            first_speaker=template.first_speaker.value if hasattr(template.first_speaker, 'value') else template.first_speaker,
+            scene_context=template.scene_context,
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -144,6 +146,8 @@ class TemplateService:
                     voice_id=p.voice_id,
                     voice_settings=p.voice_settings,
                     order_index=p.order_index,
+                    greeting_message=p.greeting_message,
+                    avatar_url=p.avatar_url,
                     created_at=p.created_at,
                     updated_at=p.updated_at,
                 )
@@ -173,6 +177,8 @@ class TemplateService:
             difficulty=data.difficulty,
             estimated_minutes=data.estimated_minutes,
             is_active=data.is_active,
+            first_speaker=data.first_speaker,
+            scene_context=data.scene_context,
         )
         self.db.add(template)
         await self.db.flush()
@@ -239,6 +245,10 @@ class TemplateService:
             template.estimated_minutes = data.estimated_minutes
         if data.is_active is not None:
             template.is_active = data.is_active
+        if data.first_speaker is not None:
+            template.first_speaker = data.first_speaker
+        if data.scene_context is not None:
+            template.scene_context = data.scene_context
         
         # Update participants if provided (replace all)
         if data.participants is not None:
@@ -310,6 +320,8 @@ class TemplateService:
             difficulty=existing.difficulty,
             estimated_minutes=existing.estimated_minutes,
             is_active=True,
+            first_speaker=existing.first_speaker,
+            scene_context=existing.scene_context,
             participants=[
                 {
                     "participant_type": p.participant_type,
@@ -318,6 +330,8 @@ class TemplateService:
                     "voice_id": p.voice_id,
                     "voice_settings": p.voice_settings,
                     "order_index": p.order_index,
+                    "greeting_message": p.greeting_message,
+                    "avatar_url": p.avatar_url,
                 }
                 for p in existing.participants
             ],

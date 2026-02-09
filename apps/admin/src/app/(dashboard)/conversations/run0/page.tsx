@@ -46,7 +46,10 @@ function ExperimentContent() {
     // Experiment settings (editable)
     const [difficulty, setDifficulty] = useState(3);
     const [estimatedMinutes, setEstimatedMinutes] = useState(5);
+    const [customGreeting, setCustomGreeting] = useState('');
     const [participantVoices, setParticipantVoices] = useState<ParticipantVoiceSetting[]>([]);
+
+    const [isRunning, setIsRunning] = useState(false);
 
     const { data: templatesData, isLoading: templatesLoading } = useTemplates(1, 50, true);
     const { data: selectedTemplate } = useTemplate(selectedTemplateId || undefined);
@@ -59,7 +62,7 @@ function ExperimentContent() {
         if (selectedTemplate?.participants) {
             setParticipantVoices(
                 selectedTemplate.participants
-                    .filter((p) => p.participant_type === 'ai')
+                    .filter((p) => p.participant_type === 'ai' || p.participant_type === 'moderator')
                     .map((p) => ({
                         participantName: p.name,
                         participantType: p.participant_type,
@@ -95,7 +98,7 @@ function ExperimentContent() {
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" disabled={templatesLoading}>
+                                <Button variant="outline" disabled={templatesLoading || isRunning}>
                                     {templatesLoading ? '로딩 중...' : '템플릿 선택'}
                                     <ChevronDown className="h-4 w-4 ml-2" />
                                 </Button>
@@ -170,14 +173,13 @@ function ExperimentContent() {
                                 </div>
                             </div>
 
-                            {selectedTemplate.greeting_message && (
-                                <div>
-                                    <p className="text-xs text-muted-foreground mb-1">인사 메시지</p>
-                                    <div className="text-sm bg-muted/50 p-3 rounded-md">
-                                        &ldquo;{selectedTemplate.greeting_message}&rdquo;
-                                    </div>
+                            {/* Default Greeting Display */}
+                            <div>
+                                <p className="text-xs text-muted-foreground mb-1">기본 인사말 (템플릿)</p>
+                                <div className="text-sm bg-muted/50 p-3 rounded-md whitespace-pre-wrap text-muted-foreground italic">
+                                    {selectedTemplate.greeting_message || '(설정되지 않음 - AI 자동 생성)'}
                                 </div>
-                            )}
+                            </div>
 
                             {/* Participants */}
                             <div>
@@ -189,28 +191,30 @@ function ExperimentContent() {
                                     {selectedTemplate.participants?.map((p, i) => (
                                         <div
                                             key={i}
-                                            className="flex items-center gap-2 text-sm bg-muted/30 p-2 rounded"
+                                            className="text-sm bg-muted/30 p-2 rounded"
                                         >
-                                            <Badge
-                                                className={
-                                                    p.participant_type === 'ai'
-                                                        ? 'bg-purple-500'
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Badge
+                                                    className={
+                                                        p.participant_type === 'ai'
+                                                            ? 'bg-purple-500'
+                                                            : p.participant_type === 'moderator'
+                                                                ? 'bg-blue-500'
+                                                                : 'bg-green-500'
+                                                    }
+                                                >
+                                                    {p.participant_type === 'ai'
+                                                        ? 'AI'
                                                         : p.participant_type === 'moderator'
-                                                            ? 'bg-blue-500'
-                                                            : 'bg-green-500'
-                                                }
-                                            >
-                                                {p.participant_type === 'ai'
-                                                    ? 'AI'
-                                                    : p.participant_type === 'moderator'
-                                                        ? '진행자'
-                                                        : '사용자'}
-                                            </Badge>
-                                            <span className="font-medium">{p.name}</span>
+                                                            ? '진행자'
+                                                            : '사용자'}
+                                                </Badge>
+                                                <span className="font-medium">{p.name}</span>
+                                            </div>
                                             {p.persona && (
-                                                <span className="text-muted-foreground text-xs truncate">
-                                                    - {p.persona}
-                                                </span>
+                                                <p className="text-muted-foreground text-xs whitespace-pre-wrap ml-1">
+                                                    {p.persona}
+                                                </p>
                                             )}
                                         </div>
                                     ))}
@@ -239,6 +243,7 @@ function ExperimentContent() {
                                         max={5}
                                         value={difficulty}
                                         onChange={(e) => setDifficulty(parseInt(e.target.value) || 1)}
+                                        disabled={isRunning}
                                     />
                                 </div>
                                 <div>
@@ -253,29 +258,31 @@ function ExperimentContent() {
                                         onChange={(e) =>
                                             setEstimatedMinutes(parseInt(e.target.value) || 1)
                                         }
+                                        disabled={isRunning}
                                     />
                                 </div>
                             </div>
 
-                            {/* Voice Settings for AI Participants */}
+                            {/* Voice Settings for AI/Moderator Participants */}
                             {participantVoices.length > 0 && (
                                 <div>
                                     <p className="text-sm font-medium mb-2 flex items-center gap-1">
                                         <Volume2 className="h-4 w-4" />
-                                        AI 음성 설정
+                                        참여자 음성 설정
                                     </p>
                                     <div className="space-y-3">
                                         {participantVoices.map((pv) => (
                                             <div key={pv.participantName}>
                                                 <label className="text-xs text-muted-foreground block mb-1">
-                                                    {pv.participantName}
+                                                    {pv.participantName} ({pv.participantType === 'moderator' ? '진행자' : 'AI'})
                                                 </label>
                                                 <select
                                                     value={pv.voiceId}
                                                     onChange={(e) =>
                                                         updateParticipantVoice(pv.participantName, e.target.value)
                                                     }
-                                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                                                    disabled={isRunning}
+                                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
                                                 >
                                                     <option value="">기본 음성</option>
                                                     {voices.map((v) => (
@@ -289,6 +296,24 @@ function ExperimentContent() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Custom Greeting Override */}
+                            <div>
+                                <label className="text-sm font-medium block mb-1.5">
+                                    인사 메시지 (선택)
+                                </label>
+                                <textarea
+                                    value={customGreeting}
+                                    onChange={(e) => setCustomGreeting(e.target.value)}
+                                    placeholder="비워두면 AI가 자동으로 인사말을 생성합니다..."
+                                    rows={2}
+                                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                    disabled={isRunning}
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    대화 시작 시 첫 발화자가 할 말을 지정합니다.
+                                </p>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -302,7 +327,9 @@ function ExperimentContent() {
                     difficulty,
                     estimatedMinutes,
                     participantVoices,
+                    customGreeting,
                 }}
+                onStatusChange={setIsRunning}
             />
         </div>
     );

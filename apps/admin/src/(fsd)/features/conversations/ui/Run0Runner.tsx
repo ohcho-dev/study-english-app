@@ -13,6 +13,7 @@ import { Play, Square, RotateCcw, Download, MessageSquare } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Badge } from '@/shared/ui/badge';
+import { Input } from '@/shared/ui/input';
 
 import { useRun0, useTestPhrases } from '../model/useRun0';
 import { VoiceRecorder } from './VoiceRecorder';
@@ -30,6 +31,7 @@ interface ExperimentSettings {
     difficulty: number;
     estimatedMinutes: number;
     participantVoices: ParticipantVoiceSetting[];
+    customGreeting?: string;
 }
 
 interface Run0RunnerProps {
@@ -38,10 +40,11 @@ interface Run0RunnerProps {
     /** Template ID for new sessions */
     templateId?: string;
     /** Experiment settings from parent */
-    experimentSettings?: ExperimentSettings;
+    /** Callback for experiment status changes */
+    onStatusChange?: (isRunning: boolean) => void;
 }
 
-export const Run0Runner = ({ template, templateId, experimentSettings }: Run0RunnerProps) => {
+export const Run0Runner = ({ template, templateId, experimentSettings, onStatusChange }: Run0RunnerProps) => {
     const effectiveTemplateId = template?.id || templateId;
 
     const run0 = useRun0(effectiveTemplateId);
@@ -49,6 +52,11 @@ export const Run0Runner = ({ template, templateId, experimentSettings }: Run0Run
 
     const [selectedPhrase, setSelectedPhrase] = useState<string | null>(null);
     const [showConversation, setShowConversation] = useState(true);
+
+    // Notify parent of running state changes
+    useEffect(() => {
+        onStatusChange?.(run0.isRunning);
+    }, [run0.isRunning, onStatusChange]);
 
     // Sync experiment settings and template to run0 config
     useEffect(() => {
@@ -62,9 +70,8 @@ export const Run0Runner = ({ template, templateId, experimentSettings }: Run0Run
         // Apply voice from experiment settings (first AI participant)
         if (experimentSettings?.participantVoices?.length) {
             const firstVoice = experimentSettings.participantVoices[0];
-            if (firstVoice.voiceId) {
-                updates.voiceId = firstVoice.voiceId;
-            }
+            // If voiceId is provided, use it. If empty (Default), revert to default voice.
+            updates.voiceId = firstVoice.voiceId || 'en-US-Wavenet-F';
         }
 
         // Apply difficulty and estimated time
@@ -75,7 +82,13 @@ export const Run0Runner = ({ template, templateId, experimentSettings }: Run0Run
             updates.estimatedMinutes = experimentSettings.estimatedMinutes;
         }
 
+        // Apply custom greeting
+        if (experimentSettings?.customGreeting !== undefined) {
+            updates.customGreeting = experimentSettings.customGreeting;
+        }
+
         if (Object.keys(updates).length > 0) {
+            console.log('[Run0Runner] Updating config:', updates);
             run0.updateConfig(updates);
         }
     }, [template?.system_prompt, experimentSettings]);
@@ -169,6 +182,50 @@ export const Run0Runner = ({ template, templateId, experimentSettings }: Run0Run
                             {template.difficulty && (
                                 <Badge>난이도 {template.difficulty}/5</Badge>
                             )}
+                            <Badge variant="secondary">
+                                첫 발화자: {template.first_speaker === 'moderator_first' ? '모더레이터' :
+                                    template.first_speaker === 'ai_first' ? 'AI' : '사용자'}
+                            </Badge>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Greeting Display */}
+            {run0.greeting && run0.greeting.greeting_text && (
+                <Card className="border-primary/30 bg-primary/5">
+                    <CardContent className="py-4">
+                        <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                                <MessageSquare className="h-5 w-5 text-primary" />
+                            </div>
+                            <div className="flex-1 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-medium text-sm">
+                                        {run0.greeting.speaker_name || 'AI'}
+                                    </span>
+                                    <Badge variant="outline" className="text-xs">
+                                        {run0.greeting.speaker_type === 'moderator' ? '모더레이터' : 'AI'}
+                                    </Badge>
+                                    {run0.isGreetingPlaying && (
+                                        <Badge className="animate-pulse">재생 중...</Badge>
+                                    )}
+                                </div>
+                                <p className="text-sm">{run0.greeting.greeting_text}</p>
+                                {(run0.greeting.audio_base64 || run0.greeting.audio_url) && !run0.isGreetingPlaying && (
+                                    <audio
+                                        src={
+                                            run0.greeting.audio_base64
+                                                ? `data:audio/mp3;base64,${run0.greeting.audio_base64}`
+                                                : run0.greeting.audio_url?.startsWith('http')
+                                                    ? run0.greeting.audio_url
+                                                    : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${run0.greeting.audio_url}`
+                                        }
+                                        controls
+                                        className="w-full h-8 mt-2"
+                                    />
+                                )}
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
@@ -181,6 +238,7 @@ export const Run0Runner = ({ template, templateId, experimentSettings }: Run0Run
                         config={run0.config}
                         onConfigChange={run0.updateConfig}
                         defaultCollapsed={false}
+                        disabled={run0.isRunning}
                     />
 
                     {/* Test Phrases */}

@@ -90,6 +90,20 @@ class TurnType(str, enum.Enum):
     USER = "user"
 
 
+class FirstSpeaker(str, enum.Enum):
+    """First speaker setting for a conversation template.
+    
+    Attributes:
+        MODERATOR_FIRST: Moderator speaks first with scene introduction.
+        AI_FIRST: AI participant speaks first.
+        USER_FIRST: User speaks first.
+    """
+    
+    MODERATOR_FIRST = "moderator_first"
+    AI_FIRST = "ai_first"
+    USER_FIRST = "user_first"
+
+
 # ============================================================================
 # Template Models
 # ============================================================================
@@ -128,6 +142,18 @@ class ConversationTemplate(Base):
     difficulty = Column(Integer, nullable=True)  # 1-5
     estimated_minutes = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    
+    # My Turn settings
+    first_speaker = Column(
+        Enum(
+            FirstSpeaker,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=FirstSpeaker.MODERATOR_FIRST,
+    )
+    scene_context = Column(Text, nullable=True)  # Shared context for all AI participants
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -181,6 +207,11 @@ class ConversationParticipant(Base):
     voice_id = Column(String(100), nullable=True)  # e.g., "en-US-Wavenet-F"
     voice_settings = Column(JSONB, nullable=True)  # {speaking_rate, pitch, ...}
     order_index = Column(Integer, nullable=False, default=0)
+    
+    # My Turn additions
+    greeting_message = Column(Text, nullable=True)  # First greeting for this participant
+    avatar_url = Column(String(500), nullable=True)  # Avatar image URL
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -240,6 +271,10 @@ class ConversationSession(Base):
     # Experiment settings (can override template defaults)
     difficulty = Column(Integer, nullable=True)  # 1-5
     estimated_minutes = Column(Integer, nullable=True)
+    
+    # My Turn additions
+    user_name = Column(String(100), nullable=True)  # User's name for personalized conversation
+    current_speaker_type = Column(String(20), nullable=True)  # moderator, ai, user
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(

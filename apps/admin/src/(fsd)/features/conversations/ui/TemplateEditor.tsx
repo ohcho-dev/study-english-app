@@ -20,6 +20,7 @@ import type {
     ParticipantCreate,
     ParticipantType,
     ConversationMode,
+    FirstSpeaker,
 } from '../model/types';
 
 interface TemplateEditorProps {
@@ -40,6 +41,12 @@ const MODES: { value: ConversationMode; label: string; description: string }[] =
     { value: 'free_form', label: '자유 형식', description: '자유롭게 대화' },
 ];
 
+const FIRST_SPEAKER_OPTIONS: { value: FirstSpeaker; label: string; description: string }[] = [
+    { value: 'moderator_first', label: '모더레이터', description: '진행자가 먼저 인사' },
+    { value: 'ai_first', label: 'AI', description: 'AI가 먼저 인사' },
+    { value: 'user_first', label: '사용자', description: '사용자가 먼저 말하기' },
+];
+
 export const TemplateEditor = ({
     template,
     onSave,
@@ -58,8 +65,10 @@ export const TemplateEditor = ({
 You help users practice English through natural conversation.
 Keep responses concise (1-3 sentences) and conversational.`
     );
-    const [greetingMessage, setGreetingMessage] = useState(template?.greeting_message || '');
     const [topic, setTopic] = useState(template?.topic || '');
+    // My Turn additions
+    const [firstSpeaker, setFirstSpeaker] = useState<FirstSpeaker>(template?.first_speaker || 'moderator_first');
+    const [sceneContext, setSceneContext] = useState(template?.scene_context || '');
     // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
@@ -124,8 +133,10 @@ Keep responses concise (1-3 sentences) and conversational.`
             description: description || undefined,
             mode,
             system_prompt: systemPrompt,
-            greeting_message: greetingMessage || undefined,
             topic: topic || undefined,
+            // My Turn additions
+            first_speaker: firstSpeaker,
+            scene_context: sceneContext || undefined,
             // difficulty and estimated_minutes are set in experiment page
             is_active: isActive,
             participants,
@@ -215,6 +226,27 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 </div>
                             </div>
 
+                            {/* My Turn: First Speaker Setting */}
+                            <div>
+                                <label className="text-sm font-medium block mb-1.5">
+                                    첫 발화자
+                                </label>
+                                <select
+                                    value={firstSpeaker}
+                                    onChange={(e) => setFirstSpeaker(e.target.value as FirstSpeaker)}
+                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                                >
+                                    {FIRST_SPEAKER_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label} - {opt.description}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    세션 시작 시 누가 먼저 말할지 결정합니다.
+                                </p>
+                            </div>
+
                             {/* Note: difficulty and estimated_minutes are set in experiment page */}
 
                             <div className="flex items-center gap-2">
@@ -241,26 +273,32 @@ Keep responses concise (1-3 sentences) and conversational.`
                             <textarea
                                 value={systemPrompt}
                                 onChange={(e) => setSystemPrompt(e.target.value)}
-                                placeholder="AI의 역할과 행동 지침..."
+                                placeholder="예: Keep responses to 1-3 sentences.&#10;Use simple English vocabulary suitable for beginners.&#10;Ask follow-up questions to keep the conversation going."
                                 rows={6}
                                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono"
                             />
+                            <p className="text-xs text-muted-foreground mt-1">
+                                LLM에게 전달되는 범용 지시사항입니다. (예: 응답 길이, 난이도, 대화 스타일)
+                            </p>
                         </CardContent>
                     </Card>
 
-                    {/* Greeting Message */}
+                    {/* Scene Context */}
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-base">인사 메시지</CardTitle>
+                            <CardTitle className="text-base">장면 콘텍스트</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <textarea
-                                value={greetingMessage}
-                                onChange={(e) => setGreetingMessage(e.target.value)}
-                                placeholder="대화 시작 시 AI가 먼저 하는 인사..."
-                                rows={2}
+                                value={sceneContext}
+                                onChange={(e) => setSceneContext(e.target.value)}
+                                placeholder="예: 친구가 내 집에 놀러와서 거실에서 이야기하는 상황.&#10;화창한 오후, 소파에 새운 장난감을 갖고 있다."
+                                rows={3}
                                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
+                            <p className="text-xs text-muted-foreground mt-1">
+                                모든 참여자가 공유하는 장면/상황 설명입니다. (참여자 페르소나와 별도)
+                            </p>
                         </CardContent>
                     </Card>
                 </div>

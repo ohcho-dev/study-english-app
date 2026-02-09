@@ -12,6 +12,11 @@ from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.schemas.common import HealthResponse
 
+# Configure logging to suppress verbose SQLAlchemy logs
+import logging
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+
 # Audio directory for TTS files
 AUDIO_DIR = Path(__file__).parent.parent / "static" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)

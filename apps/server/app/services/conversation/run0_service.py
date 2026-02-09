@@ -91,6 +91,15 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         """
         # Get or create session
         if session_id:
+            # Check for timeout before processing
+            is_timed_out = await self.session_service.check_session_timeout(session_id)
+            if is_timed_out:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=409,  # Conflict
+                    detail="Session has timed out due to inactivity"
+                )
+            
             session = await self.session_service.get_by_id(session_id)
             if not session:
                 raise ValueError(f"Session {session_id} not found")
@@ -118,12 +127,23 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         if not transcript:
             transcript = "[No speech detected]"
         
+        # Get first AI participant name for context
+        first_ai_speaker = None
+        if session_id:
+            session = await self.session_service.get_by_id_with_template(session_id)
+            if session and session.template and session.template.participants:
+                for p in session.template.participants:
+                    if p.participant_type == "ai":
+                        first_ai_speaker = p.name
+                        break
+        
         # Step 2: LLM - Generate response
         llm_start = time.time()
         reply_text = await self._generate_llm_response(
             user_input=transcript,
             system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
             session_id=session_id,
+            speaker_name=first_ai_speaker,
         )
         t2_llm_final = time.time() * 1000
         
@@ -167,6 +187,11 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             audio_url=tts_result.get("audio_url"),
             audio_duration_ms=tts_result.get("duration_ms"),
         )
+        
+        # IMPORTANT: Calculate metrics incrementally after each turn logic
+        # Ideally we do this after client logs timestamp, but we can do a partial update here if needed.
+        # This ensures ASR/LLM/TTS metrics are saved even if client-side timestamp logging is disabled.
+        await self.session_service.calculate_metrics(session_id)
         
         # Calculate latencies
         asr_latency_ms = int(t1_asr_final - t0_user_end)
@@ -213,6 +238,9 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
                 e2e_latency_ms=0,
             )
         
+        # Incremental Metric Update: Calculate metrics now that we have the full turn data including t3
+        await self.session_service.calculate_metrics(turn.session_id)
+        
         # Calculate E2E latency
         e2e_latency_ms = 0
         if turn.t0_user_end and turn.t3_audio_play_start:
@@ -228,13 +256,15 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         user_input: str,
         system_prompt: str,
         session_id: UUID,
+        speaker_name: str | None = None,
     ) -> str:
         """Generate LLM response using Gemini.
         
         Args:
             user_input: User's transcribed speech.
-            system_prompt: System prompt for the conversation.
+            system_prompt: Fallback system prompt if no template context.
             session_id: Session ID for context.
+            speaker_name: Current AI speaker name for context.
             
         Returns:
             Generated response text.
@@ -242,35 +272,42 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         # Get conversation history for context
         turns = await self.session_service.get_session_turns(session_id)
         
-        # Build conversation history
-        history = []
+        # Build dynamic context with persona and scene
+        context = await self.build_llm_context(session_id, speaker_name)
+        if not context or context == self.DEFAULT_SYSTEM_PROMPT:
+            context = system_prompt
+
+        # Create model without system_instruction (not supported in older versions)
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash",
+        )
+        
+        # Prepend system instruction to history as a fake turn if needed
+        # or just prepend to the first message if history is empty.
+        # Strategy: Add system prompt as a User message, and a dummy Model acknowledgment.
+        api_history = []
+        
+        # Add system context
+        api_history.append({"role": "user", "parts": [context]})
+        api_history.append({"role": "model", "parts": ["Understood. I will act as the specified persona."]})
+        
+        # Append actual conversation history
         for turn in turns[-10:]:  # Last 10 turns for context
             if turn.turn_type == "user":
-                history.append({"role": "user", "parts": [turn.content_text or ""]})
+                api_history.append({"role": "user", "parts": [turn.content_text or ""]})
             elif turn.turn_type == "ai":
-                history.append({"role": "model", "parts": [turn.content_text or ""]})
-        
-        # Create model (system prompts handled via first message)
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+                api_history.append({"role": "model", "parts": [turn.content_text or ""]})
         
         # Start chat with history
-        chat = model.start_chat(history=history)
-        
-        # Build message with system context for first turn
-        if not history:
-            # First turn - include system prompt
-            message = f"""[System Instructions]
-{system_prompt}
-
-[User Message]
-{user_input}"""
-        else:
-            message = user_input
+        chat = model.start_chat(history=api_history)
         
         # Generate response
-        response = chat.send_message(message)
-        
-        return response.text.strip()
+        try:
+            response = chat.send_message(user_input)
+            return response.text.strip()
+        except Exception as e:
+            print(f"LLM Generation Error: {e}")
+            return "I apologize, but I am having trouble responding right now."
     
     async def get_test_phrases(self) -> list[str]:
         """Get default test phrases for RUN0 testing.
@@ -285,3 +322,226 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             "I need a table for ten people and three sessions.",
             "Wait—really? That's amazing!",
         ]
+    
+        return "\n\n".join(context_parts)
+
+    def _get_difficulty_instruction(self, difficulty: int | None) -> str:
+        """Get system instruction for specific difficulty level."""
+        if not difficulty:
+            return ""
+            
+        instructions = {
+            1: "Use very simple words and short sentences (max 5 words). Speak slowly and clearly like talking to a beginner.",
+            2: "Use simple daily vocabulary. Keep sentences short and easy to understand.",
+            3: "Use standard conversational English. Speak at a moderate pace.",
+            4: "Use more complex sentence structures and varied vocabulary.",
+            5: "Use advanced vocabulary, idioms, and speak at a natural, fast pace like a native speaker."
+        }
+        return instructions.get(difficulty, "")
+
+    async def build_llm_context(
+        self,
+        session_id: UUID,
+        current_speaker_name: str | None = None,
+    ) -> str:
+        """Build LLM context with participant information.
+        
+        Args:
+            session_id: Session ID.
+            current_speaker_name: Name of the current AI speaker.
+            
+        Returns:
+            Formatted context string for LLM.
+        """
+        session = await self.session_service.get_by_id_with_template(session_id)
+        if not session or not session.template:
+            return self.DEFAULT_SYSTEM_PROMPT
+        
+        template = session.template
+        participants = template.participants
+        
+        # Format participant info
+        participants_info = []
+        current_speaker = None
+        for p in participants:
+            role_desc = f"- **{p.name}** ({p.participant_type})"
+            if p.persona:
+                role_desc += f": {p.persona}"
+            participants_info.append(role_desc)
+            
+            if current_speaker_name and p.name == current_speaker_name:
+                current_speaker = p
+        
+        # Build context
+        context_parts = []
+        
+        # Scene context
+        if template.scene_context:
+            context_parts.append(f"""[Scene Context]
+{template.scene_context}""")
+        elif template.description:
+            context_parts.append(f"""[Scene Context]
+{template.description}""")
+        
+        # Topic
+        if template.topic:
+            context_parts.append(f"[Topic] {template.topic}")
+        
+        # Participants
+        context_parts.append(f"""[Participants]
+{chr(10).join(participants_info)}""")
+        
+        # User info
+        user_name = session.user_name or "User"
+        context_parts.append(f"""[User Information]
+The student's name is {user_name}. Use their name naturally in conversation.""")
+        
+        # Difficulty Instruction
+        difficulty = session.difficulty or template.difficulty
+        diff_instruction = self._get_difficulty_instruction(difficulty)
+        
+        # Current speaker role
+        if current_speaker:
+            context_parts.append(f"""[Your Role]
+You are {current_speaker.name}. {current_speaker.persona or ''}
+{template.system_prompt}
+
+[Difficulty Instruction]
+{diff_instruction}""")
+        else:
+            context_parts.append(f"""[System Instructions]
+{template.system_prompt}
+
+[Difficulty Instruction]
+{diff_instruction}""")
+        
+        return "\n\n".join(context_parts)
+    
+    async def generate_greeting(
+        self,
+        session_id: UUID,
+        voice_id: str | None = None,
+        custom_greeting: str | None = None,
+    ) -> dict:
+        """Generate greeting for the first speaker when session starts.
+        
+        Args:
+            session_id: Session ID.
+            voice_id: Optional TTS voice ID override.
+            custom_greeting: Optional custom greeting text override.
+            
+        Returns:
+            Dict with greeting text, audio_url, and speaker info.
+        """
+        session = await self.session_service.get_by_id_with_template(session_id)
+        if not session or not session.template:
+            raise ValueError(f"Session {session_id} not found or has no template")
+        
+        template = session.template
+        participants = template.participants
+        
+        # Determine first speaker based on template setting
+        first_speaker = template.first_speaker  # moderator_first, ai_first, user_first
+        
+        if first_speaker == "user_first":
+            # User speaks first, no greeting needed
+            return {
+                "greeting_text": None,
+                "audio_url": None,
+                "speaker_name": None,
+                "speaker_type": "user",
+            }
+        
+        # Find the appropriate greeter
+        greeter = None
+        if first_speaker == "moderator_first":
+            # Find moderator
+            for p in participants:
+                if p.participant_type == "moderator":
+                    greeter = p
+                    break
+        elif first_speaker == "ai_first":
+            # Find first AI (not moderator, not user)
+            for p in participants:
+                if p.participant_type == "ai":
+                    greeter = p
+                    break
+        
+        # Fallback to first non-user participant
+        if not greeter:
+            for p in participants:
+                if p.participant_type != "user":
+                    greeter = p
+                    break
+        
+        if not greeter:
+            return {
+                "greeting_text": None,
+                "audio_url": None,
+                "speaker_name": None,
+                "speaker_type": None,
+            }
+        
+        # Get greeting text (priority: custom_greeting > participant > template > LLM generated)
+        greeting_text = custom_greeting or greeter.greeting_message or template.greeting_message
+        
+        # If no preset greeting, generate one using LLM
+        if not greeting_text:
+            context = await self.build_llm_context(
+                session_id=session_id,
+                current_speaker_name=greeter.name,
+            )
+            
+            model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+            user_name = session.user_name or "the student"
+            
+            prompt = f"""{context}
+
+[Task]
+Generate a friendly, natural greeting to start the conversation.
+The greeting should:
+1. Introduce yourself as {greeter.name}
+2. Greet {user_name} warmly
+3. Set the stage for the conversation topic
+4. Be 1-3 sentences long
+
+Respond ONLY with the greeting, nothing else."""
+            
+            response = model.generate_content(prompt)
+            greeting_text = response.text.strip()
+        
+        # Get voice (priority: passed voice_id > participant voice_id > default)
+        final_voice_id = voice_id or greeter.voice_id or "en-US-Wavenet-F"
+        tts_result = await self.tts_service.synthesize(
+            text=greeting_text,
+            voice_id=final_voice_id,
+            save_file=True,
+        )
+        
+        # Save greeting as a turn
+        await self.session_service.add_turn(
+            session_id=session_id,
+            turn_type=TurnType.MODERATOR if greeter.participant_type == "moderator" else TurnType.AI,
+            speaker_name=greeter.name,
+            content_text=greeting_text,
+            audio_url=tts_result.get("audio_url"),
+            audio_duration_ms=tts_result.get("duration_ms"),
+            tts_provider="google",
+            tts_voice=voice_id,
+        )
+        
+        # Update session's current speaker type
+        await self.session_service.update_current_speaker(
+            session_id=session_id,
+            speaker_type="user",  # After greeting, it's user's turn
+        )
+        
+        return {
+            "greeting_text": greeting_text,
+            "audio_url": tts_result.get("audio_url"),
+            "audio_base64": tts_result.get("audio_base64"),
+            "speaker_name": greeter.name,
+            "speaker_type": greeter.participant_type,
+            "audio_duration_ms": tts_result.get("duration_ms"),
+        }
+

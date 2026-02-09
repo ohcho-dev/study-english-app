@@ -5,6 +5,7 @@
 import { api } from '@/shared/lib';
 
 import type {
+    GreetingResponse,
     PaginatedResponse,
     Run0LogRequest,
     Run0LogResponse,
@@ -116,6 +117,25 @@ export const getSessionTurns = async (sessionId: string): Promise<Turn[]> => {
 
 export const getSessionMetrics = async (sessionId: string): Promise<SessionMetrics> => {
     return api.get<SessionMetrics>(`${CONVERSATIONS_BASE}/sessions/${sessionId}/metrics`);
+};
+
+/**
+ * Generate and fetch greeting audio for a session's first speaker
+ */
+export const generateGreeting = async (
+    sessionId: string,
+    options?: {
+        voiceId?: string;
+        customGreeting?: string;
+    }
+): Promise<GreetingResponse> => {
+    const params = new URLSearchParams();
+    if (options?.voiceId) params.append('voice_id', options.voiceId);
+    if (options?.customGreeting) params.append('custom_greeting', options.customGreeting);
+
+    const queryString = params.toString();
+    const url = `${CONVERSATIONS_BASE}/sessions/${sessionId}/greeting${queryString ? `?${queryString}` : ''}`;
+    return api.post<GreetingResponse>(url, null);
 };
 
 // ============================================================================
