@@ -234,6 +234,52 @@ User name: {session.user_name}
 
 ---
 
+```python
+def build_llm_context(session, current_speaker):
+    return f"""
+[Scene Context]
+{template.scene_context}
+
+[Participants]
+{format_participants(session.participants)}
+
+[Current Speaker]
+You are {current_speaker.name}. {current_speaker.persona}
+
+[User Information]
+User name: {session.user_name}
+
+[Conversation History]
+{format_history(session.turns)}
+
+[Your Individual Prompt]
+{current_speaker.system_prompt}
+"""
+```
+
+### 4.5 UI/UX 전략 (Phase 2+)
+
+기존 `run0` 페이지와의 충돌을 방지하고 개발 효율성을 높이기 위해 다음과 같이 페이지를 분리합니다.
+
+| 페이지 | 경로 | 목적 | 특징 |
+|--------|------|------|------|
+| **Latency Lab (Run0)** | `/conversations/run0` | 기술 검증 및 벤치마킹 | HTTP 방식, 레이턴시/메트릭 중심, WebRTC 미사용 |
+| **My Turn (New)** | `/conversations/my-turn` | 실제 학습 시나리오 경험 | WebRTC 기반, 실시간/턴제 UI, 화려한 인터랙션 |
+
+**템플릿 관리 전략**:
+- **단일 소스 (Single Source)**: `Target Templates`는 공유합니다.
+- **실행 모드 분리**: 템플릿 목록에서 "기술 테스트(Run0)"와 "시나리오 학습(My Turn)" 버튼을 분리하여 실행합니다.
+
+#### 4.5.1 템플릿 관리 화면 (`/conversations/templates`)
+- **통합 관리**: Run0용과 My Turn용 템플릿을 구분하지 않고 통합 관리합니다.
+- **속성 확장**: 기존 템플릿 모델에 `turn_mode`, `first_speaker` 등 My Turn 전용 속성이 추가됩니다. (기존 Run0는 이 속성을 무시하거나 기본값 사용)
+
+#### 4.5.2 템플릿 상세/편집 화면
+- **확장된 폼**: My Turn 기능(턴 모드, 발화 순서 등)을 설정할 수 있는 필드를 추가합니다.
+- **호환성 유지**: 기존 Run0 테스트를 위해 필수적인 필드(System Prompt, Voice ID 등)는 유지합니다.
+
+---
+
 ## 5. 구현 계획
 
 ### 5.1 Phase 1: 기반 고도화 (D1-D2)
@@ -387,6 +433,37 @@ POST /api/v1/conversations/run0/voice
     - is_session_complete: boolean
     - participants_context: object
 ```
+
+### 7.3 상세 서버 로직 (Phase 2+)
+
+#### 7.3.1 WebSocket 이벤트 핸들러 (`/ws/session/{id}`)
+
+| 이벤트 명 | 방향 | 설명 | 페이로드 예시 |
+|---|---|---|---|
+| `start_session` | Client→Server | 세션 시작 요청 | `{ "user_name": "Hero" }` |
+| `session_started` | Server→Client | 초기화 완료 및 참여자 정보 전송 | `{ "participants": [...], "sessionId": "..." }` |
+| `webrtc_offer` | Client→Server | WebRTC 연결 요청 (SDP) | `{ "sdp": "...", "type": "offer" }` |
+| `webrtc_answer` | Server→Client | WebRTC 연결 응답 (SDP) | `{ "sdp": "...", "type": "answer" }` |
+| `ice_candidate` | Bidirectional | NAT 통과를 위한 후보군 교환 | `{ "candidate": "...", "sdpMid": "..." }` |
+| `turn_changed` | Server→Client | 현재 발화자 변경 알림 | `{ "turnNumber": 1, "speaker": { "id": "...", "name": "AI1" } }` |
+| `user_turn` | Server→Client | 사용자 발화 차례 시작 (녹음 활성화) | `{ "hint": "Say hello to AI" }` |
+| `ai_speaking` | Server→Client | AI 발화 시작 알림 | `{ "text": "Hello, how are you?" }` |
+
+#### 7.3.2 Turn Orchestrator (State Machine)
+
+1.  **초기화 (`INIT`)**: DB 로드, 첫 턴 결정.
+2.  **발화 전 처리 (`PRE_TURN`)**:
+    *   `User`: `user_turn` 이벤트 전송.
+    *   `AI/Moderator`: LLM/TTS 파이프라인 트리거.
+3.  **발화 진행 (`SPEAKING`)**:
+    *   **AI**: LLM 스트리밍 응답 → TTS → WebRTC 오디오.
+    *   **User**: WebRTC 오디오 수신 → 실시간 STT → VAD 침묵 감지.
+4.  **발화 후 처리 (`POST_TURN`)**: 대화 기록 저장, 다음 턴 결정, `turn_changed` 브로드캐스트.
+
+#### 7.3.3 WebRTC 데이터 흐름
+
+*   **Audio In (User)**: 브라우저 마이크 → WebRTC → Python Server (`aiortc`) → VAD Filter → Google STT.
+*   **Audio Out (AI)**: Google TTS → PCM Audio → WebRTC → 브라우저 스피커.
 
 ---
 

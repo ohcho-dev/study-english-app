@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Copy, MoreHorizontal, Eye, Play } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Copy, MoreHorizontal, Eye, Play, MessageSquare } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
@@ -31,6 +31,8 @@ interface TemplateListProps {
     onView?: (id: string) => void;
     /** Start experiment with this template */
     onTest?: (id: string) => void;
+    /** Start My Turn scenario */
+    onMyTurn?: (id: string) => void;
 }
 
 export const TemplateList = ({
@@ -42,6 +44,7 @@ export const TemplateList = ({
     onCreate,
     onView,
     onTest,
+    onMyTurn,
 }: TemplateListProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [modeFilter, setModeFilter] = useState<string>('all');
@@ -175,8 +178,17 @@ export const TemplateList = ({
                                                         className="text-primary"
                                                     >
                                                         <Play className="h-4 w-4 mr-2" />
-                                                        실험 시작
+                                                        Run0 (Latency)
                                                     </DropdownMenuItem>
+                                                    {onMyTurn && (
+                                                        <DropdownMenuItem
+                                                            onClick={() => onMyTurn(template.id)}
+                                                            className="text-green-600"
+                                                        >
+                                                            <MessageSquare className="h-4 w-4 mr-2" />
+                                                            My Turn 시작
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     <DropdownMenuSeparator />
                                                 </>
                                             )}

@@ -14,6 +14,7 @@ export const ROUTES = {
     },
     conversations: {
         run0: '/conversations/run0',
+        myTurn: '/conversations/my-turn',
         templates: '/conversations/templates',
         sessions: '/conversations/sessions',
     },

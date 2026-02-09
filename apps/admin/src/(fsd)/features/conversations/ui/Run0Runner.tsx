@@ -131,7 +131,7 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold">RUN0 Voice Pipeline Test</h1>
+                    <h1 className="text-2xl font-bold">Latency Lab (Run0)</h1>
                     <p className="text-muted-foreground">
                         STT → LLM → TTS 파이프라인 레이턴시 베이스라인 측정
                     </p>

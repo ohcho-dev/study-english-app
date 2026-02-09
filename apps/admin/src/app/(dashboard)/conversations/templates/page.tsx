@@ -43,6 +43,10 @@ export default function TemplatesPage() {
         router.push(`/conversations/run0?template=${id}`);
     };
 
+    const handleMyTurn = (id: string) => {
+        router.push(`/conversations/my-turn?template=${id}`);
+    };
+
     return (
         <div className="p-6">
             <TemplateList
@@ -53,6 +57,7 @@ export default function TemplatesPage() {
                 onDuplicate={handleDuplicate}
                 onCreate={handleCreate}
                 onTest={handleTest}
+                onMyTurn={handleMyTurn}
             />
         </div>
     );

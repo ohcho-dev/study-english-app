@@ -64,7 +64,8 @@ const menuItems: MenuGroup[] = [
         title: '🎙️ 대화 시나리오',
         items: [
             { title: '템플릿 관리', href: ROUTES.conversations.templates, icon: Layout },
-            { title: '대화 실험', href: ROUTES.conversations.run0, icon: Mic },
+            { title: 'Latency Lab (Run0)', href: ROUTES.conversations.run0, icon: Mic },
+            { title: 'My Turn (시나리오)', href: ROUTES.conversations.myTurn, icon: MessageSquare },
             { title: '세션 기록', href: ROUTES.conversations.sessions, icon: Clock },
         ],
     },

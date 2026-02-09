@@ -1,4 +1,7 @@
-# 대화 시나리오 검증 - 상세 기획서
+# 대화 시나리오 검증 - 상세 기획서 (Latency Lab / RUN0)
+
+> **Note**: 본 문서는 **Run0 (Voice Tech Baseline)**에 대한 기획서입니다.
+> 현재 Admin UI에서는 **Latency Lab (Run0)**로 명명되어 있으며, WebRTC 기반의 본격적인 학습 시나리오는 **My Turn**으로 구분됩니다.
 
 > **작성일**: 2026-02-08  
 > **버전**: 1.0  
