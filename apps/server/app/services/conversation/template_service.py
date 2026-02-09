@@ -136,6 +136,7 @@ class TemplateService:
             is_active=template.is_active,
             first_speaker=template.first_speaker.value if hasattr(template.first_speaker, 'value') else template.first_speaker,
             scene_context=template.scene_context,
+            director_system_prompt=template.director_system_prompt,
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -179,6 +180,7 @@ class TemplateService:
             is_active=data.is_active,
             first_speaker=data.first_speaker,
             scene_context=data.scene_context,
+            director_system_prompt=data.director_system_prompt,
         )
         self.db.add(template)
         await self.db.flush()
@@ -249,6 +251,8 @@ class TemplateService:
             template.first_speaker = data.first_speaker
         if data.scene_context is not None:
             template.scene_context = data.scene_context
+        if data.director_system_prompt is not None:
+            template.director_system_prompt = data.director_system_prompt
         
         # Update participants if provided (replace all)
         if data.participants is not None:
@@ -322,6 +326,7 @@ class TemplateService:
             is_active=True,
             first_speaker=existing.first_speaker,
             scene_context=existing.scene_context,
+            director_system_prompt=existing.director_system_prompt,
             participants=[
                 {
                     "participant_type": p.participant_type,

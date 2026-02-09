@@ -60,6 +60,13 @@ export interface ParticipantCreate {
     // My Turn additions
     greeting_message?: string;
     avatar_url?: string;
+    greeting_message?: string;
+    avatar_url?: string;
+}
+
+export interface ScenarioStep {
+    speaker_index: number;
+    instruction?: string;
 }
 
 // ============================================================================
@@ -80,6 +87,9 @@ export interface Template {
     // My Turn additions
     first_speaker: FirstSpeaker;
     scene_context: string | null;
+    // Director Settings
+    director_system_prompt: string | null;
+    turn_sequence: ScenarioStep[] | null;
     participants: Participant[];
     created_at: string;
     updated_at: string;
@@ -111,6 +121,9 @@ export interface TemplateCreate {
     // My Turn additions
     first_speaker?: FirstSpeaker;
     scene_context?: string;
+    // Director Settings
+    director_system_prompt?: string;
+    turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
 }
 
@@ -127,6 +140,9 @@ export interface TemplateUpdate {
     // My Turn additions
     first_speaker?: FirstSpeaker;
     scene_context?: string;
+    // Director Settings
+    director_system_prompt?: string;
+    turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
 }
 
@@ -242,6 +258,11 @@ export interface GreetingResponse {
     speaker_name: string | null;
     speaker_type: ParticipantType | null;
     audio_duration_ms: number | null;
+}
+
+export interface DirectorPromptSpec {
+    base_prompt: string;
+    output_format: string;
 }
 
 // ============================================================================

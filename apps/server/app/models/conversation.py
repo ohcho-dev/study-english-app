@@ -139,6 +139,10 @@ class ConversationTemplate(Base):
     system_prompt = Column(Text, nullable=False)
     greeting_message = Column(Text, nullable=True)
     topic = Column(String(255), nullable=True)
+    
+    # Director Settings
+    director_system_prompt = Column(Text, nullable=True)  # Custom instruction for Scenario Director
+    
     difficulty = Column(Integer, nullable=True)  # 1-5
     estimated_minutes = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -153,6 +157,7 @@ class ConversationTemplate(Base):
         default=FirstSpeaker.MODERATOR_FIRST,
     )
     scene_context = Column(Text, nullable=True)  # Shared context for all AI participants
+    turn_sequence = Column(JSONB, nullable=True)  # Custom scenario script
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
@@ -209,6 +214,7 @@ class ConversationParticipant(Base):
     order_index = Column(Integer, nullable=False, default=0)
     
     # My Turn additions
+    difficulty = Column(Integer, nullable=True, default=1)  # 1-5 level
     greeting_message = Column(Text, nullable=True)  # First greeting for this participant
     avatar_url = Column(String(500), nullable=True)  # Avatar image URL
     
@@ -264,8 +270,8 @@ class ConversationSession(Base):
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     ended_at = Column(DateTime, nullable=True)
     device_type = Column(String(20), nullable=True)  # pc, mobile
-    browser = Column(String(100), nullable=True)
-    variant = Column(String(10), nullable=True)  # A, B for A/B testing
+    browser = Column(Text, nullable=True)
+    variant = Column(Text, nullable=True)  # JSON string for session config (overrides)
     error_message = Column(Text, nullable=True)
     
     # Experiment settings (can override template defaults)

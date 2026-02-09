@@ -93,3 +93,6 @@ export { Run0Runner } from './ui/Run0Runner';
 export { TemplateEditor } from './ui/TemplateEditor';
 export { TemplateList } from './ui/TemplateList';
 export { SessionList } from './ui/SessionList';
+export { MyTurnRunner } from './ui/MyTurnRunner';
+export { TemplateSelector } from './ui/TemplateSelector';
+export { SessionSettings } from './ui/SessionSettings';

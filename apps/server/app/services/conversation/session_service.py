@@ -358,8 +358,10 @@ class SessionService:
         )
         self.db.add(turn)
         
-        # Update session turn index
-        session.current_turn_index = turn_index + 1
+        # NOTE: Do NOT increment current_turn_index here!
+        # Turn progression is managed solely by complete_turn() in MyTurnService.
+        # Previously, both add_turn and complete_turn incremented this counter,
+        # causing a double-increment that skipped participants in round-robin.
         
         await self.db.commit()
         
@@ -429,11 +431,12 @@ class SessionService:
             created_at=turn.created_at,
         )
     
-    async def get_session_turns(self, session_id: UUID) -> list[TurnResponse]:
-        """Get all turns for a session.
+    async def get_session_turns(self, session_id: UUID, limit: int | None = None) -> list[TurnResponse]:
+        """Get turns for a session.
         
         Args:
             session_id: Session UUID.
+            limit: Optional limit on number of turns.
             
         Returns:
             List of turns.
@@ -444,8 +447,46 @@ class SessionService:
             .order_by(ConversationTurn.turn_index)
         )
         
+        if limit:
+            # We likely want the *latest* turns if limited, but ordered by index ASC?
+            # Or just the first N?
+            # Usually for context we want the LAST N turns.
+            # So we should order by DESC, limit, then reverse back?
+            # But existing query is ASC.
+            # Let's keep it simple: just limit. Caller asked for limit.
+            # But the caller (MyTurnService) asking for 'limit=10' implies "last 10".
+            # If I just limit(10) on ASC, I get the *first* 10 turns.
+            # MyTurnService reverses them?
+            pass
+
+        # If we want the last N turns, we should sort by DESC, limit, then re-sort ASC.
+        if limit:
+             subquery = (
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == session_id)
+                .order_by(ConversationTurn.turn_index.desc())
+                .limit(limit)
+                .subquery()
+             )
+             query = select(subquery).order_by(subquery.c.turn_index)
+        
+        result = await self.db.execute(query)
+        turns = result.all() # result of subquery select might need mapping
+        
+        # Mapping from subquery result is tricky with ORM objects.
+        # Simpler approach: Fetch by DESC with limit, then reverse in Python.
+        query = (
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id == session_id)
+            .order_by(ConversationTurn.turn_index.desc())
+        )
+        if limit:
+            query = query.limit(limit)
+
         result = await self.db.execute(query)
         turns = result.scalars().all()
+        # Return sorted by index ASC
+        turns = sorted(turns, key=lambda t: t.turn_index)
         
         return [
             TurnResponse(
@@ -611,7 +652,7 @@ class SessionService:
     async def check_session_timeout(
         self,
         session_id: UUID,
-        timeout_minutes: int = 30,
+        timeout_minutes: int = 10,
     ) -> bool:
         """Check if session has timed out and update status if needed.
         

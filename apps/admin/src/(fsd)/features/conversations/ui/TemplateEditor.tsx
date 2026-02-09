@@ -11,6 +11,11 @@ import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Input } from '@/shared/ui/input';
 import { Badge } from '@/shared/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs'; // Import Tabs
+import { Textarea } from '@/shared/ui/textarea'; // Assuming Textarea exists, or verify later. Wait, Textarea is usually in standard shadcn. Check `textarea.tsx` or use `textarea` html tag if not found.
+import { Label } from '@/shared/ui/label'; // Import Label
+import { useEffect } from 'react';
+import { getDirectorPromptSpec } from '../api/conversationsApi';
 
 // Voice settings are controlled in experiment page, not template
 import type {
@@ -21,6 +26,8 @@ import type {
     ParticipantType,
     ConversationMode,
     FirstSpeaker,
+    ScenarioStep,
+    DirectorPromptSpec,
 } from '../model/types';
 
 interface TemplateEditorProps {
@@ -69,6 +76,8 @@ Keep responses concise (1-3 sentences) and conversational.`
     // My Turn additions
     const [firstSpeaker, setFirstSpeaker] = useState<FirstSpeaker>(template?.first_speaker || 'moderator_first');
     const [sceneContext, setSceneContext] = useState(template?.scene_context || '');
+    // Director Settings
+    const [directorSystemPrompt, setDirectorSystemPrompt] = useState(template?.director_system_prompt || '');
     // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
@@ -81,8 +90,29 @@ Keep responses concise (1-3 sentences) and conversational.`
         })) || [
             { participant_type: 'ai', name: 'AI Tutor', order_index: 0 },
             { participant_type: 'user', name: 'Student', order_index: 1 },
+            { participant_type: 'user', name: 'Student', order_index: 1 },
         ]
     );
+    const [turnSequence, setTurnSequence] = useState<ScenarioStep[]>(
+        template?.turn_sequence || []
+    );
+
+    // Director Spec State
+    const [directorSpec, setDirectorSpec] = useState<DirectorPromptSpec | null>(null);
+
+    // Fetch Director Spec
+    useEffect(() => {
+        const fetchSpec = async () => {
+            try {
+                const response = await getDirectorPromptSpec();
+                console.log(response);
+                setDirectorSpec(response);
+            } catch (error) {
+                console.error("Failed to fetch director spec:", error);
+            }
+        };
+        fetchSpec();
+    }, []);
 
     // Add participant
     const addParticipant = () => {
@@ -137,12 +167,42 @@ Keep responses concise (1-3 sentences) and conversational.`
             // My Turn additions
             first_speaker: firstSpeaker,
             scene_context: sceneContext || undefined,
+            director_system_prompt: directorSystemPrompt || undefined,
+            turn_sequence: turnSequence,
             // difficulty and estimated_minutes are set in experiment page
             is_active: isActive,
             participants,
         };
 
         await onSave(data);
+    };
+
+    // --- Turn Sequence Handlers ---
+    const addStep = () => {
+        setTurnSequence([
+            ...turnSequence,
+            { speaker_index: 0, instruction: '' }
+        ]);
+    };
+
+    const removeStep = (index: number) => {
+        setTurnSequence(turnSequence.filter((_, i) => i !== index));
+    };
+
+    const updateStep = (index: number, updates: Partial<ScenarioStep>) => {
+        setTurnSequence(
+            turnSequence.map((step, i) => (i === index ? { ...step, ...updates } : step))
+        );
+    };
+
+    const moveStep = (index: number, direction: 'up' | 'down') => {
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= turnSequence.length) return;
+        const newSeq = [...turnSequence];
+        const temp = newSeq[index];
+        newSeq[index] = newSeq[newIndex];
+        newSeq[newIndex] = temp;
+        setTurnSequence(newSeq);
     };
 
     return (
@@ -196,7 +256,9 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+
+
+                            <div className="flex justify-end gap-2 mt-4">
                                 <div>
                                     <label className="text-sm font-medium block mb-1.5">
                                         대화 모드
@@ -264,22 +326,85 @@ Keep responses concise (1-3 sentences) and conversational.`
                         </CardContent>
                     </Card>
 
-                    {/* System Prompt */}
+                    {/* System Prompt & Director Prompt Tabs */}
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-base">시스템 프롬프트 *</CardTitle>
+                            <CardTitle className="text-base">프롬프트 설정</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <textarea
-                                value={systemPrompt}
-                                onChange={(e) => setSystemPrompt(e.target.value)}
-                                placeholder="예: Keep responses to 1-3 sentences.&#10;Use simple English vocabulary suitable for beginners.&#10;Ask follow-up questions to keep the conversation going."
-                                rows={6}
-                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                                LLM에게 전달되는 범용 지시사항입니다. (예: 응답 길이, 난이도, 대화 스타일)
-                            </p>
+                            <Tabs defaultValue="system" className="w-full">
+                                <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="system">참여자 공통 (System)</TabsTrigger>
+                                    <TabsTrigger value="director">오케스트레이터 (Director)</TabsTrigger>
+                                </TabsList>
+
+                                <TabsContent value="system" className="space-y-4 pt-4">
+                                    <div className="space-y-2">
+                                        <Label>시스템 프롬프트 *</Label>
+                                        <textarea
+                                            value={systemPrompt}
+                                            onChange={(e) => setSystemPrompt(e.target.value)}
+                                            placeholder="예: Keep responses to 1-3 sentences.&#10;Use simple English vocabulary suitable for beginners."
+                                            rows={6}
+                                            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-mono"
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            LLM에게 전달되는 범용 지시사항입니다. (예: 응답 길이, 난이도, 대화 스타일)
+                                        </p>
+                                    </div>
+                                </TabsContent>
+
+                                <TabsContent value="director" className="space-y-4 pt-4">
+                                    <div className="space-y-4">
+                                        {/* Immutable Base Prompt Display */}
+                                        <div className="rounded-md border bg-muted/50 p-4">
+                                            <details className="group">
+                                                <summary className="flex cursor-pointer items-center justify-between font-medium text-sm">
+                                                    <span>View Base System Instructions (Immutable)</span>
+                                                    <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                                                </summary>
+                                                <div className="mt-4 space-y-4 text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+                                                    <div>
+                                                        <strong className="text-foreground">Base Prompt:</strong>
+                                                        <div className="mt-1 p-2 bg-background rounded border">
+                                                            {directorSpec?.base_prompt || "Loading..."}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <strong className="text-foreground">Task & Output Protocol:</strong>
+                                                        <div className="mt-1 p-2 bg-background rounded border">
+                                                            {directorSpec?.output_format || "Loading..."}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </details>
+                                        </div>
+
+                                        <Label htmlFor="director_system_prompt">Additional Instructions (Custom)</Label>
+                                        <Textarea
+                                            id="director_system_prompt"
+                                            value={directorSystemPrompt}
+                                            onChange={(e) => setDirectorSystemPrompt(e.target.value)}
+                                            placeholder="Enter specific rules (e.g., 'If user speaks Korean, assign to Sarah')..."
+                                            className="min-h-[200px] font-mono text-sm"
+                                        />
+                                        <div className="text-xs text-muted-foreground space-y-1">
+                                            <p>These instructions are <strong>appended</strong> to the Base Prompt.</p>
+                                            <div className="bg-muted p-2 rounded">
+                                                <strong>Injected Variables:</strong>
+                                                <br />
+                                                <code>{"{{participants}}"}</code> : Participants list & roles
+                                                <br />
+                                                <code>{"{{script}}"}</code> : Scenario Script (Turn Sequence)
+                                                <br />
+                                                <code>{"{{history}}"}</code> : Conversation History
+                                                <br />
+                                                <code>{"{{user_input}}"}</code> : User's latest input
+                                            </div>
+                                        </div>
+                                    </div>
+                                </TabsContent>
+                            </Tabs>
                         </CardContent>
                     </Card>
 
@@ -293,7 +418,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 value={sceneContext}
                                 onChange={(e) => setSceneContext(e.target.value)}
                                 placeholder="예: 친구가 내 집에 놀러와서 거실에서 이야기하는 상황.&#10;화창한 오후, 소파에 새운 장난감을 갖고 있다."
-                                rows={3}
+                                rows={5}
                                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
                             <p className="text-xs text-muted-foreground mt-1">
@@ -302,6 +427,9 @@ Keep responses concise (1-3 sentences) and conversational.`
                         </CardContent>
                     </Card>
                 </div>
+
+
+
 
                 {/* Right Column: Participants */}
                 <div>
@@ -424,9 +552,45 @@ Keep responses concise (1-3 sentences) and conversational.`
                                                         ? '진행자 역할 설명...'
                                                         : '사용자 역할 설명...'
                                             }
-                                            rows={2}
+                                            rows={5}
                                             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                                         />
+                                    </div>
+
+                                    {/* My Turn Additions: Greeting & Default Voice */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs text-muted-foreground block mb-1">
+                                                첫 인사말 (Greeting)
+                                            </label>
+                                            <Input
+                                                value={participant.greeting_message || ''}
+                                                onChange={(e) =>
+                                                    updateParticipant(index, { greeting_message: e.target.value })
+                                                }
+                                                placeholder="Hello! Nice to meet you."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-muted-foreground block mb-1">
+                                                기본 목소리 (Default Voice)
+                                            </label>
+                                            <select
+                                                value={participant.voice_id || ''}
+                                                onChange={(e) =>
+                                                    updateParticipant(index, { voice_id: e.target.value || undefined })
+                                                }
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                                            >
+                                                <option value="">선택 안함 (기본값)</option>
+                                                <option value="en-US-Neural2-F">US Female (Neural2)</option>
+                                                <option value="en-US-Neural2-D">US Male (Neural2)</option>
+                                                <option value="en-US-Wavenet-F">US Female (Wavenet)</option>
+                                                <option value="en-US-Wavenet-D">US Male (Wavenet)</option>
+                                                <option value="en-GB-Neural2-A">UK Female (Neural2)</option>
+                                                <option value="en-GB-Neural2-B">UK Male (Neural2)</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -439,8 +603,105 @@ Keep responses concise (1-3 sentences) and conversational.`
                         </CardContent>
                     </Card>
                 </div>
+
             </div>
-        </div>
+
+            {/* Turn Sequence Editor (Full Width) */}
+            < Card >
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <div className="space-y-1">
+                        <CardTitle className="text-base">시나리오 스크립트 (선택사항)</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                            대화 순서와 지시사항을 미리 정의합니다. 설정하지 않으면 라운드 로빈 방식으로 진행됩니다.
+                        </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={addStep}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        스텝 추가
+                    </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {turnSequence.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+                            스크립트가 없습니다. 라운드 로빈(순차) 방식이 적용됩니다.
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {turnSequence.map((step, index) => (
+                                <div key={index} className="flex gap-4 p-4 border rounded-lg bg-card items-start">
+                                    <div className="flex flex-col gap-1 mt-2">
+                                        <Badge variant="outline" className="w-6 h-6 flex items-center justify-center rounded-full p-0">
+                                            {index + 1}
+                                        </Badge>
+                                        <div className="flex flex-col">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-5 w-5"
+                                                onClick={() => moveStep(index, 'up')}
+                                                disabled={index === 0}
+                                            >
+                                                <ChevronUp className="h-3 w-3" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-5 w-5"
+                                                onClick={() => moveStep(index, 'down')}
+                                                disabled={index === turnSequence.length - 1}
+                                            >
+                                                <ChevronDown className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <div className="md:col-span-1">
+                                            <label className="text-xs text-muted-foreground block mb-1">
+                                                발화자
+                                            </label>
+                                            <select
+                                                value={step.speaker_index}
+                                                onChange={(e) => updateStep(index, { speaker_index: parseInt(e.target.value) })}
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                                            >
+                                                {participants.map((p, pIdx) => (
+                                                    <option key={pIdx} value={pIdx}>
+                                                        {p.name} ({p.participant_type})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="md:col-span-3">
+                                            <label className="text-xs text-muted-foreground block mb-1">
+                                                지시사항 (Instruction)
+                                            </label>
+                                            <textarea
+                                                value={step.instruction || ''}
+                                                onChange={(e) => updateStep(index, { instruction: e.target.value })}
+                                                placeholder="예: Ask the user about their weekend plans. / Respond with a joke."
+                                                rows={2}
+                                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-destructive mt-2"
+                                        onClick={() => removeStep(index)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card >
+        </div >
+
     );
 };
 

@@ -14,3 +14,4 @@ export * from './tooltip';
 export * from './separator';
 export * from './skeleton';
 export * from './progress';
+export * from './textarea';

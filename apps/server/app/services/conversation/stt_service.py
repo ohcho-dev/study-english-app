@@ -98,21 +98,31 @@ class STTService:
                 "processing_time_ms": processing_time_ms,
             }
         
-        # Get first result (usually contains full transcript)
-        first_result = result["results"][0]
-        alternative = first_result.get("alternatives", [{}])[0]
-        
-        transcript = alternative.get("transcript", "")
-        confidence = alternative.get("confidence", 0.0)
-        
-        # Parse word timings
+        # Combine ALL result segments.
+        # When users pause between words/sentences, Google Cloud STT
+        # returns multiple result segments. We must join them all.
+        transcript_parts = []
+        total_confidence = 0.0
         words = []
-        for word_info in alternative.get("words", []):
-            words.append({
-                "word": word_info.get("word", ""),
-                "start_time": self._parse_duration(word_info.get("startTime", "0s")),
-                "end_time": self._parse_duration(word_info.get("endTime", "0s")),
-            })
+        num_results = len(result["results"])
+        
+        for segment in result["results"]:
+            alternative = segment.get("alternatives", [{}])[0]
+            seg_text = alternative.get("transcript", "")
+            if seg_text:
+                transcript_parts.append(seg_text.strip())
+            total_confidence += alternative.get("confidence", 0.0)
+            
+            # Parse word timings from each segment
+            for word_info in alternative.get("words", []):
+                words.append({
+                    "word": word_info.get("word", ""),
+                    "start_time": self._parse_duration(word_info.get("startTime", "0s")),
+                    "end_time": self._parse_duration(word_info.get("endTime", "0s")),
+                })
+        
+        transcript = " ".join(transcript_parts)
+        confidence = total_confidence / num_results if num_results > 0 else 0.0
         
         # Calculate duration from last word
         duration_ms = 0

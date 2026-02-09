@@ -20,6 +20,7 @@ import type {
     TemplateUpdate,
     Turn,
     VoiceInfo,
+    DirectorPromptSpec,
 } from '../model/types';
 
 const CONVERSATIONS_BASE = '/api/v1/conversations';
@@ -208,4 +209,12 @@ export const getTestPhrases = async (): Promise<string[]> => {
 
 export const getAvailableVoices = async (): Promise<VoiceInfo[]> => {
     return api.get<VoiceInfo[]>(`${CONVERSATIONS_BASE}/voices`);
+};
+
+// ============================================================================
+// Director API
+// ============================================================================
+
+export const getDirectorPromptSpec = async (): Promise<DirectorPromptSpec> => {
+    return api.get<DirectorPromptSpec>(`${CONVERSATIONS_BASE}/director-prompt-spec`);
 };

@@ -185,6 +185,10 @@ class TemplateBase(BaseModel):
         None,
         description="Shared context/scene description for all AI participants",
     )
+    director_system_prompt: str | None = Field(
+        None,
+        description="Custom instruction for Scenario Director",
+    )
 
 
 class TemplateCreate(TemplateBase):
@@ -210,6 +214,7 @@ class TemplateUpdate(BaseModel):
     is_active: bool | None = None
     first_speaker: FirstSpeakerType | None = None
     scene_context: str | None = None
+    director_system_prompt: str | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

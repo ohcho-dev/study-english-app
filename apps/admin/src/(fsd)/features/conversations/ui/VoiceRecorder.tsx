@@ -66,7 +66,7 @@ export const VoiceRecorder = ({
                 {/* Audio Level Ring */}
                 {recorder.isRecording && showAudioLevel && (
                     <div
-                        className="absolute inset-0 rounded-full border-4 border-red-400 animate-pulse pointer-events-none"
+                        className="absolute inset-0 rounded-full border-4 border-destructive/60 animate-pulse pointer-events-none"
                         style={{
                             transform: `scale(${1 + recorder.audioLevel * 0.3})`,
                             opacity: 0.5 + recorder.audioLevel * 0.5,
@@ -78,7 +78,7 @@ export const VoiceRecorder = ({
                 <Button
                     variant={recorder.isRecording ? 'destructive' : 'default'}
                     size="icon"
-                    className={`${sizeClasses[size]} rounded-full transition-all ${recorder.isRecording ? 'shadow-lg shadow-red-500/30' : ''
+                    className={`${sizeClasses[size]} rounded-full transition-all ${recorder.isRecording ? 'shadow-lg shadow-destructive/30' : ''
                         }`}
                     onClick={() => {
                         console.log('[VoiceRecorder] Button clicked, isRecording:', recorder.isRecording);
@@ -104,8 +104,8 @@ export const VoiceRecorder = ({
             {recorder.isRecording && showDuration && (
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="font-mono text-lg text-red-600 dark:text-red-400">
+                        <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+                        <span className="font-mono text-lg text-destructive">
                             {recorder.formattedDuration}
                         </span>
                     </div>
@@ -138,8 +138,8 @@ export const VoiceRecorder = ({
                         <div
                             key={i}
                             className={`w-2 rounded-full transition-all duration-75 ${i < levelBars
-                                ? 'bg-red-500'
-                                : 'bg-gray-200 dark:bg-gray-700'
+                                ? 'bg-destructive'
+                                : 'bg-muted'
                                 }`}
                             style={{
                                 height: `${(i + 1) * 3}px`,
@@ -158,7 +158,7 @@ export const VoiceRecorder = ({
 
             {/* Paused Indicator */}
             {recorder.isPaused && (
-                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <div className="flex items-center gap-2 text-warning">
                     <AlertCircle className="h-4 w-4" />
                     <span className="text-sm">일시정지됨</span>
                 </div>

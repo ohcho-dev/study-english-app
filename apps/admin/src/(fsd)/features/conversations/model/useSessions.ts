@@ -60,7 +60,6 @@ export const useSessionTurns = (sessionId: string | undefined) => {
         queryKey: sessionKeys.turns(sessionId!),
         queryFn: () => getSessionTurns(sessionId!),
         enabled: !!sessionId,
-        refetchInterval: 2000, // Poll for updates during active session
     });
 };
 

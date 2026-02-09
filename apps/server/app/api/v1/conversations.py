@@ -9,11 +9,13 @@ This module provides API endpoints for:
 
 import math
 import uuid
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 
 from app.api.deps import DbSession
+from app.core.database import AsyncSessionLocal
 from app.models.conversation import SessionStatus
 from app.schemas.conversation import (
     MeasurementConfigCreate,
@@ -34,8 +36,11 @@ from app.schemas.conversation import (
 )
 from app.services.conversation.run0_service import Run0Service
 from app.services.conversation.session_service import SessionService
+from app.services.conversation.my_turn_service import MyTurnService
 from app.services.conversation.template_service import TemplateService
 from app.services.conversation.tts_service import TTSService
+from app.services.conversation.signaling import manager
+from app.services.conversation.webrtc_service import webrtc_service
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -120,6 +125,7 @@ async def delete_template(db: DbSession, template_id: UUID):
         )
 
 
+
 @router.post("/templates/{template_id}/duplicate", response_model=TemplateResponse)
 async def duplicate_template(
     db: DbSession,
@@ -137,6 +143,16 @@ async def duplicate_template(
         )
     
     return template
+
+
+@router.get("/director-prompt-spec")
+async def get_director_prompt_spec():
+    """Get the immutable Base Prompt and Protocol for Scenario Director."""
+    from app.services.conversation.scenario_director import ScenarioDirector
+    return {
+        "base_prompt": ScenarioDirector.BASE_PROMPT,
+        "output_format": ScenarioDirector.TASK_AND_OUTPUT_FORMAT
+    }
 
 
 # ============================================================================
@@ -234,6 +250,49 @@ async def get_session_turns(db: DbSession, session_id: UUID):
     """Get all turns for a session."""
     service = SessionService(db)
     return await service.get_session_turns(session_id)
+
+
+@router.post("/sessions/{session_id}/start")
+async def start_my_turn_session(
+    db: DbSession,
+    session_id: UUID,
+    background_tasks: BackgroundTasks,
+    user_name: str = Form("User", description="User's name"),
+):
+    """Start a My Turn session (triggers initial turn)."""
+    service = MyTurnService(db)
+    try:
+        return await service.start_session(session_id, user_name, background_tasks)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/audio")
+async def process_my_turn_audio(
+    db: DbSession,
+    session_id: UUID,
+    background_tasks: BackgroundTasks,
+    audio_file: UploadFile = File(..., description="Audio file"),
+):
+    """Process user audio for My Turn session."""
+    service = MyTurnService(db)
+    
+    # Read audio
+    audio_data = await audio_file.read()
+    
+    # Determine format
+    content_type = audio_file.content_type or ""
+    audio_format = "webm"
+    if "wav" in content_type or audio_file.filename.endswith(".wav"):
+        audio_format = "wav"
+    elif "mp3" in content_type or audio_file.filename.endswith(".mp3"):
+        audio_format = "mp3"
+        
+    try:
+        return await service.process_user_turn(session_id, audio_data, audio_format, background_tasks)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 
 
 @router.get("/sessions/{session_id}/metrics")
@@ -404,6 +463,50 @@ async def get_test_phrases(db: DbSession):
     """Get default test phrases for RUN0 testing."""
     service = Run0Service(db)
     return await service.get_test_phrases()
+
+
+# ============================================================================
+# Signaling Endpoints
+# ============================================================================
+
+
+@router.websocket("/sessions/{session_id}/ws")
+async def session_websocket(websocket: WebSocket, session_id: UUID):
+    """WebSocket endpoint for real-time signaling."""
+    session_id_str = str(session_id)
+    await manager.connect(session_id_str, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            # Handle WebRTC signaling
+            if data.get("type") == "offer":
+                # Received SDP Offer from client -> create Answer
+                response = await webrtc_service.handle_offer(session_id_str, data["sdp"])
+                await manager.send_message(session_id_str, response)
+                
+            elif data.get("type") == "ice-candidate":
+                # Received ICE candidate
+                # In full implementation, pass to PC
+                pass
+
+            elif data.get("type") == "turn_complete":
+                # Handle turn completion signal from client
+                # complete_turn now uses asyncio.create_task internally for non-blocking AI processing
+                try:
+                    async with AsyncSessionLocal() as db:
+                        service = MyTurnService(db)
+                        await service.complete_turn(session_id)
+                except Exception as e:
+                    logger.error(f"Error handling turn_complete for session {session_id}: {e}", exc_info=True)
+                    await manager.send_message(session_id_str, {
+                        "type": "error",
+                        "message": f"Turn processing error: {str(e)}"
+                    })
+                
+    except WebSocketDisconnect:
+        manager.disconnect(session_id_str)
+        await webrtc_service.close(session_id_str)
 
 
 # ============================================================================
