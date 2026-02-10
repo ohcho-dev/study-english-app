@@ -7,6 +7,7 @@ It handles session initialization, user input processing, and AI response genera
 
 import asyncio
 import logging
+import time
 from typing import Optional
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from app.services.conversation.signaling import manager
 from app.services.conversation.scenario_director import ScenarioDirector
 from fastapi import BackgroundTasks
 import json
+from sqlalchemy import select, update
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +41,124 @@ async def run_ai_turn_background(session_id: UUID, participant_id: str, instruct
         # Find participant
         participant = next((p for p in session.template.participants if str(p.id) == participant_id), None)
         if participant:
+             # HARD STOP CHECK: If session is not active, do not run AI turn
+             if session.status != SessionStatus.ACTIVE:
+                 logger.info(f"[run_ai_turn] Session {session_id} is {session.status}. Skipping AI turn for {participant.name}.")
+                 return
+
              try:
                  await service.process_ai_turn(session, participant, instruction)
              except Exception as e:
                  logger.error(f"Error in background AI turn: {e}", exc_info=True)
         else:
              logger.error(f"Participant {participant_id} not found in session {session_id}")
+
+
+async def monitor_user_timeout(session_id: UUID, turn_index: int, timeout_seconds: int = 300):
+    """Waits for timeout, then terminates session if still on valid turn."""
+    # Use a separate DB session for the background check
+    from app.core.database import AsyncSessionLocal
+    
+    # Initial wait
+    await asyncio.sleep(timeout_seconds)
+    
+    try:
+        async with AsyncSessionLocal() as db:
+            service = MyTurnService(db)
+            session = await service.session_service.get_by_id(session_id)
+            
+            # Check conditions: Session active AND turn index hasn't changed (user still hasn't spoken)
+            if (session 
+                and session.status == SessionStatus.ACTIVE 
+                and session.current_turn_index == turn_index):
+                
+                logger.info(f"[monitor_user_timeout] Timeout reached for session {session_id} (turn {turn_index}). Auto-terminating.")
+                session.status = SessionStatus.COMPLETED
+                session.error_message = "Session timed out (5 minutes due to inactivity)"
+                await db.commit()
+                
+                # Notify client
+                await manager.send_message(str(session.id), {
+                    "type": "error",
+                    "message": "Session timed out due to inactivity."
+                })
+                await manager.send_message(str(session.id), {"type": "session_completed"})
+    except Exception as e:
+        logger.error(f"[monitor_user_timeout] Error: {e}")
+
+
+async def cleanup_stale_sessions(check_interval: int = 1800):
+    """Background task to periodically clean up zombie sessions."""
+    logger.info(f"Starting stale session cleanup task (interval={check_interval}s, criteria: inactive > 3m AND started > 5m)")
+    from app.core.database import AsyncSessionLocal
+    from sqlalchemy import select, and_
+    from datetime import datetime, timedelta
+    
+    while True:
+        try:
+            await asyncio.sleep(check_interval)
+            
+            async with AsyncSessionLocal() as db:
+                now = datetime.utcnow()
+                # Condition:
+                # 1. Active session
+                # 2. Inactive for > 3 minutes (updated_at < now - 3m)
+                # 3. Started > 5 minutes ago (started_at < now - 5m) - to safeguard very fresh sessions
+                
+                inactive_threshold = now - timedelta(minutes=3)
+                started_threshold = now - timedelta(minutes=5)
+                
+                stmt = select(ConversationSession).where(
+                    and_(
+                        ConversationSession.status == SessionStatus.ACTIVE,
+                        ConversationSession.updated_at < inactive_threshold,
+                        ConversationSession.started_at < started_threshold
+                    )
+                )
+                result = await db.execute(stmt)
+                stale_sessions = result.scalars().all()
+                
+                count = 0
+                for session in stale_sessions:
+                    session.status = SessionStatus.COMPLETED
+                    session.error_message = f"Auto-closed by cleanup (inactive > 3m, started > 5m)"
+                    count += 1
+                
+                if count > 0:
+                    await db.commit()
+                    logger.info(f"[cleanup_stale_sessions] Closed {count} zombie sessions.")
+                    
+        except asyncio.CancelledError:
+            logger.info("Stale session cleanup task cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"[cleanup_stale_sessions] Error: {e}")
+            await asyncio.sleep(60) # Wait a bit before retrying on error
+
+
+async def cleanup_active_sessions_on_startup():
+    """Run once on startup to mark all 'Active' sessions as 'Completed' (Server Restart)."""
+    logger.info("Running startup cleanup for active sessions...")
+    from app.core.database import AsyncSessionLocal
+    from datetime import datetime
+    
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                update(ConversationSession)
+                .where(ConversationSession.status == SessionStatus.ACTIVE)
+                .values(
+                    status=SessionStatus.COMPLETED,
+                    error_message="Session interrupted by server restart",
+                    ended_at=datetime.utcnow()
+                )
+            )
+            result = await db.execute(stmt)
+            await db.commit()
+            if result.rowcount > 0:
+                logger.info(f"Startup Cleanup: Marked {result.rowcount} active sessions as COMPLETED.")
+    except Exception as e:
+        logger.error(f"Error in startup session cleanup: {e}")
 
 
 class MyTurnService:
@@ -146,6 +260,11 @@ class MyTurnService:
             logger.error(f"[MyTurnService] Session {session_id} not found in complete_turn")
             return
 
+        # HARD STOP CHECK
+        if session.status != SessionStatus.ACTIVE:
+            logger.info(f"[complete_turn] Session {session_id} is {session.status}. Stopping turn orchestration.")
+            return
+
         # 1. Advance Turn Index
         prev_turn_index = session.current_turn_index
         session.current_turn_index += 1
@@ -218,6 +337,16 @@ class MyTurnService:
                 session.variant = json.dumps(variant)
                 logger.info(f"[MyTurnService] Script index advanced: {script_index} → {new_script_index}")
             
+            # SAFETY CHECK: Ensure session is still active before committing next turn state
+            # This prevents race condition where user ends session while AI turn is processed
+            status_check = await self.db.execute(
+                select(ConversationSession.status).where(ConversationSession.id == session.id)
+            )
+            current_status = status_check.scalar()
+            if current_status != SessionStatus.ACTIVE:
+                logger.info(f"[MyTurnService] Session {session_id} became {current_status} (not active). Aborting turn update.")
+                return
+
             await self.db.commit()
             
             logger.info(
@@ -279,12 +408,7 @@ class MyTurnService:
                             instruction
                         )
                     )
-            else:
-                # User turn: reset consecutive AI counter
-                variant["_consecutive_ai_turns"] = 0
-                session.variant = json.dumps(variant)
-                await self.db.commit()
-                logger.info(f"[MyTurnService] User turn reached. Waiting for user input.")
+
         else:
             # Session Complete
             logger.info(f"[MyTurnService] Session {session_id} completed (no next turn).")
@@ -304,6 +428,11 @@ class MyTurnService:
 
     async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None):
         """Generates AI response and streams it. Does NOT advance turn state."""
+        # 1. Immediate Status Check
+        if session.status != SessionStatus.ACTIVE:
+            logger.info(f"[process_ai_turn] Session {session.id} is {session.status}. Aborting.")
+            return
+
         logger.info(f"Processing AI turn for {participant.name} in session {session.id}, instruction: {instruction}")
         
         # 0. Resolve Configuration (Session Override > Participant Default)
@@ -400,6 +529,12 @@ class MyTurnService:
         import google.generativeai as genai
         from app.core.config import settings
         
+        # 2. Pre-LLM Status Check (in case context building took time)
+        session = await self.session_service.get_by_id(session.id) # Re-fetch status
+        if session.status != SessionStatus.ACTIVE:
+             logger.info(f"[process_ai_turn] Session ended before LLM call. Aborting.")
+             return
+
         reply_text = ""
         # Configure GenAI only if key is available
         if settings.GOOGLE_AI_API_KEY:
@@ -437,9 +572,18 @@ IMPORTANT RULES:
         else:
             logger.warning("GOOGLE_AI_API_KEY not set")
             reply_text = "I cannot speak right now because my brain is missing (API Key)."
+        
+        t2_llm_final = time.time() * 1000
 
         # 3. TTS
         from app.services.conversation.tts_service import TTSService
+
+        # Pre-TTS Status Check
+        session = await self.session_service.get_by_id(session.id)
+        if session.status != SessionStatus.ACTIVE:
+             logger.info(f"[process_ai_turn] Session ended before TTS call. Aborting.")
+             return
+
         audio_base64 = None
         try:
             tts_service = TTSService()
@@ -453,9 +597,10 @@ IMPORTANT RULES:
         except Exception as e:
             logger.error(f"TTS Error: {e}")
             audio_base64 = None
+            
+        t2_5_tts_ready = time.time() * 1000
 
-        # 4. Save to DB (Pending completion) - Actually we save it now to have a record,
-        # but the Session State handles logical turn progression in complete_turn.
+        # 4. Save to DB 
         await self.session_service.add_turn(
             session_id=session.id,
             turn_type=TurnType.AI,
@@ -464,7 +609,43 @@ IMPORTANT RULES:
             model_name="gemini-2.0-flash",
         )
         
-        # 5. Send Response to Client (Audio plays, client sends turn_complete when done)
+        # 5. METRICS: Find last USER turn to associate latencies
+        # We need to find the most recent turn by User to attach LLM/TTS latency
+        try:
+            from sqlalchemy import select, desc
+            from app.models.conversation import ConversationTurn
+            
+            stmt = (
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == session.id)
+                .where(ConversationTurn.turn_type == TurnType.USER)
+                .order_by(desc(ConversationTurn.turn_index))
+                .limit(1)
+            )
+            result = await self.session_service.db.execute(stmt)
+            last_user_turn = result.scalar_one_or_none()
+            
+            user_turn_id = None
+            user_turn_id = None
+            if last_user_turn:
+                user_turn_id = str(last_user_turn.id)
+                
+                # Only update timestamps if this is the FIRST AI response for this user turn
+                # This ensures we measure "Latency to First Response", which matches user perception.
+                if not last_user_turn.t2_llm_final:
+                    last_user_turn.t2_llm_final = t2_llm_final
+                    last_user_turn.t2_5_tts_ready = t2_5_tts_ready
+                    await self.session_service.db.commit()
+                    
+                    # Update metrics immediately
+                    await self.session_service.calculate_metrics(session.id)
+                else:
+                    logger.info(f"Skipping metric update for Turn {last_user_turn.id} (already has response timestamp).")
+        except Exception as e:
+            logger.error(f"Failed to update metrics for AI turn: {e}")
+            user_turn_id = None
+        
+        # 6. Send Response to Client
         await manager.send_message(str(session.id), {
             "type": "ai_response",
             "speaker": participant.name,
@@ -473,12 +654,13 @@ IMPORTANT RULES:
                 "speaking_rate": speaking_rate,
                 "difficulty": difficulty
             },
-            "audio": audio_base64
+            "audio": audio_base64,
+            "turn_id": user_turn_id  # Pass this for client t3 logging
         })
         
         # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal.
 
-    async def process_user_turn(self, session_id: UUID, audio_data: bytes, audio_format: str, background_tasks: BackgroundTasks = None):
+    async def process_user_turn(self, session_id: UUID, audio_data: bytes, audio_format: str, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0):
         """Processes user audio input."""
         session = await self.session_service.get_by_id_with_template(session_id)
         if not session:
@@ -490,6 +672,8 @@ IMPORTANT RULES:
         stt_result = await stt_service.transcribe(audio_data, audio_format)
         transcript = stt_result.get("transcript", "")
         
+        t1_asr_final = time.time() * 1000
+        
         # 2. Save Turn
         await self.session_service.add_turn(
             session_id=session.id,
@@ -498,7 +682,13 @@ IMPORTANT RULES:
             content_text=transcript,
             audio_duration_ms=stt_result.get("duration_ms"),
             stt_provider="google",
+            t0_user_end=t0_user_end,
+            t1_asr_final=t1_asr_final,
         )
+        
+        # Calculate intermediate metrics (ASR latency)
+        # Note: t2 and t2.5 will be updated when AI responds
+        await self.session_service.calculate_metrics(session.id)
         
         # 3. Scenario Director Evaluation
         director = ScenarioDirector(session)

@@ -29,8 +29,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Handles startup and shutdown events.
     """
     # Startup
+    import asyncio
+    from app.services.conversation.my_turn_service import cleanup_stale_sessions, cleanup_active_sessions_on_startup
+    
+    # Run immediate cleanup for server restart
+    await cleanup_active_sessions_on_startup()
+    
+    # Start background cleanup task (check every 30 mins)
+    cleanup_task = asyncio.create_task(cleanup_stale_sessions(check_interval=1800))
+    
     yield
+    
     # Shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(

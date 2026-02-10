@@ -539,6 +539,23 @@ class Run0LogResponse(BaseModel):
     e2e_latency_ms: int = Field(description="t3 - t0 (user-perceived latency)")
 
 
+class SessionLogRequest(BaseModel):
+    """Schema for logging client-side timestamp (generic)."""
+    
+    session_id: UUID
+    turn_id: UUID
+    t3_audio_play_start: float = Field(
+        description="Client timestamp when audio started playing (ms, Unix epoch)",
+    )
+
+
+class SessionLogResponse(BaseModel):
+    """Schema for session log response."""
+    
+    success: bool
+
+
+
 # ============================================================================
 # Dashboard Schemas
 # ============================================================================

@@ -26,6 +26,8 @@ from app.schemas.conversation import (
     Run0LogRequest,
     Run0LogResponse,
     Run0VoiceResponse,
+    SessionLogRequest,
+    SessionLogResponse,
     SessionCreate,
     SessionResponse,
     TemplateCreate,
@@ -242,6 +244,20 @@ async def end_session(
             detail=f"Session {session_id} not found",
         )
     
+    # FORCE DISCONNECT (Physical Session Termination)
+    # Ensure any active WebSocket connection is closed when session ends
+    session_id_str = str(session_id)
+    if session_id_str in manager.active_connections:
+        try:
+            websocket = manager.active_connections[session_id_str]
+            # 1000: Normal Closure
+            await websocket.close(code=1000, reason="Session ended by user")
+            logger.info(f"[end_session] Force closed WebSocket for session {session_id_str}")
+        except Exception as e:
+            logger.warning(f"[end_session] Error closing WebSocket for session {session_id_str}: {e}")
+        finally:
+            manager.disconnect(session_id_str)
+            
     return session
 
 
@@ -273,6 +289,7 @@ async def process_my_turn_audio(
     session_id: UUID,
     background_tasks: BackgroundTasks,
     audio_file: UploadFile = File(..., description="Audio file"),
+    t0_user_end: float = Form(0.0, description="Client timestamp when user stopped speaking"),
 ):
     """Process user audio for My Turn session."""
     service = MyTurnService(db)
@@ -289,10 +306,25 @@ async def process_my_turn_audio(
         audio_format = "mp3"
         
     try:
-        return await service.process_user_turn(session_id, audio_data, audio_format, background_tasks)
+        return await service.process_user_turn(session_id, audio_data, audio_format, background_tasks, t0_user_end)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+
+@router.post("/sessions/log", response_model=SessionLogResponse)
+async def log_session_client_timestamp(db: DbSession, request: SessionLogRequest):
+    """Log client-side timestamp (t3 - audio play start).
+    
+    Generic endpoint for any session (Run0 or My Turn).
+    """
+    service = SessionService(db)
+    turn = await service.update_turn_timestamp(request.turn_id, request.t3_audio_play_start)
+    
+    if turn:
+        await service.calculate_metrics(turn.session_id)
+        return SessionLogResponse(success=True)
+        
+    return SessionLogResponse(success=False)
 
 
 @router.get("/sessions/{session_id}/metrics")
@@ -507,6 +539,17 @@ async def session_websocket(websocket: WebSocket, session_id: UUID):
     except WebSocketDisconnect:
         manager.disconnect(session_id_str)
         await webrtc_service.close(session_id_str)
+        # Mark session as COMPLETED to stop any running AI turns
+        try:
+            async with AsyncSessionLocal() as db:
+                service = MyTurnService(db)
+                session = await service.session_service.get_by_id(session_id)
+                if session and session.status == SessionStatus.ACTIVE:
+                    session.status = SessionStatus.COMPLETED
+                    await db.commit()
+                    logger.info(f"Session {session_id} marked as COMPLETED due to WebSocket disconnect")
+        except Exception as e:
+            logger.error(f"Error marking session {session_id} as completed on disconnect: {e}")
 
 
 # ============================================================================

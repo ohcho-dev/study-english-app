@@ -7,7 +7,7 @@ including creation, turn management, and metrics calculation.
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -277,8 +277,13 @@ class SessionService:
         
         await self.db.commit()
         
-        # Calculate and save metrics
-        await self.calculate_metrics(session_id)
+        # Calculate and save metrics (swallow error to ensure end_session succeeds)
+        try:
+            await self.calculate_metrics(session_id)
+        except Exception as e:
+            # Log error but return success since session is already closed in DB
+            from app.core.logger import logger
+            logger.error(f"Failed to calculate metrics for ended session {session_id}: {e}")
         
         return await self.get_by_id(session_id)
     
@@ -363,6 +368,13 @@ class SessionService:
         # Previously, both add_turn and complete_turn incremented this counter,
         # causing a double-increment that skipped participants in round-robin.
         
+        # Also update session timestamp so it isn't considered stale
+        await self.db.execute(
+            update(ConversationSession)
+            .where(ConversationSession.id == session_id)
+            .values(updated_at=datetime.utcnow())
+        )
+        
         await self.db.commit()
         
         return TurnResponse(
@@ -407,8 +419,14 @@ class SessionService:
         if not turn:
             return None
         
-        turn.t3_audio_play_start = t3_audio_play_start
-        await self.db.commit()
+        # Only update timestamp if not already set (Capture First Response Latency)
+        # This prevents E2E latency from growing as subsequent AI turns occur
+        if not turn.t3_audio_play_start:
+            turn.t3_audio_play_start = t3_audio_play_start
+            await self.db.commit()
+            
+            # Recalculate metrics to reflect new E2E latency immediately
+            await self.calculate_metrics(turn.session_id)
         
         return TurnResponse(
             id=turn.id,

@@ -123,6 +123,20 @@ export const useMyTurn = (sessionId: string | null) => {
                                 }
                             };
                             await audio.play();
+
+                            // Metrics: Log t3 (audio play start)
+                            if (msg.turn_id && sessionId) {
+                                fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/log`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        session_id: sessionId,
+                                        turn_id: msg.turn_id,
+                                        t3_audio_play_start: Date.now() // milliseconds
+                                    })
+                                }).catch(e => console.error("Failed to log t3:", e));
+                            }
+
                         } catch (e) {
                             console.error("Failed to play audio:", e);
                             // Fallback sync
@@ -214,6 +228,8 @@ export const useMyTurn = (sessionId: string | null) => {
         try {
             const formData = new FormData();
             formData.append('audio_file', audioBlob, 'input.webm');
+            // metrics: t0 (user end)
+            formData.append('t0_user_end', Date.now().toString());
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/audio`, {
                 method: 'POST',
