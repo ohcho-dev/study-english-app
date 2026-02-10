@@ -54,37 +54,68 @@ class STTService:
         """
         start_time = time.time()
         
-        # Convert audio to Linear16 WAV if needed
-        audio_content, actual_sample_rate = await self._prepare_audio(
-            audio_data,
-            audio_format,
-            sample_rate_hertz,
-        )
-        
-        # Prepare request
-        request_body = {
-            "config": {
-                "encoding": "LINEAR16",
-                "sampleRateHertz": actual_sample_rate,
-                "languageCode": language_code,
-                "enableWordTimeOffsets": True,
-                "enableAutomaticPunctuation": True,
-                "model": "latest_long",  # Best for conversational audio
-            },
-            "audio": {
-                "content": base64.b64encode(audio_content).decode("utf-8"),
-            },
-        }
-        
-        # Make API request
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{self.API_URL}?key={self.api_key}",
-                json=request_body,
-                headers={"Content-Type": "application/json"},
+        # OPTIMIZATION: Try Direct WebM (WEBM_OPUS) to avoid conversion overhead
+        result = None
+        if audio_format.lower() == "webm":
+            try:
+                request_body = {
+                    "config": {
+                        "encoding": "WEBM_OPUS",
+                        "sampleRateHertz": sample_rate_hertz,
+                        "languageCode": language_code,
+                        "enableWordTimeOffsets": True,
+                        "enableAutomaticPunctuation": True,
+                        "model": "latest_long",
+                    },
+                    "audio": {
+                        "content": base64.b64encode(audio_data).decode("utf-8"),
+                    },
+                }
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{self.API_URL}?key={self.api_key}",
+                        json=request_body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"WebM direct upload failed: {e}. Falling back to converted WAV.")
+                result = None
+
+        # Fallback: Convert audio to Linear16 WAV if WebM failed or format is not WebM
+        if not result:
+            audio_content, actual_sample_rate = await self._prepare_audio(
+                audio_data,
+                audio_format,
+                sample_rate_hertz,
             )
-            response.raise_for_status()
-            result = response.json()
+            
+            # Prepare request
+            request_body = {
+                "config": {
+                    "encoding": "LINEAR16",
+                    "sampleRateHertz": actual_sample_rate,
+                    "languageCode": language_code,
+                    "enableWordTimeOffsets": True,
+                    "enableAutomaticPunctuation": True,
+                    "model": "latest_long",  # Best for conversational audio
+                },
+                "audio": {
+                    "content": base64.b64encode(audio_content).decode("utf-8"),
+                },
+            }
+            
+            # Make API request
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.API_URL}?key={self.api_key}",
+                    json=request_body,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result = response.json()
         
         processing_time_ms = int((time.time() - start_time) * 1000)
         

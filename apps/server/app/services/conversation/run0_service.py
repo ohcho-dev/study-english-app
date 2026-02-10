@@ -170,7 +170,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             t1_asr_final=t1_asr_final,
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             stt_provider="google",
             tts_provider="google",
             tts_voice=voice_id,
@@ -277,9 +277,21 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         if not context or context == self.DEFAULT_SYSTEM_PROMPT:
             context = system_prompt
 
+        # Determine model
+        llm_model = "gemini-2.5-flash"
+        if session_id:
+             try:
+                 session = await self.session_service.get_by_id(session_id)
+                 if session and session.variant:
+                     import json
+                     v = json.loads(session.variant)
+                     llm_model = v.get("llm_model", "gemini-2.5-flash")
+             except:
+                 pass
+
         # Create model without system_instruction (not supported in older versions)
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name=llm_model,
         )
         
         # Prepend system instruction to history as a fake turn if needed
@@ -492,7 +504,17 @@ You are {current_speaker.name}. {current_speaker.persona or ''}
                 current_speaker_name=greeter.name,
             )
             
-            model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+            # Determine model
+            llm_model = "gemini-2.5-flash"
+            if session.variant:
+                try:
+                    import json
+                    v = json.loads(session.variant)
+                    llm_model = v.get("llm_model", "gemini-2.5-flash")
+                except:
+                    pass
+
+            model = genai.GenerativeModel(model_name=llm_model)
             user_name = session.user_name or "the student"
             
             prompt = f"""{context}

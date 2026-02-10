@@ -60,43 +60,44 @@ class ScenarioDirector:
         
         ## EVALUATION CRITERIA (apply in order):
         
-        ### "Clarification_Needed" — User is asking for help or repetition
-        The user could not follow the conversation and is asking for clarification.
+        ### "Clarification_Needed" — User is asking for help OR providing ambiguous input
+        The user is confused, asking for repetition, OR gave a minimal response that is unclear.
         Examples:
-        - "Come again?" / "Sorry?" / "What?" / "Pardon?" / "Can you repeat that?"
-        - "I don't understand" / "What do you mean?" / "Huh?"
-        - Any short phrase that signals the user is lost or confused
+        - Questions: "Come again?", "What?", "Pardon?", "I don't understand"
+        - Ambiguous fillers: "um", "um...", "Mmm...", "Hmm...", "Uh...", "Ah..." (without further speech)
+        - When it's unclear if the user is thinking, agreeing, or disagreeing.
         → should_continue_script: false
-        → instruction: Tell the next AI to rephrase or simplify their previous point
+        → instruction: Tell the next AI to ask for clarification or gently encourage the user to speak more.
         
-        ### "FAIL" — Gibberish, bad transcription, or completely off-topic
-        The input doesn't make sense in context. This is VERY COMMON because speech-to-text 
-        often produces nonsensical transcriptions, especially from non-native speakers.
+        ### "FAIL" — Gibberish, bad transcription, or off-topic
+        The input is unintelligible or clearly a mistake.
         Red flags:
-        - Random words strung together that form no coherent meaning (e.g., "Mmm, vinyl Park", "hello table green")
-        - Input that looks like mistranscribed foreign language (STT may transcribe Korean/Japanese as random English words)
-        - Response completely unrelated to the conversation topic
-        - Very short meaningless utterances ("um", "uh", single random word)
+        - Random words ("vinyl Park", "table green")
+        - Mistranscribed foreign language
+        - Very short meaningless utterances that are NOT valid fillers (e.g. single random word like "Wall")
         → should_continue_script: false
-        → instruction: Tell the next AI to gently re-ask or rephrase to help the user
+        → instruction: Tell the next AI to gently re-ask or rephrase the question.
         
         ### "Simulate_Reaction" — User said something that warrants a brief reaction first
         The input makes sense but calls for a quick reaction (surprise, acknowledgment) before the main response.
         → should_continue_script: false
-        → instruction: Give a brief reaction instruction
+        → instruction: Give a brief reaction instruction.
         
         ### "PASS" — Good, relevant response in proper English
         ONLY use PASS when ALL of the following are true:
-        - The input is coherent English
-        - The input is relevant to the current conversation topic/scenario
-        - The input advances or meaningfully participates in the conversation
+        - The input is coherent English.
+        - The input is relevant to the current conversation.
+        - The input ADVANCES the conversation (more than just "Mmm" or "Uh").
+        
+        CRITICAL: Do NOT mark "Mmm" or "Hmm" as PASS unless the user is clearly answering a question like "Is it tasty?". If the context is a general question like "How are you?" or "Introduction", "Mmm" is usually a hesitation -> Use Clarification_Needed.
+        
         → should_continue_script: true
-        → instruction: Direct the next AI on how to continue the scenario
+        → instruction: Direct the next AI on how to continue the scenario.
         
         ## IMPORTANT RULES
-        - When in doubt, prefer FAIL or Clarification_Needed over PASS
-        - STT transcription errors are very common — be skeptical of odd word combinations
-        - Short inputs under 3 words deserve extra scrutiny
+        - When in doubt, prefer Clarification_Needed or FAIL over PASS.
+        - "Mmm", "Hmm", "Uh" alone are almost ALWAYS Clarification_Needed (Hesitation).
+        - STT transcription errors are very common — be skeptical.
         
         ## OUTPUT FORMAT
         Respond with a JSON object:
@@ -111,10 +112,20 @@ class ScenarioDirector:
         self.session = session
         self.template = session.template
         
+        # Determine LLM Model
+        llm_model = "gemini-2.5-flash"
+        if session.variant:
+            try:
+                import json
+                variant_data = json.loads(session.variant)
+                llm_model = variant_data.get("llm_model", "gemini-2.5-flash")
+            except:
+                pass
+
         # Configure GenAI
         if settings.GOOGLE_AI_API_KEY:
             genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
-            self.model = genai.GenerativeModel("gemini-2.0-flash")
+            self.model = genai.GenerativeModel(llm_model)
         else:
             self.model = None
             logger.warning("GOOGLE_AI_API_KEY not set for ScenarioDirector")
@@ -126,6 +137,28 @@ class ScenarioDirector:
         """
         Evaluates the user's latest turn against the current scenario step.
         """
+        # 1. Heuristic Check: Force "Hesitation" for known fillers inputs
+        try:
+            import re
+            input_cleaned = user_input.strip() if user_input else ""
+            # Matches "Mmm", "Hmm", "Uh", "Ah", "Huh" with optional punctuation (.,?!-) and whitespace
+            hesitation_pattern = re.compile(r"^(?i)(m+|h+m+|uh+|ah+|huh+)\s*[.,?!-]*$")
+            
+            if hesitation_pattern.match(input_cleaned):
+                logger.info(f"[ScenarioDirector] Heuristic: '{input_cleaned}' detected as hesitation -> Force Clarification_Needed")
+                return DirectorOutput(
+                    evaluation="Clarification_Needed",
+                    instruction=(
+                        "The user is hesitating (e.g. said 'Mmm' or 'Hmm'). "
+                        "Do NOT answer normally. "
+                        "Instead, gently ask if they are thinking, or encourage them to speak. "
+                        "Keep it very brief."
+                    ),
+                    should_continue_script=False
+                )
+        except Exception as e:
+            logger.error(f"[ScenarioDirector] Heuristic check failed: {e}")
+
         if not self.model:
             # Fallback if no API key
             return DirectorOutput(

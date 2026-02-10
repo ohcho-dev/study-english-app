@@ -29,8 +29,17 @@ const VOICE_OPTIONS = [
     { id: "en-GB-Neural2-B", name: "Google UK Male (Neural2)" },
 ];
 
+const MODEL_OPTIONS = [
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Recommended)" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash (Preview)" },
+    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro (Preview)" },
+    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (Legacy)" },
+];
+
 export interface ParticipantConfig {
     voice_id?: string;
+    llm_model?: string;
     speaking_rate: number;
     difficulty: number;
 }
@@ -63,6 +72,7 @@ export const SessionSettings = ({
         const currentConfig = config.participants[participantId] || {
             speaking_rate: 1.0,
             difficulty: 1,
+            llm_model: "gemini-2.0-flash",
         };
 
         const newParticipantsConfig = {
@@ -84,7 +94,8 @@ export const SessionSettings = ({
             config.participants[id] || {
                 speaking_rate: 1.0,
                 difficulty: 1,
-                voice_id: undefined
+                voice_id: undefined,
+                llm_model: "gemini-2.0-flash",
             }
         );
     };
@@ -158,6 +169,31 @@ export const SessionSettings = ({
                                                 {VOICE_OPTIONS.map((v) => (
                                                     <SelectItem key={v.id} value={v.id} className="text-xs">
                                                         {v.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {/* LLM Model */}
+                                    <div className="space-y-1">
+                                        <Label className="text-[11px] flex items-center gap-1 text-muted-foreground">
+                                            <Zap className="h-3 w-3" /> LLM Model
+                                        </Label>
+                                        <Select
+                                            value={pConfig.llm_model || "gemini-2.5-flash"}
+                                            onValueChange={(val) =>
+                                                handleParticipantChange(p.id, "llm_model", val)
+                                            }
+                                            disabled={disabled}
+                                        >
+                                            <SelectTrigger className="h-7 text-xs">
+                                                <SelectValue placeholder="Select Model" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {MODEL_OPTIONS.map((m) => (
+                                                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                                                        {m.name}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>

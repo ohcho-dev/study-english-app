@@ -45,7 +45,8 @@ function MyTurnContent() {
                 initialConfig.participants[p.id] = {
                     speaking_rate: p.voice_settings?.speaking_rate || 1.0,
                     difficulty: 1,
-                    voice_id: p.voice_id || undefined
+                    voice_id: p.voice_id || undefined,
+                    llm_model: "gemini-2.5-flash"
                 };
             });
             setSessionConfig(initialConfig);

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_AI_TURNS = 10
 
 
-async def run_ai_turn_background(session_id: UUID, participant_id: str, instruction: Optional[str] = None):
+async def run_ai_turn_background(session_id: UUID, participant_id: str, instruction: Optional[str] = None, return_to_user_after: bool = False):
     """Background task wrapper for AI turn processing."""
     from app.core.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
@@ -46,10 +46,22 @@ async def run_ai_turn_background(session_id: UUID, participant_id: str, instruct
                  logger.info(f"[run_ai_turn] Session {session_id} is {session.status}. Skipping AI turn for {participant.name}.")
                  return
 
-             try:
-                 await service.process_ai_turn(session, participant, instruction)
-             except Exception as e:
-                 logger.error(f"Error in background AI turn: {e}", exc_info=True)
+             # Retry logic for AI turn processing
+             max_retries = 3
+             for attempt in range(max_retries):
+                 try:
+                     await service.process_ai_turn(session, participant, instruction, return_to_user_after=return_to_user_after)
+                     break  # Success
+                 except Exception as e:
+                     logger.error(f"Error in background AI turn (Attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
+                     if attempt == max_retries - 1:
+                         # Last attempt failed
+                         # TODO: Marking session as ERROR or notifying client might be better?
+                         # For now, just logging error effectively.
+                         logger.critical(f"Failed to process AI turn for session {session_id} after {max_retries} attempts.")
+                     else:
+                         import asyncio
+                         await asyncio.sleep(1) # Wait 1s before retry
         else:
              logger.error(f"Participant {participant_id} not found in session {session_id}")
 
@@ -250,20 +262,21 @@ class MyTurnService:
             "speaker": first_speaker.name
         }
 
-    async def complete_turn(self, session_id: UUID, background_tasks: BackgroundTasks = None):
-        """
-        Called when client finishes playing audio (or explicitly signals turn completion).
-        Advances the turn state and triggers the next speaker.
-        """
+    async def complete_turn(self, session_id: UUID, script_index: int = None, return_to_user_after: bool = False):
+        """Advances turn index and determines next speaker."""
+        # 0. Re-fetch session status to ensure active
         session = await self.session_service.get_by_id_with_template(session_id)
         if not session:
-            logger.error(f"[MyTurnService] Session {session_id} not found in complete_turn")
-            return
+            raise ValueError("Session not found")
 
         # HARD STOP CHECK
         if session.status != SessionStatus.ACTIVE:
             logger.info(f"[complete_turn] Session {session_id} is {session.status}. Stopping turn orchestration.")
             return
+
+        # FORCE REFRESH: Ensure we have the latest variant flags commit by process_user_turn
+        # This handles the case where process_user_turn updated variant but this session object is stale
+        await self.db.refresh(session, attribute_names=["variant"])
 
         # 1. Advance Turn Index
         prev_turn_index = session.current_turn_index
@@ -278,22 +291,46 @@ class MyTurnService:
         orchestrator = TurnOrchestrator(session, session.template)
         
         # Get current script index
-        script_index = None
-        variant = {}
+        variant = {}  # Initialize default
         if session.variant:
             try:
                 variant = json.loads(session.variant)
-                script_index = variant.get("current_script_index")
-            except:
-                pass
+                logger.info(f"[complete_turn] Loaded variant: {variant}")
+            except Exception as e:
+                logger.error(f"[complete_turn] Failed to parse variant: {e}")
                 
-        # Check if we should return to user (set by process_user_turn on hesitation)
-        return_to_user = variant.get("return_to_user_after_next_ai", False)
+        if script_index is None:
+             script_index = variant.get("current_script_index")
+
+        # Check if we should return to user (set by process_user_turn on hesitation OR explicitly passed)
+        # NEW LOGIC: We check the Turn History for the :ENCOURAGEMENT tag in model_name.
+        from sqlalchemy import select, desc
+        from app.models.conversation import ConversationTurn
         
-        if return_to_user:
-            # Clear the flag
-            variant.pop("return_to_user_after_next_ai", None)
-            session.variant = json.dumps(variant)
+        last_turn_stmt = (
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id == session.id)
+            .order_by(desc(ConversationTurn.created_at))
+            .limit(1)
+        )
+        last_turn_res = await self.db.execute(last_turn_stmt)
+        last_turn = last_turn_res.scalar_one_or_none()
+        
+        if last_turn:
+            logger.info(f"[complete_turn] DEBUG: Last Turn ID={last_turn.id}, Index={last_turn.turn_index}, Model={last_turn.model_name}, Speaker={last_turn.speaker_name}")
+        else:
+            logger.info(f"[complete_turn] DEBUG: No Last Turn Found for Session {session.id}")
+
+        was_encouragement = False
+        if last_turn and last_turn.model_name and ":ENCOURAGEMENT" in last_turn.model_name:
+             was_encouragement = True
+             logger.info(f"[complete_turn] Detected ENCOURAGEMENT tag in model_name='{last_turn.model_name}' -> Force User Turn")
+        
+        should_return_to_user = return_to_user_after or was_encouragement
+        
+        if should_return_to_user:
+            # Clear flag if needed (nothing to clear in DB history)
+            pass
             
             # Find the user participant
             user_participant = None
@@ -388,26 +425,18 @@ class MyTurnService:
                     })
                     return
                 
-                if background_tasks:
-                    background_tasks.add_task(
-                        run_ai_turn_background, 
-                        session_id, 
+                # We don't have background_tasks here, so always use asyncio.create_task
+                logger.info(
+                    f"[MyTurnService] Launching AI turn for {next_participant.name} "
+                    f"via asyncio.create_task (consecutive_ai={consecutive_ai})"
+                )
+                asyncio.create_task(
+                    run_ai_turn_background(
+                        session_id,
                         str(next_participant.id),
                         instruction
                     )
-                else:
-                    # WebSocket context: use asyncio.create_task for non-blocking processing
-                    logger.info(
-                        f"[MyTurnService] Launching AI turn for {next_participant.name} "
-                        f"via asyncio.create_task (consecutive_ai={consecutive_ai})"
-                    )
-                    asyncio.create_task(
-                        run_ai_turn_background(
-                            session_id,
-                            str(next_participant.id),
-                            instruction
-                        )
-                    )
+                )
 
         else:
             # Session Complete
@@ -426,9 +455,9 @@ class MyTurnService:
             history_text += f"{speaker}: {text}\n"
         return history_text
 
-    async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None):
-        """Generates AI response and streams it. Does NOT advance turn state."""
-        # 1. Immediate Status Check
+    async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None, return_to_user_after: bool = False):
+        """Generates AI response and saves it as a new turn."""
+        # Status Check
         if session.status != SessionStatus.ACTIVE:
             logger.info(f"[process_ai_turn] Session {session.id} is {session.status}. Aborting.")
             return
@@ -536,10 +565,27 @@ class MyTurnService:
              return
 
         reply_text = ""
+        
+        # Determine LLM Model
+        llm_model = "gemini-2.5-flash"
+        if session.variant:
+            try:
+                variant_data = json.loads(session.variant)
+                # Check for participant-specific config first
+                if "participants" in variant_data:
+                    p_config = variant_data["participants"].get(str(participant.id), {})
+                    if "llm_model" in p_config:
+                        llm_model = p_config["llm_model"]
+                # Fallback to global setting if exists (legacy or director)
+                elif "llm_model" in variant_data:
+                    llm_model = variant_data["llm_model"]
+            except:
+                pass
+        
         # Configure GenAI only if key is available
         if settings.GOOGLE_AI_API_KEY:
             genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
-            model = genai.GenerativeModel("gemini-2.0-flash")
+            model = genai.GenerativeModel(llm_model)
             
             try:
                 # Build contextual generation prompt
@@ -560,24 +606,36 @@ It is now YOUR turn to speak as {participant.name}.
 IMPORTANT RULES:
 - Respond to the LAST SPEAKER directly (whether it was a user or another AI participant).
 - If the last speaker was another AI, engage with THEIR comment naturally (agree, disagree, add to the topic, react).
-- Do NOT always address the user. Have natural group conversation dynamics.
-- Keep responses concise (1-3 sentences).
-- Stay in character according to your persona.
+- If the last speaker was the USER, respond to the user directly.
+- Keep your response relatively short (1-3 sentences). This is a conversation, not a monologue.
+- Use the persona and vocabulary level defined above.
+- output ONLY the spoken text. No "Sarah:" prefix.
 """
-                response = await model.generate_content_async(generation_prompt)
+                
+                # Check for "return_to_user_after" in variant (set by process_user_turn)
+                # If set, we might want to guide the AI to ask a question to the user?
+                # Actually, the Director's Instruction already covers this ("Ask clarification...").
+                
+                # Generate
+                response = model.generate_content(generation_prompt)
                 reply_text = response.text.strip()
+                
             except Exception as e:
-                logger.error(f"LLM Error: {e}")
-                reply_text = "I'm sorry, I'm having trouble thinking right now."
+                logger.error(f"GenAI Error: {e}")
+                reply_text = "I see." # Fallback
         else:
-            logger.warning("GOOGLE_AI_API_KEY not set")
-            reply_text = "I cannot speak right now because my brain is missing (API Key)."
+            logger.warning("GOOGLE_AI_API_KEY not set. Using dummy response.")
+            reply_text = "Hello! I am an AI participant."
         
         t2_llm_final = time.time() * 1000
 
-        # 3. TTS
+        # 3. TTS Generation
+        # For lower latency, we could stream? 
+        # But here we just get full audio.
+        
+        # Use simple TTS service wrapper
         from app.services.conversation.tts_service import TTSService
-
+        
         # Pre-TTS Status Check
         session = await self.session_service.get_by_id(session.id)
         if session.status != SessionStatus.ACTIVE:
@@ -601,12 +659,18 @@ IMPORTANT RULES:
         t2_5_tts_ready = time.time() * 1000
 
         # 4. Save to DB 
+        # STATE TRACKING: Append tag to model_name if this is an encouragement turn.
+        # This persists the intent in the Turn History, avoiding session object race conditions.
+        saved_model_name = llm_model 
+        if return_to_user_after:
+            saved_model_name += ":ENCOURAGEMENT"
+            
         await self.session_service.add_turn(
             session_id=session.id,
             turn_type=TurnType.AI,
             speaker_name=participant.name,
             content_text=reply_text,
-            model_name="gemini-2.0-flash",
+            model_name=saved_model_name,
         )
         
         # 5. METRICS: Find last USER turn to associate latencies
@@ -625,7 +689,6 @@ IMPORTANT RULES:
             result = await self.session_service.db.execute(stmt)
             last_user_turn = result.scalar_one_or_none()
             
-            user_turn_id = None
             user_turn_id = None
             if last_user_turn:
                 user_turn_id = str(last_user_turn.id)
@@ -658,7 +721,8 @@ IMPORTANT RULES:
             "turn_id": user_turn_id  # Pass this for client t3 logging
         })
         
-        # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal.
+        # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal from client.
+        # This ensures the AI text is fully spoken before the next turn is calculated.
 
     async def process_user_turn(self, session_id: UUID, audio_data: bytes, audio_format: str, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0):
         """Processes user audio input."""
@@ -717,8 +781,11 @@ IMPORTANT RULES:
             if script_index is not None:
                 script_index += 1
                 variant["current_script_index"] = script_index
-                session.variant = json.dumps(variant)
-                # Note: we commit below
+        
+        # Reset consecutive AI turn counter since user just spoke
+        variant["_consecutive_ai_turns"] = 0
+        session.variant = json.dumps(variant)
+
         
         # 4. Determine next turn based on Director evaluation.
         # NORMAL (PASS): Round-robin through all AIs sequentially (AI1 → AI2 → AI3 → User)
@@ -752,14 +819,15 @@ IMPORTANT RULES:
                 session.current_speaker_id = bridge_participant.id
                 session.current_speaker_type = bridge_participant.participant_type
                 
-                # Set flag: after THIS 1 AI responds, go back to User
-                variant["return_to_user_after_next_ai"] = True
-                session.variant = json.dumps(variant)
+                # Note: We rely on return_to_user_after=True passed to background task
+                # to tag the turn-to-be-created with :ENCOURAGEMENT in model_name.
+                
+                # Reverting manual execution to avoid potential ORM conflict
                 await self.db.commit()
                 
                 logger.info(
                     f"[process_user_turn] HESITATION → bridge: {bridge_participant.name} "
-                    f"(return_to_user=True)"
+                    f"(return_to_user=True, variant_updated={new_variant_json})"
                 )
                 
                 await manager.send_message(str(session.id), {
@@ -775,17 +843,19 @@ IMPORTANT RULES:
                 
                 if background_tasks:
                     background_tasks.add_task(
-                        run_ai_turn_background,
-                        session_id,
+                        run_ai_turn_background, 
+                        session_id, 
                         str(bridge_participant.id),
-                        encouragement_instruction
+                        encouragement_instruction,
+                        True  # return_to_user_after=True
                     )
                 else:
                     asyncio.create_task(
                         run_ai_turn_background(
                             session_id,
                             str(bridge_participant.id),
-                            encouragement_instruction
+                            encouragement_instruction,
+                            True  # return_to_user_after=True
                         )
                     )
                 
