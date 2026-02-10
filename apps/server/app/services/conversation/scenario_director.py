@@ -41,7 +41,6 @@ class DirectorOutput:
 class ScenarioDirector:
     """
     The Director AI that supervises the conversation.
-    The Director AI that supervises the conversation.
     It evaluates user input against the scenario goals and directs the actors (AI participants).
     """
 
@@ -57,21 +56,54 @@ class ScenarioDirector:
 
     TASK_AND_OUTPUT_FORMAT = """
         # YOUR TASK
-        Analyze the user's input. Did the user respond appropriately to the previous turn and consistent with the scenario?
+        Analyze the user's latest input carefully. Determine if the user responded appropriately.
         
-        Output a JSON object with the following fields:
-        1. "evaluation": "PASS" (good response), "FAIL" (off-topic/wrong), "Simulate_Reaction" (needs intermediate reaction), "Clarification_Needed" (unclear).
-        2. "instruction": Specific instruction for the NEXT speaker (AI or Moderator). Tell them exactly what tone to use, what to say, or how to guide the user.
-           - If PASS: Give instruction to carry out the next step in the script.
-           - If FAIL/Clarification_Needed: Give instruction to help the user or ask for clarification, WITHOUT advancing the script yet.
-           - If Simulate_Reaction: Give instruction to just react (e.g. "Oh really?", "I see"), before the main response.
-        3. "should_continue_script": boolean. True if we should move to the next step in the script. False if we should stay on the current step (repair/reaction).
+        ## EVALUATION CRITERIA (apply in order):
         
-        Example Output:
+        ### "Clarification_Needed" — User is asking for help or repetition
+        The user could not follow the conversation and is asking for clarification.
+        Examples:
+        - "Come again?" / "Sorry?" / "What?" / "Pardon?" / "Can you repeat that?"
+        - "I don't understand" / "What do you mean?" / "Huh?"
+        - Any short phrase that signals the user is lost or confused
+        → should_continue_script: false
+        → instruction: Tell the next AI to rephrase or simplify their previous point
+        
+        ### "FAIL" — Gibberish, bad transcription, or completely off-topic
+        The input doesn't make sense in context. This is VERY COMMON because speech-to-text 
+        often produces nonsensical transcriptions, especially from non-native speakers.
+        Red flags:
+        - Random words strung together that form no coherent meaning (e.g., "Mmm, vinyl Park", "hello table green")
+        - Input that looks like mistranscribed foreign language (STT may transcribe Korean/Japanese as random English words)
+        - Response completely unrelated to the conversation topic
+        - Very short meaningless utterances ("um", "uh", single random word)
+        → should_continue_script: false
+        → instruction: Tell the next AI to gently re-ask or rephrase to help the user
+        
+        ### "Simulate_Reaction" — User said something that warrants a brief reaction first
+        The input makes sense but calls for a quick reaction (surprise, acknowledgment) before the main response.
+        → should_continue_script: false
+        → instruction: Give a brief reaction instruction
+        
+        ### "PASS" — Good, relevant response in proper English
+        ONLY use PASS when ALL of the following are true:
+        - The input is coherent English
+        - The input is relevant to the current conversation topic/scenario
+        - The input advances or meaningfully participates in the conversation
+        → should_continue_script: true
+        → instruction: Direct the next AI on how to continue the scenario
+        
+        ## IMPORTANT RULES
+        - When in doubt, prefer FAIL or Clarification_Needed over PASS
+        - STT transcription errors are very common — be skeptical of odd word combinations
+        - Short inputs under 3 words deserve extra scrutiny
+        
+        ## OUTPUT FORMAT
+        Respond with a JSON object:
         {
-            "evaluation": "PASS",
-            "instruction": "Acknowledge the order and ask for payment. Be polite.",
-            "should_continue_script": true
+            "evaluation": "PASS" | "FAIL" | "Clarification_Needed" | "Simulate_Reaction",
+            "instruction": "Specific instruction for the next AI speaker",
+            "should_continue_script": true | false
         }
         """
 
