@@ -112,6 +112,34 @@ export const endSession = async (
     return api.post<Session>(`${CONVERSATIONS_BASE}/sessions/${id}/end`, null, { params });
 };
 
+export const exportSessions = async (sessionIds: string[]): Promise<void> => {
+    // We need to use raw fetch here because api.post expects JSON response,
+    // but we are getting a blob (Excel file).
+    const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/sessions/export`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify(sessionIds),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+    }
+
+    // Handle Blob download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+};
+
 export const getSessionTurns = async (sessionId: string): Promise<Turn[]> => {
     return api.get<Turn[]>(`${CONVERSATIONS_BASE}/sessions/${sessionId}/turns`);
 };

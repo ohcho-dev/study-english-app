@@ -1,4 +1,6 @@
 version: "2"
+agent:
+  authtoken: 2XJFTDky8GWNAn9CYnddVSrNc1V_2XqgifKhkfkAZFPjK2T14
 tunnels:
   study-english-server:
     addr: 8000

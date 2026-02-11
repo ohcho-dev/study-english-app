@@ -793,3 +793,108 @@ class SessionService:
             return True
             
         return False
+
+    async def export_sessions(self, session_ids: list[UUID]) -> str:
+        """Export session data to Excel file.
+        
+        Args:
+            session_ids: List of session UUIDs to export.
+            
+        Returns:
+            Path to the generated Excel file.
+        """
+        import pandas as pd
+        import tempfile
+        import os
+        
+        # 1. Fetch Sessions with Template and Metrics
+        query = (
+            select(
+                ConversationSession,
+                ConversationTemplate.name.label("template_name"),
+                SessionMetrics
+            )
+            .outerjoin(ConversationTemplate)
+            .outerjoin(SessionMetrics)
+            .where(ConversationSession.id.in_(session_ids))
+            .order_by(ConversationSession.started_at.desc())
+        )
+        result = await self.db.execute(query)
+        rows = result.all()
+        
+        if not rows:
+            raise ValueError("No sessions found for the provided IDs")
+            
+        # 2. Prepare Summary Data
+        summary_data = []
+        for session, template_name, metrics in rows:
+            summary_data.append({
+                "Session ID": str(session.id),
+                "User Name": session.user_name,
+                "Template": template_name or "Run0 (No Template)",
+                "Status": session.status.value,
+                "Started At": session.started_at,
+                "Ended At": session.ended_at,
+                "Duration (s)": (session.ended_at - session.started_at).total_seconds() if session.ended_at else None,
+                "Total Turns": metrics.total_turns if metrics else 0,
+                "User Turns": metrics.user_turns if metrics else 0,
+                "E2E Avg (ms)": metrics.e2e_avg_ms if metrics else None,
+                "E2E P50 (ms)": metrics.e2e_p50_ms if metrics else None,
+                "E2E P95 (ms)": metrics.e2e_p95_ms if metrics else None,
+                "ASR Avg (ms)": metrics.asr_avg_ms if metrics else None,
+                "LLM Avg (ms)": metrics.llm_avg_ms if metrics else None,
+                "TTS Avg (ms)": metrics.tts_avg_ms if metrics else None,
+                "Client Load Avg (ms)": metrics.client_load_avg_ms if metrics else None,
+                "Est. Cost ($)": metrics.estimated_cost_usd if metrics else None,
+                "Variant Config": session.variant,
+            })
+            
+        # 3. Fetch Detailed Turns for all sessions
+        turns_query = (
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id.in_(session_ids))
+            .order_by(ConversationTurn.session_id, ConversationTurn.turn_index)
+        )
+        turns_result = await self.db.execute(turns_query)
+        turns = turns_result.scalars().all()
+        
+        # 4. Prepare Details Data
+        details_data = []
+        for turn in turns:
+            details_data.append({
+                "Session ID": str(turn.session_id),
+                "Turn Index": turn.turn_index,
+                "Turn Type": turn.turn_type.value,
+                "Speaker": turn.speaker_name,
+                "Content": turn.content_text,
+                "Audio Duration (ms)": turn.audio_duration_ms,
+                "E2E Latency (ms)": (turn.t3_audio_play_start - turn.t0_user_end) if (turn.t3_audio_play_start and turn.t0_user_end) else None,
+                "ASR Latency (ms)": (turn.t1_asr_final - turn.t0_user_end) if (turn.t1_asr_final and turn.t0_user_end) else None,
+                "LLM Latency (ms)": (turn.t2_llm_final - turn.t1_asr_final) if (turn.t2_llm_final and turn.t1_asr_final) else None,
+                "TTS Latency (ms)": (turn.t2_5_tts_ready - turn.t2_llm_final) if (turn.t2_5_tts_ready and turn.t2_llm_final) else None,
+                "Client Load (ms)": (turn.t3_audio_play_start - turn.t2_5_tts_ready) if (turn.t3_audio_play_start and turn.t2_5_tts_ready) else None,
+                "Input Tokens": turn.input_tokens,
+                "Output Tokens": turn.output_tokens,
+                "Model": turn.model_name,
+                "STT Model": turn.stt_model,
+                "TTS Voice": turn.tts_voice,
+                "Created At": turn.created_at,
+            })
+            
+        # 5. Write to Excel
+        # Create a temporary file
+        fd, path = tempfile.mkstemp(suffix=".xlsx")
+        os.close(fd)
+        
+        with pd.ExcelWriter(path, engine='openpyxl') as writer:
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name="Session Summary", index=False)
+            pd.DataFrame(details_data).to_excel(writer, sheet_name="Turn Details", index=False)
+            
+            # Auto-adjust column widths (basic approximation)
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                for column_cells in worksheet.columns:
+                    length = max(len(str(cell.value) or "") for cell in column_cells)
+                    worksheet.column_dimensions[column_cells[0].column_letter].width = min(length + 2, 50)
+                    
+        return path

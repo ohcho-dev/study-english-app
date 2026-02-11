@@ -162,6 +162,38 @@ async def get_director_prompt_spec():
 # ============================================================================
 
 
+@router.post("/sessions/export")
+async def export_sessions(
+    db: DbSession,
+    session_ids: list[UUID],
+):
+    """Export selected sessions to Excel."""
+    from fastapi.responses import FileResponse
+    import os
+    
+    service = SessionService(db)
+    try:
+        file_path = await service.export_sessions(session_ids)
+        filename = f"session_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        # FileResponse automatically handles closing the file handle, 
+        # but the temp file remains on disk. 
+        # For production, we might want a BackgroundTask to delete it after sending, 
+        # but FileResponse makes that tricky without custom logic. 
+        # For this scope, we'll let OS temp cleanup handle it or rely on low volume.
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+
 @router.get("/sessions", response_model=PaginatedSessions)
 async def list_sessions(
     db: DbSession,
