@@ -282,6 +282,9 @@ class ConversationSession(Base):
     user_name = Column(String(100), nullable=True)  # User's name for personalized conversation
     current_speaker_type = Column(String(20), nullable=True)  # moderator, ai, user
     
+    # Run0 additions
+    experiment_type = Column(String(20), nullable=True)  # "run0" or None (My Turn)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -358,7 +361,8 @@ class ConversationTurn(Base):
     model_name = Column(String(50), nullable=True)
     stt_provider = Column(String(50), nullable=True)  # google
     tts_provider = Column(String(50), nullable=True)  # google
-    tts_voice = Column(String(100), nullable=True)
+    tts_voice = Column(String(100), nullable=True)  # Voice used
+    stt_model = Column(String(100), nullable=True)  # STT model used (e.g., latest_long, chirp_2)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
@@ -419,6 +423,7 @@ class SessionMetrics(Base):
     asr_avg_ms = Column(Float, nullable=True)
     llm_avg_ms = Column(Float, nullable=True)
     tts_avg_ms = Column(Float, nullable=True)
+    client_load_avg_ms = Column(Float, nullable=True)  # t2.5→t3 avg
     
     # Quality metrics
     total_turns = Column(Integer, nullable=False, default=0)

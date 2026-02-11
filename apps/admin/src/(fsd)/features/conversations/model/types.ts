@@ -181,6 +181,14 @@ export interface SessionListItem {
     started_at: string;
     ended_at: string | null;
     device_type: string | null;
+    experiment_type: string | null;
+    variant: Record<string, unknown> | null;
+    // Latency metrics (averages in ms)
+    e2e_avg_ms: number | null;
+    asr_avg_ms: number | null;
+    llm_avg_ms: number | null;
+    tts_avg_ms: number | null;
+    client_load_avg_ms: number | null;
 }
 
 export interface SessionCreate {
@@ -212,8 +220,16 @@ export interface Turn {
     t2_llm_final: number | null;
     t2_5_tts_ready: number | null;
     t3_audio_play_start: number | null;
+    // Computed latencies (ms)
+    asr_latency_ms: number | null;
+    llm_latency_ms: number | null;
+    tts_latency_ms: number | null;
+    client_load_ms: number | null;
+    e2e_latency_ms: number | null;
+    // Metadata
     model_name: string | null;
     stt_provider: string | null;
+    stt_model: string | null;
     tts_provider: string | null;
     tts_voice: string | null;
     created_at: string;
@@ -278,6 +294,7 @@ export interface SessionMetrics {
     asr_avg_ms: number | null;
     llm_avg_ms: number | null;
     tts_avg_ms: number | null;
+    client_load_avg_ms: number | null;
     total_turns: number;
     user_turns: number;
     asr_retry_count: number;

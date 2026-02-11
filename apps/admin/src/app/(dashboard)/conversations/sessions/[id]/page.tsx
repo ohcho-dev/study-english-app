@@ -177,13 +177,13 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                 {turns.map((turn: Turn) => (
                                     <div
                                         key={turn.id}
-                                        className={`flex gap-3 ${turn.turn_type === 'USER'
+                                        className={`flex gap-3 ${turn.turn_type === 'user'
                                             ? 'flex-row-reverse'
                                             : ''
                                             }`}
                                     >
                                         <div
-                                            className={`max-w-[70%] p-3 rounded-lg ${turn.turn_type === 'USER'
+                                            className={`max-w-[70%] p-3 rounded-lg ${turn.turn_type === 'user'
                                                 ? 'bg-primary/10'
                                                 : 'bg-muted'
                                                 }`}
@@ -243,6 +243,60 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                         </Card>
                     ) : (
                         <>
+                            {/* Pipeline Config (for Run0 sessions) */}
+                            {session.variant && (() => {
+                                try {
+                                    const variantData = typeof session.variant === 'string'
+                                        ? JSON.parse(session.variant)
+                                        : session.variant;
+                                    if (variantData?.experiment_type === 'run0' && variantData?.pipeline_config) {
+                                        const cfg = variantData.pipeline_config;
+                                        return (
+                                            <Card>
+                                                <CardHeader>
+                                                    <CardTitle className="text-base">🧪 파이프라인 설정</CardTitle>
+                                                </CardHeader>
+                                                <CardContent>
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                                                        <div>
+                                                            <span className="text-muted-foreground">STT 모델</span>
+                                                            <div className="font-mono font-medium">{cfg.stt_model || '-'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-muted-foreground">LLM 모델</span>
+                                                            <div className="font-mono font-medium">{cfg.llm_model || '-'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-muted-foreground">TTS 프로바이더</span>
+                                                            <div className="font-mono font-medium">{cfg.tts_provider || '-'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-muted-foreground">TTS 모델</span>
+                                                            <div className="font-mono font-medium">{cfg.tts_model || '-'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-muted-foreground">TTS 음성</span>
+                                                            <div className="font-mono font-medium">{cfg.tts_voice || '-'}</div>
+                                                        </div>
+                                                        {cfg.system_prompt && (
+                                                            <div className="col-span-full">
+                                                                <span className="text-muted-foreground">시스템 프롬프트</span>
+                                                                <div className="font-mono text-xs mt-1 p-2 bg-muted rounded">
+                                                                    {cfg.system_prompt}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        );
+                                    }
+                                    return null;
+                                } catch {
+                                    return null;
+                                }
+                            })()}
+
                             {/* Latency Metrics */}
                             <Card>
                                 <CardHeader>
@@ -284,7 +338,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                     <CardTitle className="text-base">컴포넌트별 레이턴시</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="grid grid-cols-3 gap-4 text-center">
+                                    <div className="grid grid-cols-4 gap-4 text-center">
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
                                                 STT 평균
@@ -292,6 +346,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             <div className="text-xl font-bold">
                                                 {formatDuration(metrics.asr_avg_ms)}
                                             </div>
+                                            <div className="text-xs text-muted-foreground">t0→t1</div>
                                         </div>
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
@@ -300,6 +355,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             <div className="text-xl font-bold">
                                                 {formatDuration(metrics.llm_avg_ms)}
                                             </div>
+                                            <div className="text-xs text-muted-foreground">t1→t2</div>
                                         </div>
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
@@ -308,10 +364,69 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             <div className="text-xl font-bold">
                                                 {formatDuration(metrics.tts_avg_ms)}
                                             </div>
+                                            <div className="text-xs text-muted-foreground">t2→t2.5</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-muted-foreground mb-1">
+                                                Client Load 평균
+                                            </div>
+                                            <div className="text-xl font-bold">
+                                                {formatDuration(metrics.client_load_avg_ms)}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">t2.5→t3</div>
                                         </div>
                                     </div>
                                 </CardContent>
                             </Card>
+
+                            {/* Per-Turn Latency Table */}
+                            {turns.filter((t: Turn) => t.turn_type === 'user' && t.t0_user_end).length > 0 && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-base">턴별 레이턴시</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="border-b text-muted-foreground">
+                                                        <th className="text-left py-2 px-3">#</th>
+                                                        <th className="text-right py-2 px-3">STT (t0→t1)</th>
+                                                        <th className="text-right py-2 px-3">LLM (t1→t2)</th>
+                                                        <th className="text-right py-2 px-3">TTS (t2→t2.5)</th>
+                                                        <th className="text-right py-2 px-3">Client (t2.5→t3)</th>
+                                                        <th className="text-right py-2 px-3 font-bold">E2E (t0→t3)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {turns
+                                                        .filter((t: Turn) => t.turn_type === 'user' && t.t0_user_end)
+                                                        .map((turn: Turn, idx: number) => (
+                                                            <tr key={turn.id} className="border-b last:border-0 hover:bg-muted/50">
+                                                                <td className="py-2 px-3 text-muted-foreground">{idx + 1}</td>
+                                                                <td className="text-right py-2 px-3 font-mono">
+                                                                    {formatDuration(turn.asr_latency_ms)}
+                                                                </td>
+                                                                <td className="text-right py-2 px-3 font-mono">
+                                                                    {formatDuration(turn.llm_latency_ms)}
+                                                                </td>
+                                                                <td className="text-right py-2 px-3 font-mono">
+                                                                    {formatDuration(turn.tts_latency_ms)}
+                                                                </td>
+                                                                <td className="text-right py-2 px-3 font-mono">
+                                                                    {formatDuration(turn.client_load_ms)}
+                                                                </td>
+                                                                <td className="text-right py-2 px-3 font-mono font-bold">
+                                                                    {formatDuration(turn.e2e_latency_ms)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
 
                             {/* Token Usage */}
                             <Card>

@@ -35,6 +35,7 @@ class STTService:
         audio_format: str = "webm",
         language_code: str = "en-US",
         sample_rate_hertz: int = 16000,
+        model: str = "latest_long",
     ) -> dict[str, Any]:
         """Convert speech audio to text.
         
@@ -65,7 +66,7 @@ class STTService:
                         "languageCode": language_code,
                         "enableWordTimeOffsets": True,
                         "enableAutomaticPunctuation": True,
-                        "model": "latest_long",
+                        "model": model,
                     },
                     "audio": {
                         "content": base64.b64encode(audio_data).decode("utf-8"),
@@ -100,7 +101,7 @@ class STTService:
                     "languageCode": language_code,
                     "enableWordTimeOffsets": True,
                     "enableAutomaticPunctuation": True,
-                    "model": "latest_long",  # Best for conversational audio
+                    "model": model,  # Configurable STT model
                 },
                 "audio": {
                     "content": base64.b64encode(audio_content).decode("utf-8"),

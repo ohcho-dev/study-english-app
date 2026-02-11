@@ -67,6 +67,13 @@ export const SessionList = ({
         return `${minutes}분 ${secs}초`;
     };
 
+    // Format latency in ms
+    const formatLatency = (ms?: number | null) => {
+        if (ms === undefined || ms === null) return '-';
+        if (ms < 1000) return `${Math.round(ms)}ms`;
+        return `${(ms / 1000).toFixed(2)}s`;
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -128,7 +135,7 @@ export const SessionList = ({
                 <Card>
                     <CardContent className="p-0">
                         <div className="overflow-x-auto">
-                            <table className="w-full">
+                            <table className="w-full whitespace-nowrap">
                                 <thead>
                                     <tr className="border-b bg-muted/50">
                                         <th className="text-left py-3 px-4 text-sm font-medium">
@@ -137,11 +144,35 @@ export const SessionList = ({
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             템플릿
                                         </th>
+                                        <th className="text-left py-3 px-3 text-sm font-medium">
+                                            STT
+                                        </th>
+                                        <th className="text-left py-3 px-3 text-sm font-medium">
+                                            LLM
+                                        </th>
+                                        <th className="text-left py-3 px-3 text-sm font-medium">
+                                            TTS
+                                        </th>
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             시작 시간
                                         </th>
-                                        <th className="text-left py-3 px-4 text-sm font-medium">
+                                        <th className="text-center py-3 px-3 text-sm font-medium">
                                             턴 수
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium text-blue-400">
+                                            E2E avg
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium">
+                                            STT avg
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium">
+                                            LLM avg
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium">
+                                            TTS avg
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium">
+                                            Client avg
                                         </th>
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             진행 시간
@@ -155,6 +186,7 @@ export const SessionList = ({
                                     {filteredSessions.map((session) => {
                                         const statusConfig = STATUS_CONFIG[session.status];
                                         const StatusIcon = statusConfig.icon;
+                                        const cfg = session.variant?.pipeline_config as Record<string, string> | undefined;
 
                                         return (
                                             <tr
@@ -183,11 +215,37 @@ export const SessionList = ({
                                                         {session.id.slice(0, 8)}...
                                                     </div>
                                                 </td>
+                                                <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
+                                                    {cfg?.stt_model || '-'}
+                                                </td>
+                                                <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
+                                                    {cfg?.llm_model || '-'}
+                                                </td>
+                                                <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
+                                                    {cfg?.tts_model
+                                                        ? `${cfg.tts_provider}/${cfg.tts_model}`
+                                                        : '-'}
+                                                </td>
                                                 <td className="py-3 px-4 text-sm">
                                                     {formatDate(session.started_at)}
                                                 </td>
-                                                <td className="py-3 px-4 text-sm">
+                                                <td className="py-3 px-3 text-sm text-center">
                                                     {session.turn_count}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-bold text-blue-400">
+                                                    {formatLatency(session.e2e_avg_ms)}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-mono">
+                                                    {formatLatency(session.asr_avg_ms)}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-mono">
+                                                    {formatLatency(session.llm_avg_ms)}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-mono">
+                                                    {formatLatency(session.tts_avg_ms)}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-mono">
+                                                    {formatLatency(session.client_load_avg_ms)}
                                                 </td>
                                                 <td className="py-3 px-4 text-sm">
                                                     {session.ended_at

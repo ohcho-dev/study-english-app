@@ -4,6 +4,7 @@ This module provides services for managing conversation sessions,
 including creation, turn management, and metrics calculation.
 """
 
+import json
 from datetime import datetime
 from uuid import UUID
 
@@ -85,10 +86,24 @@ class SessionService:
                 ConversationSession,
                 ConversationTemplate.name.label("template_name"),
                 func.count(ConversationTurn.id).label("turn_count"),
+                SessionMetrics.e2e_avg_ms,
+                SessionMetrics.asr_avg_ms,
+                SessionMetrics.llm_avg_ms,
+                SessionMetrics.tts_avg_ms,
+                SessionMetrics.client_load_avg_ms,
             )
             .outerjoin(ConversationTemplate)
             .outerjoin(ConversationTurn)
-            .group_by(ConversationSession.id, ConversationTemplate.name)
+            .outerjoin(SessionMetrics)
+            .group_by(
+                ConversationSession.id,
+                ConversationTemplate.name,
+                SessionMetrics.e2e_avg_ms,
+                SessionMetrics.asr_avg_ms,
+                SessionMetrics.llm_avg_ms,
+                SessionMetrics.tts_avg_ms,
+                SessionMetrics.client_load_avg_ms,
+            )
             .order_by(ConversationSession.started_at.desc())
             .offset((page - 1) * size)
             .limit(size)
@@ -112,8 +127,15 @@ class SessionService:
                 started_at=session.started_at,
                 ended_at=session.ended_at,
                 device_type=session.device_type,
+                experiment_type=session.experiment_type,
+                variant=json.loads(session.variant) if session.variant else None,
+                e2e_avg_ms=e2e_avg,
+                asr_avg_ms=asr_avg,
+                llm_avg_ms=llm_avg,
+                tts_avg_ms=tts_avg,
+                client_load_avg_ms=cl_avg,
             )
-            for session, template_name, turn_count in rows
+            for session, template_name, turn_count, e2e_avg, asr_avg, llm_avg, tts_avg, cl_avg in rows
         ]
         
         return items, total
@@ -212,6 +234,56 @@ class SessionService:
         
         return await self.get_by_id(session.id)
     
+    async def create_run0_session(
+        self,
+        stt_model: str = "latest_long",
+        llm_model: str = "gemini-2.5-flash",
+        tts_provider: str = "google-cloud",
+        tts_model: str | None = None,
+        voice_id: str = "en-US-Neural2-F",
+        system_prompt: str | None = None,
+    ) -> ConversationSession:
+        """Create a Run0 session without a template.
+        
+        Stores pipeline configuration in the variant JSON field
+        for experiment traceability.
+        
+        Args:
+            stt_model: STT model used.
+            llm_model: LLM model used.
+            tts_provider: TTS provider used.
+            tts_model: TTS model (for Gemini TTS).
+            voice_id: TTS voice ID.
+            system_prompt: Custom system prompt.
+            
+        Returns:
+            Created session ORM object.
+        """
+        pipeline_config = {
+            "experiment_type": "run0",
+            "pipeline_config": {
+                "stt_model": stt_model,
+                "llm_model": llm_model,
+                "tts_provider": tts_provider,
+                "tts_model": tts_model,
+                "tts_voice": voice_id,
+                "system_prompt": (system_prompt or "")[:200],  # Truncate for storage
+            },
+        }
+        
+        session = ConversationSession(
+            template_id=None,
+            status=SessionStatus.ACTIVE,
+            current_turn_index=0,
+            experiment_type="run0",
+            variant=json.dumps(pipeline_config),
+        )
+        self.db.add(session)
+        await self.db.commit()
+        await self.db.refresh(session)
+        
+        return session
+    
     async def update_current_speaker(
         self,
         session_id: UUID,
@@ -303,6 +375,7 @@ class SessionService:
         stt_provider: str | None = None,
         tts_provider: str | None = None,
         tts_voice: str | None = None,
+        stt_model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
     ) -> TurnResponse:
@@ -358,6 +431,7 @@ class SessionService:
             stt_provider=stt_provider,
             tts_provider=tts_provider,
             tts_voice=tts_voice,
+            stt_model=stt_model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
@@ -393,6 +467,7 @@ class SessionService:
             t3_audio_play_start=turn.t3_audio_play_start,
             model_name=turn.model_name,
             stt_provider=turn.stt_provider,
+            stt_model=turn.stt_model,
             tts_provider=turn.tts_provider,
             tts_voice=turn.tts_voice,
             created_at=turn.created_at,
@@ -444,6 +519,7 @@ class SessionService:
             t3_audio_play_start=turn.t3_audio_play_start,
             model_name=turn.model_name,
             stt_provider=turn.stt_provider,
+            stt_model=turn.stt_model,
             tts_provider=turn.tts_provider,
             tts_voice=turn.tts_voice,
             created_at=turn.created_at,
@@ -523,6 +599,7 @@ class SessionService:
                 t3_audio_play_start=turn.t3_audio_play_start,
                 model_name=turn.model_name,
                 stt_provider=turn.stt_provider,
+                stt_model=turn.stt_model,
                 tts_provider=turn.tts_provider,
                 tts_voice=turn.tts_voice,
                 created_at=turn.created_at,
@@ -556,6 +633,7 @@ class SessionService:
         asr_latencies = []
         llm_latencies = []
         tts_latencies = []
+        client_load_latencies = []
         
         total_input_tokens = 0
         total_output_tokens = 0
@@ -572,6 +650,11 @@ class SessionService:
             
             if turn.t2_llm_final and turn.t2_5_tts_ready:
                 tts_latencies.append(turn.t2_5_tts_ready - turn.t2_llm_final)
+            
+            if turn.t2_5_tts_ready and turn.t3_audio_play_start:
+                client_load_latencies.append(
+                    turn.t3_audio_play_start - turn.t2_5_tts_ready
+                )
             
             if turn.input_tokens:
                 total_input_tokens += turn.input_tokens
@@ -612,6 +695,7 @@ class SessionService:
         metrics.asr_avg_ms = avg(asr_latencies)
         metrics.llm_avg_ms = avg(llm_latencies)
         metrics.tts_avg_ms = avg(tts_latencies)
+        metrics.client_load_avg_ms = avg(client_load_latencies)
         metrics.total_turns = total_turns
         metrics.user_turns = len(user_turns)
         metrics.total_input_tokens = total_input_tokens
@@ -657,6 +741,7 @@ class SessionService:
             asr_avg_ms=metrics.asr_avg_ms,
             llm_avg_ms=metrics.llm_avg_ms,
             tts_avg_ms=metrics.tts_avg_ms,
+            client_load_avg_ms=metrics.client_load_avg_ms,
             total_turns=metrics.total_turns,
             user_turns=metrics.user_turns,
             asr_retry_count=metrics.asr_retry_count,

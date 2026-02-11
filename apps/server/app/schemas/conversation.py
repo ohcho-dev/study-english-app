@@ -313,6 +313,15 @@ class SessionListItem(BaseModel):
     started_at: datetime
     ended_at: datetime | None
     device_type: str | None
+    experiment_type: str | None = None
+    variant: dict | None = None
+    
+    # Latency metrics (averages in ms)
+    e2e_avg_ms: float | None = None
+    asr_avg_ms: float | None = None
+    llm_avg_ms: float | None = None
+    tts_avg_ms: float | None = None
+    client_load_avg_ms: float | None = None
     
     class Config:
         """Pydantic config."""
@@ -356,9 +365,17 @@ class TurnResponse(BaseModel):
     t2_5_tts_ready: float | None
     t3_audio_play_start: float | None
     
+    # Computed latencies (ms)
+    asr_latency_ms: float | None = None
+    llm_latency_ms: float | None = None
+    tts_latency_ms: float | None = None
+    client_load_ms: float | None = None
+    e2e_latency_ms: float | None = None
+    
     # Metadata
     model_name: str | None
     stt_provider: str | None
+    stt_model: str | None = None
     tts_provider: str | None
     tts_voice: str | None
     
@@ -368,6 +385,26 @@ class TurnResponse(BaseModel):
         """Pydantic config."""
         
         from_attributes = True
+    
+    def __init__(self, **data):
+        """Compute latency fields from timestamps."""
+        super().__init__(**data)
+        t0 = self.t0_user_end
+        t1 = self.t1_asr_final
+        t2 = self.t2_llm_final
+        t2_5 = self.t2_5_tts_ready
+        t3 = self.t3_audio_play_start
+        
+        if t0 and t1:
+            self.asr_latency_ms = round(t1 - t0, 1)
+        if t1 and t2:
+            self.llm_latency_ms = round(t2 - t1, 1)
+        if t2 and t2_5:
+            self.tts_latency_ms = round(t2_5 - t2, 1)
+        if t2_5 and t3:
+            self.client_load_ms = round(t3 - t2_5, 1)
+        if t0 and t3:
+            self.e2e_latency_ms = round(t3 - t0, 1)
 
 
 # ============================================================================
@@ -388,6 +425,7 @@ class SessionMetricsResponse(BaseModel):
     asr_avg_ms: float | None
     llm_avg_ms: float | None
     tts_avg_ms: float | None
+    client_load_avg_ms: float | None = None
     
     # Quality metrics
     total_turns: int
@@ -500,8 +538,8 @@ class Run0VoiceRequest(BaseModel):
 class Run0VoiceResponse(BaseModel):
     """Schema for RUN0 voice processing response."""
     
-    session_id: UUID
-    turn_id: UUID
+    session_id: UUID | None = None
+    turn_id: UUID | None = None
     transcript: str = Field(description="STT result - user's speech as text")
     reply_text: str = Field(description="LLM response text")
     audio_url: str | None = Field(None, description="TTS audio URL")

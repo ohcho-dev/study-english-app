@@ -1,97 +1,30 @@
 'use client';
 
 /**
- * Run0Runner Component - Main RUN0 experiment UI
+ * Run0Runner Component - Pure latency measurement UI
  * 
- * Combines voice recording, configuration, and metrics into
- * a cohesive experiment interface.
+ * STT → LLM → TTS pipeline latency testing interface.
+ * No template or scenario dependencies.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Play, Square, RotateCcw, Download, MessageSquare } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Badge } from '@/shared/ui/badge';
-import { Input } from '@/shared/ui/input';
 
 import { useRun0, useTestPhrases } from '../model/useRun0';
 import { VoiceRecorder } from './VoiceRecorder';
 import { Run0ConfigPanel } from './Run0ConfigPanel';
 import { MetricsDashboard } from './MetricsDashboard';
-import type { Template } from '../model/types';
 
-interface ParticipantVoiceSetting {
-    participantName: string;
-    participantType: string;
-    voiceId: string;
-}
-
-interface ExperimentSettings {
-    difficulty: number;
-    estimatedMinutes: number;
-    participantVoices: ParticipantVoiceSetting[];
-    customGreeting?: string;
-}
-
-interface Run0RunnerProps {
-    /** Template to use for the experiment */
-    template?: Template;
-    /** Template ID for new sessions */
-    templateId?: string;
-    /** Experiment settings from parent */
-    /** Callback for experiment status changes */
-    onStatusChange?: (isRunning: boolean) => void;
-}
-
-export const Run0Runner = ({ template, templateId, experimentSettings, onStatusChange }: Run0RunnerProps) => {
-    const effectiveTemplateId = template?.id || templateId;
-
-    const run0 = useRun0(effectiveTemplateId);
+export const Run0Runner = () => {
+    const run0 = useRun0();
     const { data: testPhrases = [] } = useTestPhrases();
 
     const [selectedPhrase, setSelectedPhrase] = useState<string | null>(null);
     const [showConversation, setShowConversation] = useState(true);
-
-    // Notify parent of running state changes
-    useEffect(() => {
-        onStatusChange?.(run0.isRunning);
-    }, [run0.isRunning, onStatusChange]);
-
-    // Sync experiment settings and template to run0 config
-    useEffect(() => {
-        const updates: Partial<typeof run0.config> = {};
-
-        // Apply template's system prompt
-        if (template?.system_prompt) {
-            updates.systemPrompt = template.system_prompt;
-        }
-
-        // Apply voice from experiment settings (first AI participant)
-        if (experimentSettings?.participantVoices?.length) {
-            const firstVoice = experimentSettings.participantVoices[0];
-            // If voiceId is provided, use it. If empty (Default), revert to default voice.
-            updates.voiceId = firstVoice.voiceId || 'en-US-Wavenet-F';
-        }
-
-        // Apply difficulty and estimated time
-        if (experimentSettings?.difficulty) {
-            updates.difficulty = experimentSettings.difficulty;
-        }
-        if (experimentSettings?.estimatedMinutes) {
-            updates.estimatedMinutes = experimentSettings.estimatedMinutes;
-        }
-
-        // Apply custom greeting
-        if (experimentSettings?.customGreeting !== undefined) {
-            updates.customGreeting = experimentSettings.customGreeting;
-        }
-
-        if (Object.keys(updates).length > 0) {
-            console.log('[Run0Runner] Updating config:', updates);
-            run0.updateConfig(updates);
-        }
-    }, [template?.system_prompt, experimentSettings]);
 
     // Handle recording completion
     const handleRecordingComplete = (blob: Blob, t0UserEnd: number) => {
@@ -101,7 +34,7 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
     // Export results as CSV
     const exportResults = () => {
         const csvRows = [
-            ['Iteration', 'IsWarmup', 'Transcript', 'Reply', 'ASR_ms', 'LLM_ms', 'TTS_ms', 'Server_ms', 'E2E_ms', 'Timestamp'],
+            ['Iteration', 'IsWarmup', 'Transcript', 'Reply', 'ASR_ms', 'LLM_ms', 'TTS_ms', 'ClientLoad_ms', 'Server_ms', 'E2E_ms', 'Timestamp'],
             ...run0.results.map((r) => [
                 r.iteration.toString(),
                 r.isWarmup.toString(),
@@ -110,6 +43,7 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
                 r.metrics.asrMs.toString(),
                 r.metrics.llmMs.toString(),
                 r.metrics.ttsMs.toString(),
+                r.metrics.clientLoadMs?.toString() || '',
                 r.metrics.serverTotalMs.toString(),
                 r.metrics.e2eMs?.toString() || '',
                 new Date(r.timestamp).toISOString(),
@@ -165,72 +99,6 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
                 </div>
             </div>
 
-            {/* Template Info */}
-            {template && (
-                <Card>
-                    <CardContent className="py-4">
-                        <div className="flex items-center gap-4">
-                            <Badge variant="outline">{template.mode}</Badge>
-                            <div className="flex-1">
-                                <div className="font-medium">{template.name}</div>
-                                {template.description && (
-                                    <p className="text-sm text-muted-foreground">
-                                        {template.description}
-                                    </p>
-                                )}
-                            </div>
-                            {template.difficulty && (
-                                <Badge>난이도 {template.difficulty}/5</Badge>
-                            )}
-                            <Badge variant="secondary">
-                                첫 발화자: {template.first_speaker === 'moderator_first' ? '모더레이터' :
-                                    template.first_speaker === 'ai_first' ? 'AI' : '사용자'}
-                            </Badge>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Greeting Display */}
-            {run0.greeting && run0.greeting.greeting_text && (
-                <Card className="border-primary/30 bg-primary/5">
-                    <CardContent className="py-4">
-                        <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                                <MessageSquare className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="flex-1 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium text-sm">
-                                        {run0.greeting.speaker_name || 'AI'}
-                                    </span>
-                                    <Badge variant="outline" className="text-xs">
-                                        {run0.greeting.speaker_type === 'moderator' ? '모더레이터' : 'AI'}
-                                    </Badge>
-                                    {run0.isGreetingPlaying && (
-                                        <Badge className="animate-pulse">재생 중...</Badge>
-                                    )}
-                                </div>
-                                <p className="text-sm">{run0.greeting.greeting_text}</p>
-                                {(run0.greeting.audio_base64 || run0.greeting.audio_url) && !run0.isGreetingPlaying && (
-                                    <audio
-                                        src={
-                                            run0.greeting.audio_base64
-                                                ? `data:audio/mp3;base64,${run0.greeting.audio_base64}`
-                                                : run0.greeting.audio_url?.startsWith('http')
-                                                    ? run0.greeting.audio_url
-                                                    : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${run0.greeting.audio_url}`
-                                        }
-                                        controls
-                                        className="w-full h-8 mt-2"
-                                    />
-                                )}
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left Column: Settings */}
                 <div className="space-y-6">
@@ -240,33 +108,6 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
                         defaultCollapsed={false}
                         disabled={run0.isRunning}
                     />
-
-                    {/* Test Phrases */}
-                    {testPhrases.length > 0 && (
-                        <Card>
-                            <CardHeader className="py-3">
-                                <CardTitle className="text-base">테스트 문구</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {testPhrases.map((phrase, idx) => (
-                                    <button
-                                        key={idx}
-                                        type="button"
-                                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${selectedPhrase === phrase
-                                            ? 'bg-primary/10 border border-primary/30'
-                                            : 'bg-muted/50 hover:bg-muted'
-                                            }`}
-                                        onClick={() => setSelectedPhrase(phrase)}
-                                    >
-                                        {phrase}
-                                    </button>
-                                ))}
-                                <p className="text-xs text-muted-foreground pt-2">
-                                    클릭하여 테스트할 문구 선택 (참고용)
-                                </p>
-                            </CardContent>
-                        </Card>
-                    )}
                 </div>
 
                 {/* Center Column: Voice Recorder */}
@@ -319,6 +160,33 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Test Phrases */}
+                    {testPhrases.length > 0 && (
+                        <Card>
+                            <CardHeader className="py-3">
+                                <CardTitle className="text-base">테스트 문구</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {testPhrases.map((phrase, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${selectedPhrase === phrase
+                                            ? 'bg-primary/10 border border-primary/30'
+                                            : 'bg-muted/50 hover:bg-muted'
+                                            }`}
+                                        onClick={() => setSelectedPhrase(phrase)}
+                                    >
+                                        {phrase}
+                                    </button>
+                                ))}
+                                <p className="text-xs text-muted-foreground pt-2">
+                                    클릭하여 테스트할 문구 선택 (참고용)
+                                </p>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Last Response */}
                     {run0.lastResponse && (
@@ -416,8 +284,9 @@ export const Run0Runner = ({ template, templateId, experimentSettings, onStatusC
                     />
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 
 export default Run0Runner;
+

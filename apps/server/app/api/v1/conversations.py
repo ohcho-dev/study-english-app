@@ -358,6 +358,67 @@ async def get_session_metrics(db: DbSession, session_id: UUID):
 
 
 # ============================================================================
+# RUN0 Model Options
+# ============================================================================
+
+
+@router.get("/run0/models/stt", summary="Get available STT models")
+async def get_stt_models():
+    """Get list of available Speech-to-Text models."""
+    return [
+        {"id": "latest_long", "name": "Latest Long", "description": "대화용 오디오에 최적화 (기본값)", "provider": "google"},
+        {"id": "latest_short", "name": "Latest Short", "description": "짧은 발화에 최적화", "provider": "google"},
+        {"id": "chirp_2", "name": "Chirp 2", "description": "차세대 고정확도 모델", "provider": "google"},
+        {"id": "chirp", "name": "Chirp", "description": "범용 음성 인식 모델", "provider": "google"},
+    ]
+
+
+@router.get("/run0/models/llm", summary="Get available LLM models")
+async def get_llm_models():
+    """Get list of available LLM models for Run0."""
+    from app.services.ai_lab.model_registry import MODEL_REGISTRY
+    models = []
+    for model_id, info in MODEL_REGISTRY.items():
+        if info.category in ("general", "reasoning"):
+            models.append({
+                "id": info.id,
+                "name": info.name,
+                "provider": info.provider,
+                "description": info.description,
+                "category": info.category,
+            })
+    return models
+
+
+@router.get("/run0/models/tts", summary="Get available TTS providers, models, and voices")
+async def get_tts_options():
+    """Get structured TTS options by provider."""
+    from app.services.conversation.gemini_tts_service import GeminiTTSService
+    
+    gc_voices = TTSService.get_available_voices()
+    gemini_models = GeminiTTSService.get_available_models()
+    gemini_voices = GeminiTTSService.get_available_voices()
+    
+    return {
+        "providers": [
+            {
+                "id": "google-cloud",
+                "name": "Google Cloud TTS",
+                "description": "안정적이고 다양한 음성 지원 (추천)",
+                "voices": gc_voices,
+            },
+            {
+                "id": "gemini",
+                "name": "Gemini TTS",
+                "description": "AI 기반 자연스러운 음성 생성",
+                "models": gemini_models,
+                "voices": gemini_voices,
+            },
+        ],
+    }
+
+
+# ============================================================================
 # RUN0 Voice Processing Endpoints
 # ============================================================================
 
@@ -371,31 +432,19 @@ async def process_voice(
     template_id: UUID | None = Form(None, description="Template ID for new session"),
     voice_id: str = Form("en-US-Wavenet-F", description="TTS voice ID"),
     system_prompt: str | None = Form(None, description="Custom system prompt"),
+    stt_model: str = Form("latest_long", description="STT model (latest_long, chirp_2, latest_short)"),
+    llm_model: str = Form("gemini-2.5-flash", description="LLM model name"),
+    tts_provider: str = Form("google-cloud", description="TTS provider (google-cloud, gemini)"),
+    tts_model: str | None = Form(None, description="TTS model for Gemini TTS"),
     difficulty: int | None = Form(None, ge=1, le=5, description="Difficulty level (1-5)"),
     estimated_minutes: int | None = Form(None, ge=1, description="Estimated session duration"),
 ):
     """Process voice input through STT → LLM → TTS pipeline.
     
     This is the main RUN0 endpoint for voice-based conversation testing.
-    
-    Args:
-        audio_file: Recorded audio from client.
-        t0_user_end: Client timestamp when user stopped speaking.
-        session_id: Existing session to continue.
-        template_id: Template to use for new session.
-        voice_id: TTS voice ID for response.
-        system_prompt: Optional custom prompt.
-        difficulty: Difficulty level (1-5) for new session.
-        estimated_minutes: Estimated duration for new session.
-        
-    Returns:
-        Voice response with transcript, reply, audio, and timing metrics.
+    Can work standalone (no session/template) or with an existing session.
     """
-    if not session_id and not template_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either session_id or template_id is required",
-        )
+    # session_id / template_id are both optional for standalone Run0
     
     # Read audio file
     audio_data = await audio_file.read()
@@ -427,6 +476,10 @@ async def process_voice(
             template_id=template_id,
             voice_id=voice_id,
             system_prompt=system_prompt,
+            stt_model=stt_model,
+            llm_model=llm_model,
+            tts_provider=tts_provider,
+            tts_model=tts_model,
             difficulty=difficulty,
             estimated_minutes=estimated_minutes,
         )

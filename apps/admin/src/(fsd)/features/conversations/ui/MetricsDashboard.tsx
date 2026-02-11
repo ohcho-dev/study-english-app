@@ -85,6 +85,9 @@ export const MetricsDashboard = ({
     const asrLatencies = testResults.map((r) => r.metrics.asrMs);
     const llmLatencies = testResults.map((r) => r.metrics.llmMs);
     const ttsLatencies = testResults.map((r) => r.metrics.ttsMs);
+    const clientLoadLatencies = testResults
+        .map((r) => r.metrics.clientLoadMs)
+        .filter((v): v is number => v !== null);
     // Server latencies can be added if needed: results.map(r => r.metrics.serverTotalMs)
 
     // Calculate stats
@@ -92,6 +95,7 @@ export const MetricsDashboard = ({
     const asrStats = calculateStats(asrLatencies);
     const llmStats = calculateStats(llmLatencies);
     const ttsStats = calculateStats(ttsLatencies);
+    const clientLoadStats = calculateStats(clientLoadLatencies);
     // Server stats available if needed: calculateStats(serverLatencies)
 
     // Check if target is met
@@ -127,7 +131,7 @@ export const MetricsDashboard = ({
 
             {/* Summary Cards */}
             {testResults.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     {/* E2E Average */}
                     <Card className={isTargetMet ? 'border-green-500' : 'border-yellow-500'}>
                         <CardContent className="py-4">
@@ -196,6 +200,24 @@ export const MetricsDashboard = ({
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Client Load Latency */}
+                    {clientLoadStats && (
+                        <Card>
+                            <CardContent className="py-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                    <Clock className="h-4 w-4" />
+                                    Client Load 평균
+                                </div>
+                                <div className="text-2xl font-bold">
+                                    {formatMs(clientLoadStats.avg)}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                    t2.5→t3
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
             )}
 

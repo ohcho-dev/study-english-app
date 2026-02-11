@@ -153,6 +153,10 @@ export const processVoice = async (
         templateId?: string;
         voiceId?: string;
         systemPrompt?: string;
+        sttModel?: string;
+        llmModel?: string;
+        ttsProvider?: string;
+        ttsModel?: string;
         difficulty?: number;
         estimatedMinutes?: number;
     }
@@ -172,6 +176,18 @@ export const processVoice = async (
     }
     if (options.systemPrompt) {
         formData.append('system_prompt', options.systemPrompt);
+    }
+    if (options.sttModel) {
+        formData.append('stt_model', options.sttModel);
+    }
+    if (options.llmModel) {
+        formData.append('llm_model', options.llmModel);
+    }
+    if (options.ttsProvider) {
+        formData.append('tts_provider', options.ttsProvider);
+    }
+    if (options.ttsModel) {
+        formData.append('tts_model', options.ttsModel);
     }
     if (options.difficulty) {
         formData.append('difficulty', options.difficulty.toString());
@@ -217,4 +233,43 @@ export const getAvailableVoices = async (): Promise<VoiceInfo[]> => {
 
 export const getDirectorPromptSpec = async (): Promise<DirectorPromptSpec> => {
     return api.get<DirectorPromptSpec>(`${CONVERSATIONS_BASE}/director-prompt-spec`);
+};
+
+// ============================================================================
+// RUN0 Model Options API
+// ============================================================================
+
+export interface ModelOption {
+    id: string;
+    name: string;
+    description?: string;
+    provider?: string;
+    category?: string;
+    gender?: string;
+    language?: string;
+    type?: string;
+}
+
+export interface TTSProvider {
+    id: string;
+    name: string;
+    description: string;
+    voices: ModelOption[];
+    models?: ModelOption[];
+}
+
+export interface TTSOptionsResponse {
+    providers: TTSProvider[];
+}
+
+export const getSTTModels = async (): Promise<ModelOption[]> => {
+    return api.get<ModelOption[]>(`${CONVERSATIONS_BASE}/run0/models/stt`);
+};
+
+export const getLLMModels = async (): Promise<ModelOption[]> => {
+    return api.get<ModelOption[]>(`${CONVERSATIONS_BASE}/run0/models/llm`);
+};
+
+export const getTTSOptions = async (): Promise<TTSOptionsResponse> => {
+    return api.get<TTSOptionsResponse>(`${CONVERSATIONS_BASE}/run0/models/tts`);
 };

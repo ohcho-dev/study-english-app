@@ -19,6 +19,7 @@ from app.schemas.conversation import (
 from app.services.conversation.session_service import SessionService
 from app.services.conversation.stt_service import STTService
 from app.services.conversation.tts_service import TTSService
+from app.services.conversation.gemini_tts_service import GeminiTTSService
 
 # LLM imports
 import google.generativeai as genai
@@ -53,6 +54,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         self.db = db
         self.stt_service = STTService()
         self.tts_service = TTSService()
+        self.gemini_tts_service = GeminiTTSService()
         self.session_service = SessionService(db)
         
         # Configure Gemini
@@ -67,6 +69,10 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         template_id: UUID | None = None,
         voice_id: str = "en-US-Wavenet-F",
         system_prompt: str | None = None,
+        stt_model: str = "latest_long",
+        llm_model: str = "gemini-2.5-flash",
+        tts_provider: str = "google-cloud",
+        tts_model: str | None = None,
         difficulty: int | None = None,
         estimated_minutes: int | None = None,
     ) -> Run0VoiceResponse:
@@ -89,7 +95,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         Raises:
             ValueError: If neither session_id nor template_id provided.
         """
-        # Get or create session
+        # Get or create session (optional for standalone Run0)
         if session_id:
             # Check for timeout before processing
             is_timed_out = await self.session_service.check_session_timeout(session_id)
@@ -114,12 +120,22 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             )
             session_id = session.id
         else:
-            raise ValueError("Either session_id or template_id required")
+            # Standalone Run0 mode — auto-create session for latency tracking
+            session = await self.session_service.create_run0_session(
+                stt_model=stt_model,
+                llm_model=llm_model,
+                tts_provider=tts_provider,
+                tts_model=tts_model,
+                voice_id=voice_id,
+                system_prompt=system_prompt,
+            )
+            session_id = session.id
         
         # Step 1: STT - Convert speech to text
         stt_result = await self.stt_service.transcribe(
             audio_data=audio_data,
             audio_format=audio_format,
+            model=stt_model,
         )
         t1_asr_final = time.time() * 1000  # Current timestamp in ms
         
@@ -127,7 +143,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         if not transcript:
             transcript = "[No speech detected]"
         
-        # Get first AI participant name for context
+        # Get first AI participant name for context (only if session exists)
         first_ai_speaker = None
         if session_id:
             session = await self.session_service.get_by_id_with_template(session_id)
@@ -144,6 +160,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
             session_id=session_id,
             speaker_name=first_ai_speaker,
+            llm_model=llm_model,
         )
         t2_llm_final = time.time() * 1000
         
@@ -152,14 +169,22 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         output_tokens = len(reply_text.split()) * 2
         
         # Step 3: TTS - Convert response to speech
-        tts_result = await self.tts_service.synthesize(
-            text=reply_text,
-            voice_id=voice_id,
-            save_file=True,
-        )
+        if tts_provider == "gemini":
+            tts_result = await self.gemini_tts_service.synthesize(
+                text=reply_text,
+                model=tts_model or "gemini-2.5-flash-preview-tts",
+                voice_name=voice_id,
+                save_file=True,
+            )
+        else:
+            tts_result = await self.tts_service.synthesize(
+                text=reply_text,
+                voice_id=voice_id,
+                save_file=True,
+            )
         t2_5_tts_ready = time.time() * 1000
         
-        # Save turn to database
+        # Save turns to database (session always exists now)
         turn = await self.session_service.add_turn(
             session_id=session_id,
             turn_type=TurnType.USER,
@@ -170,13 +195,15 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             t1_asr_final=t1_asr_final,
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
-            model_name="gemini-2.5-flash",
+            model_name=llm_model,
             stt_provider="google",
-            tts_provider="google",
+            stt_model=stt_model,
+            tts_provider=tts_provider,
             tts_voice=voice_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+        turn_id = turn.id
         
         # Also save AI response as a separate turn
         await self.session_service.add_turn(
@@ -188,9 +215,6 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             audio_duration_ms=tts_result.get("duration_ms"),
         )
         
-        # IMPORTANT: Calculate metrics incrementally after each turn logic
-        # Ideally we do this after client logs timestamp, but we can do a partial update here if needed.
-        # This ensures ASR/LLM/TTS metrics are saved even if client-side timestamp logging is disabled.
         await self.session_service.calculate_metrics(session_id)
         
         # Calculate latencies
@@ -201,7 +225,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         
         return Run0VoiceResponse(
             session_id=session_id,
-            turn_id=turn.id,
+            turn_id=turn_id,
             transcript=transcript,
             reply_text=reply_text,
             audio_url=tts_result.get("audio_url"),
@@ -255,8 +279,9 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         self,
         user_input: str,
         system_prompt: str,
-        session_id: UUID,
+        session_id: UUID | None,
         speaker_name: str | None = None,
+        llm_model: str = "gemini-2.5-flash",
     ) -> str:
         """Generate LLM response using Gemini.
         
@@ -269,29 +294,33 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         Returns:
             Generated response text.
         """
-        # Get conversation history for context
-        turns = await self.session_service.get_session_turns(session_id)
+        # Get conversation history for context (only if session exists)
+        turns = []
+        if session_id:
+            turns = await self.session_service.get_session_turns(session_id)
         
         # Build dynamic context with persona and scene
-        context = await self.build_llm_context(session_id, speaker_name)
-        if not context or context == self.DEFAULT_SYSTEM_PROMPT:
-            context = system_prompt
-
-        # Determine model
-        llm_model = "gemini-2.5-flash"
+        context = system_prompt
         if session_id:
-             try:
-                 session = await self.session_service.get_by_id(session_id)
-                 if session and session.variant:
-                     import json
-                     v = json.loads(session.variant)
-                     llm_model = v.get("llm_model", "gemini-2.5-flash")
-             except:
-                 pass
+            built_context = await self.build_llm_context(session_id, speaker_name)
+            if built_context and built_context != self.DEFAULT_SYSTEM_PROMPT:
+                context = built_context
 
-        # Create model without system_instruction (not supported in older versions)
+        # Use the model passed from caller
+        effective_model = llm_model
+        if session_id:
+            try:
+                session = await self.session_service.get_by_id(session_id)
+                if session and session.variant:
+                    import json
+                    v = json.loads(session.variant)
+                    effective_model = v.get("llm_model", llm_model)
+            except:
+                pass
+
+        # Create model
         model = genai.GenerativeModel(
-            model_name=llm_model,
+            model_name=effective_model,
         )
         
         # Prepend system instruction to history as a fake turn if needed
@@ -328,11 +357,11 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             List of test phrases.
         """
         return [
-            "Hi, can you hear me?",
-            "I'm testing a multi-person English conversation demo.",
-            "I watched a video about Taylor Swift and New York.",
-            "I need a table for ten people and three sessions.",
-            "Wait—really? That's amazing!",
+            "Hello everyone, I am ready to start now.",
+            "I think the first option is the best choice.",
+            "Actually, I am not really sure about that.",
+            "What do you think we should do next?",
+            "Could you tell me more about the secret?",
         ]
     
         return "\n\n".join(context_parts)

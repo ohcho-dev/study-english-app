@@ -6,15 +6,12 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
-    createSession,
     endSession,
-    generateGreeting,
-    getAvailableVoices,
     getTestPhrases,
     logClientTimestamp,
     processVoice,
 } from '../api/conversationsApi';
-import type { GreetingResponse, Run0VoiceResponse } from './types';
+import type { Run0VoiceResponse } from './types';
 
 // ============================================================================
 // Experiment Configuration Types
@@ -23,6 +20,14 @@ import type { GreetingResponse, Run0VoiceResponse } from './types';
 export interface Run0Config {
     /** TTS voice ID */
     voiceId: string;
+    /** STT model */
+    sttModel: string;
+    /** LLM model */
+    llmModel: string;
+    /** TTS provider: google-cloud or gemini */
+    ttsProvider: string;
+    /** TTS model (for Gemini TTS) */
+    ttsModel: string;
     /** Custom system prompt */
     systemPrompt: string;
     /** Auto-play response audio */
@@ -39,20 +44,15 @@ export interface Run0Config {
     targetLatencyMs: number;
     /** Max acceptable E2E latency (ms) */
     maxLatencyMs: number;
-    /** Difficulty level (1-5) */
-    difficulty: number;
-    /** Estimated session duration in minutes */
-    estimatedMinutes: number;
-    /** Custom greeting override */
-    customGreeting: string;
 }
 
 export const DEFAULT_RUN0_CONFIG: Run0Config = {
-    voiceId: 'en-US-Wavenet-F',
-    systemPrompt: `You are a friendly English conversation partner.
-You help users practice English through natural conversation.
-Keep responses concise (1-3 sentences) and conversational.
-Respond naturally to what the user says.`,
+    voiceId: 'en-US-Neural2-F',
+    sttModel: 'latest_long',
+    llmModel: 'gemini-2.5-flash',
+    ttsProvider: 'google-cloud',
+    ttsModel: 'gemini-2.5-flash-preview-tts',
+    systemPrompt: `You are a helpful AI friend. We are currently discussing three options for our upcoming secret party. Always reply in one short English sentence within 12 words.`,
     autoPlayAudio: true,
     showMetrics: true,
     enableTimestampLogging: true,
@@ -60,9 +60,6 @@ Respond naturally to what the user says.`,
     testIterations: 4,
     targetLatencyMs: 3000,
     maxLatencyMs: 5000,
-    difficulty: 3,
-    estimatedMinutes: 5,
-    customGreeting: '',
 };
 
 // ============================================================================
@@ -73,6 +70,7 @@ export interface LatencyMetrics {
     asrMs: number;
     llmMs: number;
     ttsMs: number;
+    clientLoadMs: number | null; // null until t3 is logged
     serverTotalMs: number;
     e2eMs: number | null; // null until t3 is logged
 }
@@ -101,10 +99,6 @@ export interface Run0State {
     lastResponse: Run0VoiceResponse | null;
     /** Error message if any */
     error: string | null;
-    /** Greeting response */
-    greeting: GreetingResponse | null;
-    /** Is greeting playing */
-    isGreetingPlaying: boolean;
 }
 
 // ============================================================================
@@ -126,7 +120,7 @@ export const useTestPhrases = () => {
 /**
  * Main RUN0 experiment hook with full customization
  */
-export const useRun0 = (templateId?: string) => {
+export const useRun0 = () => {
     const [config, setConfig] = useState<Run0Config>(DEFAULT_RUN0_CONFIG);
     const [state, setState] = useState<Run0State>({
         sessionId: null,
@@ -136,8 +130,6 @@ export const useRun0 = (templateId?: string) => {
         results: [],
         lastResponse: null,
         error: null,
-        greeting: null,
-        isGreetingPlaying: false,
     });
 
     // Audio element for playback
@@ -159,11 +151,12 @@ export const useRun0 = (templateId?: string) => {
         }) => {
             return processVoice(audioBlob, t0UserEnd, {
                 sessionId: state.sessionId || undefined,
-                templateId,
                 voiceId: config.voiceId,
                 systemPrompt: config.systemPrompt,
-                difficulty: config.difficulty,
-                estimatedMinutes: config.estimatedMinutes,
+                sttModel: config.sttModel,
+                llmModel: config.llmModel,
+                ttsProvider: config.ttsProvider,
+                ttsModel: config.ttsModel,
             });
         },
         onSuccess: async (response) => {
@@ -181,6 +174,7 @@ export const useRun0 = (templateId?: string) => {
                     asrMs: response.asr_latency_ms,
                     llmMs: response.llm_latency_ms,
                     ttsMs: response.tts_latency_ms,
+                    clientLoadMs: null,
                     serverTotalMs: response.server_total_ms,
                     e2eMs: null,
                 },
@@ -240,6 +234,7 @@ export const useRun0 = (templateId?: string) => {
                                                     metrics: {
                                                         ...r.metrics,
                                                         e2eMs: logResult.e2e_latency_ms,
+                                                        clientLoadMs: t3 - response.t2_5_tts_ready,
                                                     },
                                                 }
                                                 : r
@@ -285,7 +280,7 @@ export const useRun0 = (templateId?: string) => {
         },
     });
 
-    // Start experiment with optional user name
+    // Start experiment
     const startExperiment = useCallback(async () => {
         setState({
             sessionId: null,
@@ -295,60 +290,8 @@ export const useRun0 = (templateId?: string) => {
             results: [],
             lastResponse: null,
             error: null,
-            greeting: null,
-            isGreetingPlaying: false,
         });
-
-        // If we have a templateId, create a session and fetch greeting
-        if (templateId) {
-            try {
-                const session = await createSession({
-                    template_id: templateId,
-                    difficulty: config.difficulty,
-                    estimated_minutes: config.estimatedMinutes,
-                });
-
-                setState(prev => ({ ...prev, sessionId: session.id }));
-
-                // Fetch and play greeting with voiceId and customGreeting
-                const greetingResponse = await generateGreeting(session.id, {
-                    voiceId: config.voiceId,
-                    customGreeting: config.customGreeting || undefined,
-                });
-                setState(prev => ({ ...prev, greeting: greetingResponse }));
-
-                // Auto-play greeting if there is one
-                if (greetingResponse.greeting_text && config.autoPlayAudio) {
-                    const audio = audioRef();
-                    if (audio) {
-                        let audioSrc: string | null = null;
-                        if (greetingResponse.audio_base64) {
-                            audioSrc = `data:audio/mp3;base64,${greetingResponse.audio_base64}`;
-                        } else if (greetingResponse.audio_url) {
-                            const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-                            audioSrc = greetingResponse.audio_url.startsWith('http')
-                                ? greetingResponse.audio_url
-                                : `${serverUrl}${greetingResponse.audio_url}`;
-                        }
-
-                        if (audioSrc) {
-                            audio.src = audioSrc;
-                            setState(prev => ({ ...prev, isGreetingPlaying: true }));
-                            audio.onended = () => {
-                                setState(prev => ({ ...prev, isGreetingPlaying: false }));
-                            };
-                            audio.play().catch(console.error);
-                        }
-                    }
-                }
-            } catch (error) {
-                setState(prev => ({
-                    ...prev,
-                    error: error instanceof Error ? error.message : 'Failed to start session',
-                }));
-            }
-        }
-    }, [templateId, config, audioRef]);
+    }, []);
 
     // Stop experiment
     const stopExperiment = useCallback(async () => {
@@ -387,8 +330,6 @@ export const useRun0 = (templateId?: string) => {
             results: [],
             lastResponse: null,
             error: null,
-            greeting: null,
-            isGreetingPlaying: false,
         });
     }, []);
 
