@@ -242,6 +242,7 @@ class SessionService:
         tts_model: str | None = None,
         voice_id: str = "en-US-Neural2-F",
         system_prompt: str | None = None,
+        warmup_iterations: int = 2,
     ) -> ConversationSession:
         """Create a Run0 session without a template.
         
@@ -255,6 +256,7 @@ class SessionService:
             tts_model: TTS model (for Gemini TTS).
             voice_id: TTS voice ID.
             system_prompt: Custom system prompt.
+            warmup_iterations: Number of warmup turns to exclude from metrics.
             
         Returns:
             Created session ORM object.
@@ -268,6 +270,7 @@ class SessionService:
                 "tts_model": tts_model,
                 "tts_voice": voice_id,
                 "system_prompt": (system_prompt or "")[:200],  # Truncate for storage
+                "warmup_iterations": warmup_iterations,
             },
         }
         
@@ -627,6 +630,30 @@ class SessionService:
         
         if not user_turns:
             return None
+            
+        # Determine warmup turns to exclude
+        warmup_count = 0
+        query_session = select(ConversationSession).where(ConversationSession.id == session_id)
+        session_result = await self.db.execute(query_session)
+        session = session_result.scalar_one_or_none()
+        
+        if session and session.experiment_type == "run0" and session.variant:
+            try:
+                variant_data = json.loads(session.variant)
+                if isinstance(variant_data, dict):
+                    # Check nested pipeline_config first (create_run0_session structure)
+                    if "pipeline_config" in variant_data:
+                        warmup_count = variant_data["pipeline_config"].get("warmup_iterations", 2)
+                    # Check top level (legacy or direct)
+                    elif "warmup_iterations" in variant_data:
+                        warmup_count = variant_data.get("warmup_iterations", 2)
+            except Exception:
+                pass  # Default to 0 or keeping all if parsing fails
+        
+        # Filter out warmup turns
+        # We assume turns are ordered by time/index.
+        # User turns are 0, 1, 2... we skip the first N.
+        valid_turns = user_turns[warmup_count:] if len(user_turns) > warmup_count else []
         
         # Calculate latencies
         e2e_latencies = []
@@ -638,7 +665,10 @@ class SessionService:
         total_input_tokens = 0
         total_output_tokens = 0
         
-        for turn in user_turns:
+        # Use valid_turns for averages/percentiles, but keep total counts correct?
+        # Usually total turns should include warmup, but metrics (avg/p50) should not.
+        
+        for turn in valid_turns:
             if turn.t0_user_end and turn.t3_audio_play_start:
                 e2e_latencies.append(turn.t3_audio_play_start - turn.t0_user_end)
             

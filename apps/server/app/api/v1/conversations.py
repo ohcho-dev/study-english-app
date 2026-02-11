@@ -472,6 +472,7 @@ async def process_voice(
     tts_model: str | None = Form(None, description="TTS model for Gemini TTS"),
     difficulty: int | None = Form(None, ge=1, le=5, description="Difficulty level (1-5)"),
     estimated_minutes: int | None = Form(None, ge=1, description="Estimated session duration"),
+    warmup_iterations: int = Form(2, ge=0, description="Number of warmup iterations to exclude from metrics"),
 ):
     """Process voice input through STT → LLM → TTS pipeline.
     
@@ -516,6 +517,7 @@ async def process_voice(
             tts_model=tts_model,
             difficulty=difficulty,
             estimated_minutes=estimated_minutes,
+            warmup_iterations=warmup_iterations,
         )
         return result
     except ValueError as e:

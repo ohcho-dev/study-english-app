@@ -75,6 +75,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         tts_model: str | None = None,
         difficulty: int | None = None,
         estimated_minutes: int | None = None,
+        warmup_iterations: int = 2,
     ) -> Run0VoiceResponse:
         """Process voice input through the full pipeline.
         
@@ -128,6 +129,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
                 tts_model=tts_model,
                 voice_id=voice_id,
                 system_prompt=system_prompt,
+                warmup_iterations=warmup_iterations,
             )
             session_id = session.id
         

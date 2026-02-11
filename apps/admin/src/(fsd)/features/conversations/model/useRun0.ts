@@ -157,6 +157,7 @@ export const useRun0 = () => {
                 llmModel: config.llmModel,
                 ttsProvider: config.ttsProvider,
                 ttsModel: config.ttsModel,
+                warmupIterations: config.warmupIterations,
             });
         },
         onSuccess: async (response) => {

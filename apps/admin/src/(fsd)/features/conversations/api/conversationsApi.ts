@@ -187,6 +187,7 @@ export const processVoice = async (
         ttsModel?: string;
         difficulty?: number;
         estimatedMinutes?: number;
+        warmupIterations?: number;
     }
 ): Promise<Run0VoiceResponse> => {
     const formData = new FormData();
@@ -222,6 +223,9 @@ export const processVoice = async (
     }
     if (options.estimatedMinutes) {
         formData.append('estimated_minutes', options.estimatedMinutes.toString());
+    }
+    if (options.warmupIterations !== undefined) {
+        formData.append('warmup_iterations', options.warmupIterations.toString());
     }
 
     const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/run0/voice`, {

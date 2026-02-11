@@ -5,12 +5,14 @@
  */
 
 import { useState } from 'react';
-import { Search, Eye, Clock, CheckCircle, AlertCircle, Loader2, BarChart3 } from 'lucide-react';
+import { Search, Eye, Clock, CheckCircle, AlertCircle, Loader2, BarChart3, Download } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent } from '@/shared/ui/card';
 import { Input } from '@/shared/ui/input';
 import { Badge } from '@/shared/ui/badge';
+import { Checkbox } from '@/shared/ui/checkbox';
+import { exportSessions } from '../api/conversationsApi';
 
 import type { SessionListItem, SessionStatus } from '../model/types';
 
@@ -37,6 +39,8 @@ export const SessionList = ({
 }: SessionListProps) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+    const [isExporting, setIsExporting] = useState(false);
 
     // Filter sessions
     const filteredSessions = sessions.filter((session) => {
@@ -46,6 +50,46 @@ export const SessionList = ({
         const matchesStatus = statusFilter === 'all' || session.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
+
+    // Valid sessions for export (completed ones usually, but let's allow all for now)
+    // Actually, export logic supports any session.
+
+    // Handle Checkbox Change
+    const toggleSession = (sessionId: string) => {
+        const newSelected = new Set(selectedSessions);
+        if (newSelected.has(sessionId)) {
+            newSelected.delete(sessionId);
+        } else {
+            newSelected.add(sessionId);
+        }
+        setSelectedSessions(newSelected);
+    };
+
+    // Handle Select All (filtered only)
+    const toggleSelectAll = () => {
+        if (selectedSessions.size === filteredSessions.length && filteredSessions.length > 0) {
+            setSelectedSessions(new Set());
+        } else {
+            setSelectedSessions(new Set(filteredSessions.map(s => s.id)));
+        }
+    };
+
+    // Handle Export
+    const handleExport = async () => {
+        if (selectedSessions.size === 0) return;
+
+        try {
+            setIsExporting(true);
+            await exportSessions(Array.from(selectedSessions));
+            // Optional: clear selection after successful export? 
+            // setSelectedSessions(new Set()); 
+        } catch (error) {
+            console.error("Export failed:", error);
+            alert("엑셀 다운로드 중 오류가 발생했습니다.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     // Format date
     const formatDate = (dateString: string) => {
@@ -74,14 +118,28 @@ export const SessionList = ({
         return `${(ms / 1000).toFixed(2)}s`;
     };
 
+    const isAllSelected = filteredSessions.length > 0 && selectedSessions.size === filteredSessions.length;
+
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold">세션 기록</h1>
-                <p className="text-muted-foreground">
-                    대화 세션 기록과 메트릭을 확인합니다
-                </p>
+            <div className="flex justify-between items-end">
+                <div>
+                    <h1 className="text-2xl font-bold">세션 기록</h1>
+                    <p className="text-muted-foreground">
+                        대화 세션 기록과 메트릭을 확인합니다
+                    </p>
+                </div>
+                {selectedSessions.size > 0 && (
+                    <Button
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="gap-2"
+                    >
+                        {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        {selectedSessions.size}개 항목 다운로드
+                    </Button>
+                )}
             </div>
 
             {/* Filters */}
@@ -138,6 +196,12 @@ export const SessionList = ({
                             <table className="w-full whitespace-nowrap">
                                 <thead>
                                     <tr className="border-b bg-muted/50">
+                                        <th className="py-3 px-4 w-[40px]">
+                                            <Checkbox
+                                                checked={isAllSelected}
+                                                onCheckedChange={toggleSelectAll}
+                                            />
+                                        </th>
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             상태
                                         </th>
@@ -187,12 +251,19 @@ export const SessionList = ({
                                         const statusConfig = STATUS_CONFIG[session.status];
                                         const StatusIcon = statusConfig.icon;
                                         const cfg = session.variant?.pipeline_config as Record<string, string> | undefined;
+                                        const isSelected = selectedSessions.has(session.id);
 
                                         return (
                                             <tr
                                                 key={session.id}
-                                                className="border-b hover:bg-muted/30 transition-colors"
+                                                className={`border-b transition-colors ${isSelected ? 'bg-muted/50' : 'hover:bg-muted/30'}`}
                                             >
+                                                <td className="py-3 px-4">
+                                                    <Checkbox
+                                                        checked={isSelected}
+                                                        onCheckedChange={() => toggleSession(session.id)}
+                                                    />
+                                                </td>
                                                 <td className="py-3 px-4">
                                                     <Badge
                                                         variant="outline"
@@ -289,7 +360,10 @@ export const SessionList = ({
             {/* Summary */}
             {!isLoading && filteredSessions.length > 0 && (
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>총 {filteredSessions.length}개의 세션</span>
+                    <span>
+                        총 {filteredSessions.length}개의 세션
+                        {selectedSessions.size > 0 && <span className="text-primary font-medium ml-2">({selectedSessions.size}개 선택됨)</span>}
+                    </span>
                     <div className="flex items-center gap-4">
                         <span className="flex items-center gap-1">
                             <span

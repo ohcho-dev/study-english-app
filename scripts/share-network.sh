@@ -17,10 +17,11 @@ echo "🌐 Starting Dual Ngrok Tunnels..."
 DEFAULT_CONFIG="$HOME/Library/Application Support/ngrok/ngrok.yml"
 
 if [ -f "$DEFAULT_CONFIG" ]; then
-    ngrok start --all --config="$DEFAULT_CONFIG" --config="$NGROK_CONFIG" > /dev/null 2>&1 &
+    echo "Starting ngrok with default config..."
+    ngrok start --all --config="$DEFAULT_CONFIG" --config="$NGROK_CONFIG" > ngrok.log 2>&1 &
 else
     echo "⚠️  Default ngrok config not found at $DEFAULT_CONFIG. Authentication might fail."
-    ngrok start --all --config="$NGROK_CONFIG" > /dev/null 2>&1 &
+    ngrok start --all --config="$NGROK_CONFIG" > ngrok.log 2>&1 &
 fi
 NGROK_PID=$!
 
