@@ -11,23 +11,18 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue,
+    SelectGroup,
+    SelectLabel,
 } from "@/shared/ui/select";
 import { Slider } from "@/shared/ui/slider";
 import { Label } from "@/shared/ui/label";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Settings2, Volume2, Zap, Gauge } from "lucide-react";
 import { Participant } from "../model/types";
+import { useVoiceOptions } from "../model/useVoiceOptions";
 
 
-// Placeholder for Voice options until fully integrated
-const VOICE_OPTIONS = [
-    { id: "en-US-Neural2-F", name: "Google US Female (Neural2)" },
-    { id: "en-US-Neural2-D", name: "Google US Male (Neural2)" },
-    { id: "en-US-Wavenet-F", name: "Google US Female (Wavenet)" },
-    { id: "en-US-Wavenet-D", name: "Google US Male (Wavenet)" },
-    { id: "en-GB-Neural2-A", name: "Google UK Female (Neural2)" },
-    { id: "en-GB-Neural2-B", name: "Google UK Male (Neural2)" },
-];
+// Voice options are now fetched via useVoiceOptions hook
 
 const MODEL_OPTIONS = [
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Recommended)" },
@@ -63,6 +58,7 @@ export const SessionSettings = ({
     disabled,
     currentSpeakerId,
 }: SessionSettingsProps) => {
+    const { groupedOptions = [] } = useVoiceOptions();
 
     const handleParticipantChange = (
         participantId: string,
@@ -166,10 +162,15 @@ export const SessionSettings = ({
                                                 <SelectValue placeholder="Select voice" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {VOICE_OPTIONS.map((v) => (
-                                                    <SelectItem key={v.id} value={v.id} className="text-xs">
-                                                        {v.name}
-                                                    </SelectItem>
+                                                {groupedOptions.map((group) => (
+                                                    <SelectGroup key={group.label}>
+                                                        <SelectLabel>{group.label}</SelectLabel>
+                                                        {group.options.map((v) => (
+                                                            <SelectItem key={v.value} value={v.value} className="text-xs">
+                                                                {v.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectGroup>
                                                 ))}
                                             </SelectContent>
                                         </Select>

@@ -26,7 +26,7 @@ import {
     Run0Runner,
     useTemplates,
     useTemplate,
-    useVoices,
+    useVoiceOptions,
 } from '@/(fsd)/features/conversations';
 
 interface ParticipantVoiceSetting {
@@ -53,7 +53,7 @@ function ExperimentContent() {
 
     const { data: templatesData, isLoading: templatesLoading } = useTemplates(1, 50, true);
     const { data: selectedTemplate } = useTemplate(selectedTemplateId || undefined);
-    const { data: voices = [] } = useVoices();
+    const { groupedOptions = [] } = useVoiceOptions();
 
     const templates = templatesData?.items || [];
 
@@ -285,10 +285,14 @@ function ExperimentContent() {
                                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
                                                 >
                                                     <option value="">기본 음성</option>
-                                                    {voices.map((v) => (
-                                                        <option key={v.id} value={v.id}>
-                                                            {v.name} ({v.gender})
-                                                        </option>
+                                                    {groupedOptions.map((group) => (
+                                                        <optgroup key={group.label} label={group.label}>
+                                                            {group.options.map((v) => (
+                                                                <option key={v.value} value={v.value}>
+                                                                    {v.label}
+                                                                </option>
+                                                            ))}
+                                                        </optgroup>
                                                     ))}
                                                 </select>
                                             </div>

@@ -48,7 +48,6 @@ export {
 // RUN0 hooks
 export {
     useRun0,
-    useVoices,
     useTestPhrases,
     DEFAULT_RUN0_CONFIG,
     type Run0Config,
@@ -64,6 +63,8 @@ export {
     type RecordingResult,
     type UseVoiceRecorderOptions,
 } from './model/useVoiceRecorder';
+
+export { useVoiceOptions } from './model/useVoiceOptions';
 
 // API
 export {

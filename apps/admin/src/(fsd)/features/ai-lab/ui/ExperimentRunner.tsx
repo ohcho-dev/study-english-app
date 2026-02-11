@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 
 import { uploadFile, getPipeline } from '../api/aiLabApi';
 import { useAudioRecorder, formatDuration } from '../model/useAudioRecorder';
+import { useVoiceOptions } from '@/features/conversations';
 import type {
     Agent,
     AgentModelOverride,
@@ -45,6 +46,7 @@ export const ExperimentRunner = ({
     onCancel,
     defaultPipelineId,
 }: ExperimentRunnerProps) => {
+    const { groupedOptions = [] } = useVoiceOptions();
     const [pipelineId, setPipelineId] = useState(defaultPipelineId || '');
     const [modelName, setModelName] = useState<ModelName>('gemini-2.5-flash');
     const [dataTransferMode, setDataTransferMode] = useState<DataTransferMode>('A');
@@ -553,11 +555,15 @@ export const ExperimentRunner = ({
                                                     onChange={(e) => setTtsVoice(e.target.value)}
                                                     className="flex h-8 rounded-md border border-input bg-background px-2 text-sm"
                                                 >
-                                                    <option value="Kore">Kore (여성)</option>
-                                                    <option value="Aoede">Aoede (여성)</option>
-                                                    <option value="Puck">Puck (남성)</option>
-                                                    <option value="Charon">Charon (남성)</option>
-                                                    <option value="Fenrir">Fenrir (남성)</option>
+                                                    {groupedOptions.map((group) => (
+                                                        <optgroup key={group.label} label={group.label}>
+                                                            {group.options.map((v) => (
+                                                                <option key={v.value} value={v.value}>
+                                                                    {v.label}
+                                                                </option>
+                                                            ))}
+                                                        </optgroup>
+                                                    ))}
                                                 </select>
                                             </>
                                         )}

@@ -27,7 +27,7 @@ export interface VoiceInfo {
     name: string;
     gender: 'MALE' | 'FEMALE';
     language: string;
-    type: 'WaveNet' | 'Neural2';
+    type: 'WaveNet' | 'Neural2' | 'Polyglot';
 }
 
 // ============================================================================

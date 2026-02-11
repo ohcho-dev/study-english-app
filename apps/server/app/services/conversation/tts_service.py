@@ -35,8 +35,19 @@ AVAILABLE_VOICES = {
     "en-GB-Wavenet-B": {"gender": "MALE", "name": "Oliver"},
     
     # English (Australia)
-    "en-AU-Wavenet-A": {"gender": "FEMALE", "name": "Charlotte"},
     "en-AU-Wavenet-B": {"gender": "MALE", "name": "Jack"},
+    
+    # English (US) - Polyglot
+    "en-US-Polyglot-1": {"gender": "MALE", "name": "Polyglot"},
+
+    # Korean
+    "ko-KR-Wavenet-A": {"gender": "FEMALE", "name": "Sun-Hi"},
+    "ko-KR-Wavenet-B": {"gender": "FEMALE", "name": "Ji-Min"},
+    "ko-KR-Wavenet-C": {"gender": "MALE", "name": "In-Su"},
+    "ko-KR-Wavenet-D": {"gender": "MALE", "name": "Jun-Ho"},
+    "ko-KR-Neural2-A": {"gender": "FEMALE", "name": "Seo-Yun"},
+    "ko-KR-Neural2-B": {"gender": "FEMALE", "name": "Min-Ji"},
+    "ko-KR-Neural2-C": {"gender": "MALE", "name": "Min-Su"},
 }
 
 
@@ -227,7 +238,10 @@ class TTSService:
         for voice_id, info in AVAILABLE_VOICES.items():
             parts = voice_id.split("-")
             language = f"{parts[0]}-{parts[1]}"
-            voice_type = "WaveNet" if "Wavenet" in voice_id else "Neural2"
+            if "Polyglot" in voice_id:
+                voice_type = "Polyglot"
+            else:
+                voice_type = "WaveNet" if "Wavenet" in voice_id else "Neural2"
             
             voices.append({
                 "id": voice_id,

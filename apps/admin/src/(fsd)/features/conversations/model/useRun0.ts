@@ -111,15 +111,7 @@ export interface Run0State {
 // Hooks
 // ============================================================================
 
-/**
- * Hook to fetch available TTS voices
- */
-export const useVoices = () => {
-    return useQuery({
-        queryKey: ['voices'],
-        queryFn: getAvailableVoices,
-    });
-};
+
 
 /**
  * Hook to fetch test phrases

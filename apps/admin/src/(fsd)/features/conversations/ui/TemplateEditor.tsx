@@ -16,6 +16,7 @@ import { Textarea } from '@/shared/ui/textarea'; // Assuming Textarea exists, or
 import { Label } from '@/shared/ui/label'; // Import Label
 import { useEffect } from 'react';
 import { getDirectorPromptSpec } from '../api/conversationsApi';
+import { useVoiceOptions } from '../model/useVoiceOptions';
 
 // Voice settings are controlled in experiment page, not template
 import type {
@@ -60,6 +61,7 @@ export const TemplateEditor = ({
     onCancel,
     isLoading = false,
 }: TemplateEditorProps) => {
+    const { groupedOptions = [] } = useVoiceOptions();
     const isNew = !template;
 
     // Form state
@@ -583,12 +585,15 @@ Keep responses concise (1-3 sentences) and conversational.`
                                                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                                             >
                                                 <option value="">선택 안함 (기본값)</option>
-                                                <option value="en-US-Neural2-F">US Female (Neural2)</option>
-                                                <option value="en-US-Neural2-D">US Male (Neural2)</option>
-                                                <option value="en-US-Wavenet-F">US Female (Wavenet)</option>
-                                                <option value="en-US-Wavenet-D">US Male (Wavenet)</option>
-                                                <option value="en-GB-Neural2-A">UK Female (Neural2)</option>
-                                                <option value="en-GB-Neural2-B">UK Male (Neural2)</option>
+                                                {groupedOptions.map((group) => (
+                                                    <optgroup key={group.label} label={group.label}>
+                                                        {group.options.map((v) => (
+                                                            <option key={v.value} value={v.value}>
+                                                                {v.label}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
                                             </select>
                                         </div>
                                     </div>
