@@ -368,6 +368,8 @@ async def get_stt_models():
     return [
         {"id": "latest_long", "name": "Latest Long", "description": "대화용 오디오에 최적화 (기본값)", "provider": "google"},
         {"id": "latest_short", "name": "Latest Short", "description": "짧은 발화에 최적화", "provider": "google"},
+        {"id": "command_and_search", "name": "Command and Search", "description": "짧은 명령/검색어에 최적화 (고속)", "provider": "google"},
+        {"id": "phone_call", "name": "Phone Call", "description": "전화 통화 품질 오디오에 최적화", "provider": "google"},
         {"id": "chirp_2", "name": "Chirp 2", "description": "차세대 고정확도 모델", "provider": "google"},
         {"id": "chirp", "name": "Chirp", "description": "범용 음성 인식 모델", "provider": "google"},
     ]

@@ -88,13 +88,42 @@ class GeminiTTSService:
         
         processing_time_ms = int((time.time() - start_time) * 1000)
         
+        # Convert PCM to MP3 in-memory if needed
         audio_data = result["audio_data"]
+        mime_type = result.get("mime_type", "audio/wav")
+        
+        # Check for PCM data and convert to MP3
+        if "audio/L16" in mime_type or "pcm" in mime_type or "wav" not in mime_type:
+            try:
+                from pydub import AudioSegment
+                import io
+                
+                # Create AudioSegment from raw PCM data
+                # Gemini TTS standard: 24kHz, 16-bit (2 bytes), Mono
+                audio_segment = AudioSegment.from_raw(
+                    io.BytesIO(audio_data),
+                    sample_width=2,
+                    frame_rate=24000,
+                    channels=1
+                )
+                
+                # Export as MP3 to buffer
+                mp3_buffer = io.BytesIO()
+                audio_segment.export(mp3_buffer, format="mp3")
+                audio_data = mp3_buffer.getvalue()
+                mime_type = "audio/mp3"  # Update mime type
+                
+            except ImportError:
+                print("Warning: pydub not installed, using raw audio")
+            except Exception as e:
+                print(f"Error converting audio in memory: {e}")
+
         audio_base64 = base64.b64encode(audio_data).decode("utf-8")
         
         # Save file if requested
         audio_url = None
         if save_file and audio_data:
-            audio_url = await self._save_audio_file(audio_base64, text)
+            audio_url = await self._save_audio_file(audio_data, text, mime_type)
         
         # Estimate duration (rough: ~150 words per minute)
         word_count = len(text.split())
@@ -118,7 +147,7 @@ class GeminiTTSService:
             voice_name: Voice name.
             
         Returns:
-            Dictionary with audio_data bytes.
+            Dictionary with audio_data bytes and mime_type.
         """
         response = self.client.models.generate_content(
             model=model,
@@ -137,34 +166,46 @@ class GeminiTTSService:
         
         # Extract audio data from response
         audio_data = b""
+        mime_type = ""
+        
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.inline_data and part.inline_data.data:
                     audio_data = part.inline_data.data
+                    mime_type = part.inline_data.mime_type
                     break
         
         if not audio_data:
             raise ValueError("No audio data received from Gemini TTS")
         
-        return {"audio_data": audio_data}
+        return {"audio_data": audio_data, "mime_type": mime_type}
     
-    async def _save_audio_file(self, audio_base64: str, text: str) -> str:
+    async def _save_audio_file(self, audio_bytes: bytes, text: str, mime_type: str) -> str:
         """Save audio content to a file.
         
         Args:
-            audio_base64: Base64-encoded audio content.
+            audio_bytes: Audio content bytes (already converted if needed).
             text: Original text (used for filename hash).
+            mime_type: MIME type of the audio data.
             
         Returns:
             URL path to the saved audio file.
         """
         text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
         timestamp = int(time.time())
-        # Gemini TTS outputs WAV format
-        filename = f"gemini_tts_{timestamp}_{text_hash}.wav"
+        
+        # Determine extension based on mime type
+        ext = "wav"
+        if "mp3" in mime_type:
+            ext = "mp3"
+        elif "pcm" in mime_type or "audio/L16" in mime_type:
+             # Should have been converted, but fallback
+             ext = "pcm"
+            
+        filename = f"gemini_tts_{timestamp}_{text_hash}.{ext}"
         filepath = self.static_dir / filename
         
-        audio_bytes = base64.b64decode(audio_base64)
+        # Write bytes directly (conversion happened in synthesize)
         filepath.write_bytes(audio_bytes)
         
         return f"/static/audio/{filename}"

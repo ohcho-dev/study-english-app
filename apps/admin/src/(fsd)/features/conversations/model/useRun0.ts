@@ -57,7 +57,7 @@ export const DEFAULT_RUN0_CONFIG: Run0Config = {
     showMetrics: true,
     enableTimestampLogging: true,
     warmupIterations: 1,
-    testIterations: 4,
+    testIterations: 5,
     targetLatencyMs: 3000,
     maxLatencyMs: 5000,
 };
