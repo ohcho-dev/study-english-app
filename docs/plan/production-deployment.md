@@ -13,8 +13,21 @@
   - Inbound: 80 (HTTP), 443 (HTTPS), 22 (SSH - 관리자 IP만 허용)
 
 ### Alternative: AWS Lightsail
-- 간편한 설정, 고정 비용 ($10~$20/월).
-- Docker 컨테이너 배포도 지원하나, 확장성 고려 시 EC2 추천.
+- **추천 사양**: **$20/월 플랜 (4GB RAM, 2 vCPU)**
+  - **이유**: Next.js(Admin), FastAPI(Server), DB, Redis 동시 구동 시 2GB RAM($10)은 OOM(Out of Memory) 위험이 매우 높음.
+  - 빌드 시점에도 Next.js가 1GB 이상 소모할 수 있어 안정성을 위해 4GB 필수.
+- **구성**:
+  - Docker Compose로 모든 서비스(App, DB, Redis) 단일 인스턴스 배포.
+  - 비용 효율적이며 소규모 트래픽에 적합.
+
+### Alternative: Google Cloud Platform (GCP)
+- **Compute Engine (e2-medium)**:
+  - Docker Compose 배포 시 EC2/Lightsail과 유사.
+  - **비용**: ~$25-30/월 (4GB RAM 기준). **트래픽 비용 별도** (Lightsail은 수 TB 무료 포함이므로 GCP가 불리).
+- **Cloud Run (Serverless)**:
+  - **장점**: 트래픽에 따라 0원으로 축소 가능, 완전 관리형.
+  - **단점**: DB(Cloud SQL)와 Redis(Memorystore)를 별도로 써야 하므로 **최소 고정 비용이 높음** (DB만 최소 $10~$50/월).
+  - **결론**: 초기 스타트업/토이 프로젝트에는 **비추천** (비용 및 복잡도 증가).
 
 ---
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -13,7 +14,7 @@ import {
     useExperimentState,
 } from '@/features/ai-lab';
 
-const ExperimentPage = () => {
+const ExperimentContent = () => {
     const searchParams = useSearchParams();
     const defaultPipelineId = searchParams.get('pipeline') || undefined;
 
@@ -21,7 +22,7 @@ const ExperimentPage = () => {
     const { data: models, isLoading: modelsLoading } = useModels();
     const { result, run, cancel, isLoading: runLoading, error } = useExperimentState();
 
-    const isLoading = pipelinesLoading || modelsLoading;
+    const isLoading = pipelinesLoading || modelsLoading; // || !pipelines || !models;
 
     if (isLoading) {
         return (
@@ -78,6 +79,14 @@ const ExperimentPage = () => {
             {/* Recent Logs */}
             <RecentLogs limit={5} pipelineId={defaultPipelineId} />
         </div>
+    );
+};
+
+const ExperimentPage = () => {
+    return (
+        <Suspense fallback={<Skeleton className="h-[600px] w-full rounded-lg" />}>
+            <ExperimentContent />
+        </Suspense>
     );
 };
 

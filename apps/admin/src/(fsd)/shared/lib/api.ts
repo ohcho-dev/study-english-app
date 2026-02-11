@@ -17,6 +17,7 @@ export const api = {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
                 ...options?.headers,
             },
         });
@@ -30,6 +31,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -44,6 +46,7 @@ export const api = {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -58,6 +61,7 @@ export const api = {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -72,6 +76,7 @@ export const api = {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
                 ...options?.headers,
             },
         });

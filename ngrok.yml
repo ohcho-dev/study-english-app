@@ -1,0 +1,8 @@
+version: "2"
+tunnels:
+  study-english-server:
+    addr: 8000
+    proto: http
+  study-english-admin:
+    addr: 3000
+    proto: http
