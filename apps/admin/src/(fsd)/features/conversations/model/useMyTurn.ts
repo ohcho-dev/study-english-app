@@ -94,7 +94,6 @@ export const useMyTurn = (sessionId: string | null) => {
                         turnIndex: msg.turn_index,
                         currentSpeaker: msg.speaker,
                         isUserTurn: msg.is_user_turn,
-                        isUserTurn: msg.is_user_turn,
                         isSessionActive: true,
                         aiResponse: null,
                     }));
