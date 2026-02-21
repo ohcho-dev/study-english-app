@@ -121,44 +121,41 @@ class TTSService:
             print(f"DEBUG: Audio bytes length: {len(audio_bytes)}")
             print(f"DEBUG: First 20 bytes (hex): {audio_bytes[:20].hex()}")
 
-            # Save audio file
+            # Save audio file via StorageService
+            from app.services.storage_service import storage
+            
             file_id = str(uuid.uuid4())
             
             # Check for PCM data and convert to WAV
             if "audio/L16" in mime_type or "pcm" in mime_type:
                 import wave
-                extension = "wav"
-                filename = f"{file_id}.{extension}"
-                filepath = AUDIO_DIR / filename
+                import io
+                filename = f"{file_id}.wav"
                 
-                print(f"DEBUG: Detected PCM data ({mime_type}). Saving as WAV.")
+                print(f"DEBUG: Detected PCM data ({mime_type}). Converting to WAV.")
                 
-                # Write WAV file
-                # Assuming 24kHz, 1 channel, 16-bit (2 bytes) based on "audio/L16;rate=24000"
-                with wave.open(str(filepath), "wb") as wav_file:
+                wav_buffer = io.BytesIO()
+                with wave.open(wav_buffer, "wb") as wav_file:
                     wav_file.setnchannels(1)  # Mono
                     wav_file.setsampwidth(2)  # 16-bit
                     wav_file.setframerate(24000)
                     wav_file.writeframes(audio_bytes)
+                audio_bytes_to_save = wav_buffer.getvalue()
             else:
-                # Default saving for other formats (e.g. if MP3 becomes supported later)
                 extension = "wav" if "wav" in mime_type else "mp3"
                 filename = f"{file_id}.{extension}"
-                filepath = AUDIO_DIR / filename
-                
-                with open(filepath, "wb") as f:
-                    f.write(audio_bytes)
+                audio_bytes_to_save = audio_bytes
+            
+            audio_url = await storage.upload_audio(audio_bytes_to_save, filename)
             
             # Encode to base64 for response
             audio_base64_str = base64.b64encode(audio_bytes).decode("utf-8")
             
             return {
-                "audio_url": f"/static/audio/{filename}",
-                "audio_path": str(filepath),
+                "audio_url": audio_url,
                 "audio_base64": audio_base64_str,
                 "mime_type": mime_type,
             }
-            
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg:

@@ -12,6 +12,7 @@ import {
     processVoice,
 } from '../api/conversationsApi';
 import type { Run0VoiceResponse } from './types';
+import { resolveMediaUrl } from '@/shared/lib/api';
 
 // ============================================================================
 // Experiment Configuration Types
@@ -207,11 +208,7 @@ export const useRun0 = () => {
                         // Use base64 data URL directly for fastest playback
                         audioSrc = `data:audio/mp3;base64,${response.audio_base64}`;
                     } else if (response.audio_url) {
-                        // Prepend server URL to relative path
-                        const serverUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-                        audioSrc = response.audio_url.startsWith('http')
-                            ? response.audio_url
-                            : `${serverUrl}${response.audio_url}`;
+                        audioSrc = resolveMediaUrl(response.audio_url);
                     }
 
                     if (audioSrc) {

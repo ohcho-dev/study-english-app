@@ -10,6 +10,7 @@ import {
     DialogTitle,
 } from '@/shared/ui/dialog';
 import { TooltipProvider } from '@/shared/ui/tooltip';
+import { resolveMediaUrl } from '@/shared/lib/api';
 
 import type { ExperimentLogDetail } from '../model/types';
 
@@ -226,7 +227,7 @@ export const LogDetailModal = ({ log, open, onClose }: LogDetailModalProps) => {
                                             className="w-full"
                                             src={
                                                 log.audio_url
-                                                    ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${log.audio_url}`
+                                                    ? resolveMediaUrl(log.audio_url)
                                                     : log.audio_base64
                                                         ? `data:audio/wav;base64,${log.audio_base64}`
                                                         : undefined

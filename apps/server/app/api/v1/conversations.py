@@ -7,6 +7,7 @@ This module provides API endpoints for:
 - Metrics and dashboard
 """
 
+import logging
 import math
 import uuid
 from datetime import datetime
@@ -46,6 +47,7 @@ from app.services.conversation.webrtc_service import webrtc_service
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================

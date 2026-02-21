@@ -181,7 +181,7 @@ class GeminiTTSService:
         return {"audio_data": audio_data, "mime_type": mime_type}
     
     async def _save_audio_file(self, audio_bytes: bytes, text: str, mime_type: str) -> str:
-        """Save audio content to a file.
+        """Save audio content using StorageService.
         
         Args:
             audio_bytes: Audio content bytes (already converted if needed).
@@ -191,6 +191,8 @@ class GeminiTTSService:
         Returns:
             URL path to the saved audio file.
         """
+        from app.services.storage_service import storage
+
         text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
         timestamp = int(time.time())
         
@@ -199,16 +201,10 @@ class GeminiTTSService:
         if "mp3" in mime_type:
             ext = "mp3"
         elif "pcm" in mime_type or "audio/L16" in mime_type:
-             # Should have been converted, but fallback
              ext = "pcm"
             
         filename = f"gemini_tts_{timestamp}_{text_hash}.{ext}"
-        filepath = self.static_dir / filename
-        
-        # Write bytes directly (conversion happened in synthesize)
-        filepath.write_bytes(audio_bytes)
-        
-        return f"/static/audio/{filename}"
+        return await storage.upload_audio(audio_bytes, filename)
     
     @staticmethod
     def get_available_models() -> list[dict[str, Any]]:

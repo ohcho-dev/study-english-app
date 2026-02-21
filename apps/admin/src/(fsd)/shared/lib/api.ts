@@ -1,6 +1,17 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
+/**
+ * 미디어 URL 해석 — 절대 URL은 그대로, 상대 경로는 API_BASE_URL 붙임.
+ * GCS URL (https://storage...) 과 로컬 URL (/static/audio/...) 모두 처리.
+ */
+export function resolveMediaUrl(url: string): string {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url; // GCS 등 절대 URL
+    }
+    return `${API_BASE_URL}${url}`; // 로컬 상대 경로
+}
+
 interface FetchOptions extends RequestInit {
     params?: Record<string, string>;
 }

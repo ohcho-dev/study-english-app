@@ -220,7 +220,7 @@ export const useMyTurn = (sessionId: string | null) => {
         }
     }, [sessionId, disconnect]);
 
-    const sendAudio = useCallback(async (audioBlob: Blob) => {
+    const sendAudio = useCallback(async (audioBlob: Blob, t0UserEnd?: number) => {
         if (!sessionId) return;
 
         setState(prev => ({ ...prev, isProcessing: true }));
@@ -228,8 +228,8 @@ export const useMyTurn = (sessionId: string | null) => {
         try {
             const formData = new FormData();
             formData.append('audio_file', audioBlob, 'input.webm');
-            // metrics: t0 (user end)
-            formData.append('t0_user_end', Date.now().toString());
+            // metrics: t0 (user end) — 녹음 종료 시점 사용
+            formData.append('t0_user_end', (t0UserEnd || Date.now()).toString());
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/audio`, {
                 method: 'POST',

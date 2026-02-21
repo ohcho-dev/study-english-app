@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         case_sensitive=True,
     )
@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     GOOGLE_AI_API_KEY: str = ""
     GOOGLE_CLOUD_STT_TTS_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+
+    # Storage (GCS)
+    GCS_BUCKET_NAME: str = ""  # 비어있으면 로컬 디스크 저장
 
 
 @lru_cache

@@ -5,6 +5,7 @@ import { Clock, Coins, Cpu, MessageSquare, Volume2 } from 'lucide-react';
 import { Badge } from '@/shared/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { TooltipProvider } from '@/shared/ui/tooltip';
+import { resolveMediaUrl } from '@/shared/lib/api';
 
 import type { ExperimentRunResponse } from '../model/types';
 
@@ -127,7 +128,7 @@ export const ExperimentResult = ({ result }: ExperimentResultProps) => {
                                     className="w-full"
                                     src={
                                         result.audio_url
-                                            ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${result.audio_url}`
+                                            ? resolveMediaUrl(result.audio_url)
                                             : result.audio_base64
                                                 ? `data:audio/wav;base64,${result.audio_base64}`
                                                 : undefined

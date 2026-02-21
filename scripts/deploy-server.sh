@@ -15,9 +15,13 @@ IMAGE="gcr.io/$PROJECT_ID/$SERVICE_NAME"
 echo "🚀 Server 배포를 시작합니다..."
 echo "---------------------------------------------------"
 
-# 1. Build
-echo "🏗️  Docker 이미지 빌드 중... (3~5분 소요)"
+# 1. Lock 파일 동기화
+echo "🔒 poetry.lock 동기화 중..."
 cd "$SERVER_DIR"
+poetry lock
+
+# 2. Build
+echo "🏗️  Docker 이미지 빌드 중... (3~5분 소요)"
 gcloud builds submit --tag "$IMAGE" --project="$PROJECT_ID"
 
 if [ $? -ne 0 ]; then

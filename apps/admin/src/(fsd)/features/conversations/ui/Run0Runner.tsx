@@ -13,6 +13,7 @@ import { Play, Square, RotateCcw, Download, MessageSquare } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Badge } from '@/shared/ui/badge';
+import { resolveMediaUrl } from '@/shared/lib/api';
 
 import { useRun0, useTestPhrases } from '../model/useRun0';
 import { VoiceRecorder } from './VoiceRecorder';
@@ -232,9 +233,9 @@ export const Run0Runner = () => {
                                             src={
                                                 run0.lastResponse.audio_base64
                                                     ? `data:audio/mp3;base64,${run0.lastResponse.audio_base64}`
-                                                    : run0.lastResponse.audio_url?.startsWith('http')
-                                                        ? run0.lastResponse.audio_url
-                                                        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${run0.lastResponse.audio_url}`
+                                                    : run0.lastResponse.audio_url
+                                                        ? resolveMediaUrl(run0.lastResponse.audio_url)
+                                                        : undefined
                                             }
                                             controls
                                             className="w-full h-8"

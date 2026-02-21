@@ -204,7 +204,7 @@ class TTSService:
         }
     
     async def _save_audio_file(self, audio_base64: str, text: str) -> str:
-        """Save audio to a file and return URL.
+        """Save audio to storage and return URL.
         
         Args:
             audio_base64: Base64-encoded audio data.
@@ -213,19 +213,16 @@ class TTSService:
         Returns:
             URL path to the saved file.
         """
+        from app.services.storage_service import storage
+
         # Generate unique filename based on content
         content_hash = hashlib.md5(text.encode()).hexdigest()[:12]
         timestamp = int(time.time())
         filename = f"{timestamp}_{content_hash}.mp3"
         
-        filepath = self.static_dir / filename
-        
-        # Decode and save
+        # Decode and upload
         audio_bytes = base64.b64decode(audio_base64)
-        filepath.write_bytes(audio_bytes)
-        
-        # Return relative URL
-        return f"/static/audio/{filename}"
+        return await storage.upload_audio(audio_bytes, filename)
     
     @staticmethod
     def get_available_voices() -> list[dict[str, Any]]:
