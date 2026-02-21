@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endSession as apiEndSession } from '../api/conversationsApi';
+import { WS_BASE_URL } from '@/shared/lib/api';
 
 export interface ChatMessage {
     id: string;
@@ -63,7 +64,7 @@ export const useMyTurn = (sessionId: string | null) => {
             }
 
             // 3. Connect WebSocket Signaling
-            const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/ws`;
+            const wsUrl = `${WS_BASE_URL}/api/v1/conversations/sessions/${sessionId}/ws`;
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 

@@ -827,7 +827,7 @@ IMPORTANT RULES:
                 
                 logger.info(
                     f"[process_user_turn] HESITATION → bridge: {bridge_participant.name} "
-                    f"(return_to_user=True, variant_updated={new_variant_json})"
+                    f"(return_to_user=True)"
                 )
                 
                 await manager.send_message(str(session.id), {
