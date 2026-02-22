@@ -13,6 +13,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    SidebarFooter,
 } from '@/shared/ui/sidebar';
 import {
     FlaskConical,
@@ -28,9 +29,12 @@ import {
     Mic,
     Layout,
     Clock,
+    Shield,
+    LogOut,
 } from 'lucide-react';
 
 import { APP_NAME, ROUTES } from '@/shared/config';
+import { useAuth } from '@/(fsd)/shared/providers/AuthProvider';
 
 interface MenuItem {
     title: string;
@@ -43,7 +47,7 @@ interface MenuGroup {
     items: MenuItem[];
 }
 
-const menuItems: MenuGroup[] = [
+const allMenuItems: MenuGroup[] = [
     {
         title: '🧪 실험실',
         items: [
@@ -80,12 +84,26 @@ const menuItems: MenuGroup[] = [
         items: [
             { title: '테마 관리', href: ROUTES.settings.themes, icon: Palette },
             { title: '사용자 관리', href: ROUTES.settings.users, icon: Users },
+            { title: '접근 제어', href: '/settings/access-control', icon: Shield },
         ],
     },
 ];
 
 export const AppSidebar = () => {
     const pathname = usePathname();
+    const { user, logout } = useAuth();
+
+    // 역할에 따라 메뉴 필터링
+    const filteredMenuItems = user?.role === 'admin'
+        ? allMenuItems
+        : allMenuItems
+            .map((group) => ({
+                ...group,
+                items: group.items.filter((item) =>
+                    user?.allowed_routes?.includes(item.href)
+                ),
+            }))
+            .filter((group) => group.items.length > 0);
 
     return (
         <Sidebar className="border-r border-sidebar-border">
@@ -96,7 +114,7 @@ export const AppSidebar = () => {
                 </Link>
             </SidebarHeader>
             <SidebarContent>
-                {menuItems.map((group) => (
+                {filteredMenuItems.map((group) => (
                     <SidebarGroup key={group.title}>
                         <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground">
                             {group.title}
@@ -121,6 +139,27 @@ export const AppSidebar = () => {
                     </SidebarGroup>
                 ))}
             </SidebarContent>
+            {user && (
+                <SidebarFooter className="p-4 border-t border-sidebar-border">
+                    <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium text-sidebar-foreground">
+                                {user.display_name || user.username}
+                            </span>
+                            <span className="text-xs text-muted-foreground capitalize">
+                                {user.role}
+                            </span>
+                        </div>
+                        <button
+                            onClick={logout}
+                            className="p-1.5 rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground transition-colors"
+                            title="로그아웃"
+                        >
+                            <LogOut className="h-4 w-4" />
+                        </button>
+                    </div>
+                </SidebarFooter>
+            )}
         </Sidebar>
     );
 };

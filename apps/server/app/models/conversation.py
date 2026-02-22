@@ -159,6 +159,9 @@ class ConversationTemplate(Base):
     scene_context = Column(Text, nullable=True)  # Shared context for all AI participants
     turn_sequence = Column(JSONB, nullable=True)  # Custom scenario script
     
+    # Access Control
+    is_public_to_tester = Column(Boolean, default=False, nullable=False)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,

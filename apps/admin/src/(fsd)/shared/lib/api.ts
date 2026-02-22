@@ -12,6 +12,16 @@ export function resolveMediaUrl(url: string): string {
     return `${API_BASE_URL}${url}`; // 로컬 상대 경로
 }
 
+/**
+ * 인증 헤더 가져오기 — localStorage에서 토큰 읽기.
+ */
+function getAuthHeader(): Record<string, string> {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('auth_token');
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+}
+
 interface FetchOptions extends RequestInit {
     params?: Record<string, string>;
 }
@@ -30,6 +40,7 @@ export const api = {
             headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                ...getAuthHeader(),
                 ...options?.headers,
             },
         });
@@ -44,6 +55,7 @@ export const api = {
             headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                ...getAuthHeader(),
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -59,6 +71,7 @@ export const api = {
             headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                ...getAuthHeader(),
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -74,6 +87,7 @@ export const api = {
             headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                ...getAuthHeader(),
                 ...options?.headers,
             },
             body: data ? JSON.stringify(data) : undefined,
@@ -89,6 +103,7 @@ export const api = {
             headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                ...getAuthHeader(),
                 ...options?.headers,
             },
         });

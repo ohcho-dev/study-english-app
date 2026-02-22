@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 
 from app.api.deps import DbSession
 from app.core.database import AsyncSessionLocal
@@ -61,10 +61,22 @@ async def list_templates(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Items per page"),
     active_only: bool = Query(True, description="Only return active templates"),
+    authorization: str | None = Header(None),
 ):
     """Get all conversation templates with pagination."""
+    # JWT에서 role 확인 — tester면 공개 템플릿만 반환
+    tester_only = False
+    if authorization and authorization.startswith("Bearer "):
+        from app.core.security import verify_token
+        token = authorization.split(" ")[1]
+        payload = verify_token(token)
+        if payload and payload.get("role") == "tester":
+            tester_only = True
+
     service = TemplateService(db)
-    items, total = await service.get_all(page=page, size=size, active_only=active_only)
+    items, total = await service.get_all(
+        page=page, size=size, active_only=active_only, tester_only=tester_only,
+    )
     
     return PaginatedTemplates(
         items=items,

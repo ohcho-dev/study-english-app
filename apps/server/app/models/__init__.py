@@ -1,5 +1,6 @@
 """Models module - SQLAlchemy ORM models."""
 
+from app.models.account import Account, PagePermission
 from app.models.ai_lab_experiment import (
     AILabExperimentLog,
     AILabExperimentLogStep,
@@ -35,6 +36,9 @@ from app.models.conversation import (
 
 __all__ = [
     "Base",
+    # Access Control
+    "Account",
+    "PagePermission",
     "User",
     "UserRole",
     "Experiment",

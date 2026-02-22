@@ -45,6 +45,7 @@ class TemplateService:
         page: int = 1,
         size: int = 20,
         active_only: bool = True,
+        tester_only: bool = False,
     ) -> tuple[list[TemplateListItem], int]:
         """Get all templates with pagination.
         
@@ -52,6 +53,7 @@ class TemplateService:
             page: Page number (1-indexed).
             size: Items per page.
             active_only: Only return active templates.
+            tester_only: Only return templates visible to testers.
             
         Returns:
             Tuple of (template list, total count).
@@ -60,6 +62,8 @@ class TemplateService:
         base_query = select(ConversationTemplate)
         if active_only:
             base_query = base_query.where(ConversationTemplate.is_active.is_(True))
+        if tester_only:
+            base_query = base_query.where(ConversationTemplate.is_public_to_tester.is_(True))
         
         # Count query
         count_query = select(func.count()).select_from(base_query.subquery())
@@ -80,6 +84,8 @@ class TemplateService:
         
         if active_only:
             query = query.where(ConversationTemplate.is_active.is_(True))
+        if tester_only:
+            query = query.where(ConversationTemplate.is_public_to_tester.is_(True))
         
         result = await self.db.execute(query)
         rows = result.all()

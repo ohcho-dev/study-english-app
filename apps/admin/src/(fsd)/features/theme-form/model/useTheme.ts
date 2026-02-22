@@ -7,8 +7,9 @@ import type {
     ThemeVersionCreate,
     ThemeWithVersions,
 } from '@/entities/theme';
+import { API_BASE_URL } from '@/(fsd)/shared/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 // Fetch all themes
 export const useThemes = () => {
