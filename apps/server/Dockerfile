@@ -21,6 +21,7 @@ RUN poetry install --without dev --no-interaction --no-ansi
 
 # Copy application code
 COPY app ./app
+COPY scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./
 
@@ -31,5 +32,4 @@ RUN mkdir -p static/audio
 ENV PORT=8080
 EXPOSE 8080
 
-# Run migrations then start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
+CMD ["sh", "-c", "alembic upgrade head && python -m scripts.init_access_control && uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
