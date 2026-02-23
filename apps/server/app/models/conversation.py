@@ -221,6 +221,12 @@ class ConversationParticipant(Base):
     greeting_message = Column(Text, nullable=True)  # First greeting for this participant
     avatar_url = Column(String(500), nullable=True)  # Avatar image URL
     
+    # Model selection (admin-saved defaults)
+    llm_model = Column(String(100), nullable=True)  # e.g., "gemini-2.5-flash"
+    stt_model = Column(String(100), nullable=True)  # e.g., "google-chirp"
+    tts_model = Column(String(100), nullable=True)  # e.g., "gemini-tts"
+    tts_provider = Column(String(50), nullable=True)  # e.g., "gemini", "google"
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,

@@ -1,0 +1,175 @@
+'use client';
+
+/**
+ * TranscriptTimeline Component
+ * 
+ * Displays full conversation history as a subtitle-style timeline.
+ * All participants' speech is visible (including AI-to-AI).
+ * Each entry has a translation toggle for Korean translation.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Languages, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { ChatMessage } from '../model/useMyTurn';
+
+interface TranscriptTimelineProps {
+    messages: ChatMessage[];
+    currentSpeaker?: { name: string } | null;
+    isProcessing?: boolean;
+}
+
+/** Per-message translation cache */
+const translationCache = new Map<string, string>();
+
+const TranscriptEntry = ({ message }: { message: ChatMessage }) => {
+    const [showTranslation, setShowTranslation] = useState(false);
+    const [translation, setTranslation] = useState<string | null>(null);
+    const [isTranslating, setIsTranslating] = useState(false);
+
+    const handleTranslate = useCallback(async () => {
+        if (showTranslation) {
+            setShowTranslation(false);
+            return;
+        }
+
+        // Check cache first
+        const cached = translationCache.get(message.id);
+        if (cached) {
+            setTranslation(cached);
+            setShowTranslation(true);
+            return;
+        }
+
+        setIsTranslating(true);
+        setShowTranslation(true);
+
+        try {
+            // Use server translation API
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+            const res = await fetch(`${apiUrl}/api/v1/translate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: message.text,
+                    target_language: 'ko',
+                }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const translated = data.translated_text || message.text;
+                translationCache.set(message.id, translated);
+                setTranslation(translated);
+            } else {
+                setTranslation('번역을 불러올 수 없습니다.');
+            }
+        } catch {
+            setTranslation('번역 오류가 발생했습니다.');
+        } finally {
+            setIsTranslating(false);
+        }
+    }, [message.id, message.text, showTranslation]);
+
+    const speakerColor = message.isUser
+        ? 'text-emerald-400'
+        : 'text-blue-400';
+
+    return (
+        <div className="group px-4 py-2 hover:bg-card/30 transition-colors rounded-lg">
+            {/* Main message row */}
+            <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                    <span className={cn('text-xs font-semibold', speakerColor)}>
+                        {message.speaker}:
+                    </span>
+                    <span className="text-sm text-foreground/90 ml-1.5 leading-relaxed">
+                        {message.text}
+                    </span>
+                </div>
+
+                {/* Translation toggle */}
+                <button
+                    onClick={handleTranslate}
+                    className={cn(
+                        'flex-shrink-0 p-1 rounded-md transition-all mt-0.5',
+                        'text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50',
+                        'sm:opacity-0 sm:group-hover:opacity-100',
+                        showTranslation && 'text-secondary opacity-100 sm:opacity-100'
+                    )}
+                    aria-label="번역 보기"
+                >
+                    <Languages className="h-3.5 w-3.5" />
+                </button>
+            </div>
+
+            {/* Translation row */}
+            {showTranslation && (
+                <div className="mt-1 ml-0 pl-3 border-l-2 border-secondary/30">
+                    {isTranslating ? (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            번역 중...
+                        </div>
+                    ) : (
+                        <p className="text-xs text-secondary/80 leading-relaxed">
+                            {translation}
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+/** Typing indicator for AI processing */
+const TypingIndicator = ({ speakerName }: { speakerName: string }) => (
+    <div className="px-4 py-2">
+        <span className="text-xs font-semibold text-blue-400">{speakerName}:</span>
+        <span className="inline-flex items-center gap-0.5 ml-2">
+            {[0, 1, 2].map((i) => (
+                <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s` }}
+                />
+            ))}
+        </span>
+    </div>
+);
+
+export const TranscriptTimeline = ({
+    messages,
+    currentSpeaker,
+    isProcessing,
+}: TranscriptTimelineProps) => {
+    const bottomRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom on new messages
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages.length]);
+
+    return (
+        <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+            {messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground/50 text-sm">
+                    대화가 시작되면 여기에 표시됩니다
+                </div>
+            ) : (
+                <div className="py-2 space-y-0.5">
+                    {messages.map((msg) => (
+                        <TranscriptEntry key={msg.id} message={msg} />
+                    ))}
+
+                    {/* Typing indicator when AI is composing */}
+                    {currentSpeaker && isProcessing && (
+                        <TypingIndicator speakerName={currentSpeaker.name} />
+                    )}
+
+                    <div ref={bottomRef} />
+                </div>
+            )}
+        </div>
+    );
+};

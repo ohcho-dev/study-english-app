@@ -27,6 +27,40 @@ logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_AI_TURNS = 10
 
 
+def detect_mentioned_participant(text: str, participants, exclude_speaker_name: str = None):
+    """Detect if text mentions a specific participant by name.
+    
+    Scans the text for participant names (sorted by length descending to avoid
+    partial matches like "Min" matching before "Min Kyung").
+    Excludes user-type participants (addressing the user is default behavior).
+    Excludes the current speaker (can't mention yourself).
+    
+    Returns the mentioned participant or None.
+    """
+    if not text or not participants:
+        return None
+    
+    # Filter: non-user participants, exclude current speaker
+    candidates = [
+        p for p in participants
+        if p.participant_type != ParticipantType.USER
+        and p.name != exclude_speaker_name
+    ]
+    
+    # Sort by name length descending (longer names first to avoid partial matches)
+    candidates.sort(key=lambda p: len(p.name), reverse=True)
+    
+    # Check the last 1-2 sentences (most likely to contain the addressed participant)
+    # Split by sentence-ending punctuation
+    sentences = text.replace('!', '.').replace('?', '.').split('.')
+    tail = '. '.join(s.strip() for s in sentences[-2:] if s.strip())
+    
+    for p in candidates:
+        if p.name in tail:
+            return p
+    
+    return None
+
 async def run_ai_turn_background(session_id: UUID, participant_id: str, instruction: Optional[str] = None, return_to_user_after: bool = False):
     """Background task wrapper for AI turn processing."""
     from app.core.database import AsyncSessionLocal
@@ -359,6 +393,7 @@ class MyTurnService:
                 script_index=script_index
             )
         
+
         if next_turn_info:
             next_participant = next_turn_info["next_participant"]
             is_user_turn = next_turn_info["is_user_turn"]
@@ -474,6 +509,8 @@ class MyTurnService:
 
         # Voice Settings
         voice_id = participant.voice_id
+        tts_provider = participant.tts_provider or 'google-cloud'
+        tts_model = participant.tts_model or ''
         # Parse participant voice_settings if string or dict
         p_voice_settings = participant.voice_settings or {}
         if isinstance(p_voice_settings, str):
@@ -493,9 +530,14 @@ class MyTurnService:
                 speaking_rate = float(p_config['speaking_rate'])
             if 'difficulty' in p_config:
                 difficulty = int(p_config['difficulty'])
+            if 'tts_provider' in p_config and p_config['tts_provider']:
+                tts_provider = p_config['tts_provider']
+            if 'tts_model' in p_config and p_config['tts_model']:
+                tts_model = p_config['tts_model']
         
         logger.info(
             f"[process_ai_turn] {participant.name}: voice_id={voice_id}, "
+            f"tts_provider={tts_provider}, tts_model={tts_model}, "
             f"speaking_rate={speaking_rate}, difficulty={difficulty}"
         )
 
@@ -566,8 +608,8 @@ class MyTurnService:
 
         reply_text = ""
         
-        # Determine LLM Model
-        llm_model = "gemini-2.5-flash"
+        # Determine LLM Model (resolution: session variant > participant DB > default)
+        llm_model = participant.llm_model or "gemini-2.5-flash"
         if session.variant:
             try:
                 variant_data = json.loads(session.variant)
@@ -630,11 +672,7 @@ IMPORTANT RULES:
         t2_llm_final = time.time() * 1000
 
         # 3. TTS Generation
-        # For lower latency, we could stream? 
-        # But here we just get full audio.
-        
-        # Use simple TTS service wrapper
-        from app.services.conversation.tts_service import TTSService
+        # Dispatch based on tts_provider setting
         
         # Pre-TTS Status Check
         session = await self.session_service.get_by_id(session.id)
@@ -644,16 +682,28 @@ IMPORTANT RULES:
 
         audio_base64 = None
         try:
-            tts_service = TTSService()
-            tts_result = await tts_service.synthesize(
-                text=reply_text,
-                voice_id=voice_id or "en-US-Neural2-F",
-                speaking_rate=speaking_rate,
-                save_file=False  # Optimization: Don't save to disk for real-time turn
-            )
-            audio_base64 = tts_result.get("audio_base64")
+            if tts_provider == 'gemini':
+                from app.services.conversation.gemini_tts_service import GeminiTTSService
+                gemini_tts = GeminiTTSService()
+                tts_result = await gemini_tts.synthesize(
+                    text=reply_text,
+                    model=tts_model or "gemini-2.5-flash-preview-tts",
+                    voice_name=voice_id or "Kore",
+                    save_file=False,
+                )
+                audio_base64 = tts_result.get("audio_base64")
+            else:
+                from app.services.conversation.tts_service import TTSService
+                tts_service = TTSService()
+                tts_result = await tts_service.synthesize(
+                    text=reply_text,
+                    voice_id=voice_id or "en-US-Neural2-F",
+                    speaking_rate=speaking_rate,
+                    save_file=False,
+                )
+                audio_base64 = tts_result.get("audio_base64")
         except Exception as e:
-            logger.error(f"TTS Error: {e}")
+            logger.error(f"TTS Error ({tts_provider}): {e}")
             audio_base64 = None
             
         t2_5_tts_ready = time.time() * 1000
@@ -724,19 +774,22 @@ IMPORTANT RULES:
         # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal from client.
         # This ensures the AI text is fully spoken before the next turn is calculated.
 
-    async def process_user_turn(self, session_id: UUID, audio_data: bytes, audio_format: str, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0):
-        """Processes user audio input."""
+    async def process_user_turn(self, session_id: UUID, audio_data: bytes = None, audio_format: str = None, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0, text_input: str = None):
+        """Processes user audio or text input."""
         session = await self.session_service.get_by_id_with_template(session_id)
         if not session:
              raise ValueError("Session not found")
 
-        # 1. STT
-        from app.services.conversation.stt_service import STTService
-        stt_service = STTService()
-        stt_result = await stt_service.transcribe(audio_data, audio_format)
-        transcript = stt_result.get("transcript", "")
-        
-        t1_asr_final = time.time() * 1000
+        # 1. STT (skip if text_input provided)
+        if text_input:
+            transcript = text_input
+            t1_asr_final = time.time() * 1000
+        else:
+            from app.services.conversation.stt_service import STTService
+            stt_service = STTService()
+            stt_result = await stt_service.transcribe(audio_data, audio_format)
+            transcript = stt_result.get("transcript", "")
+            t1_asr_final = time.time() * 1000
         
         # 2. Save Turn
         await self.session_service.add_turn(
@@ -744,8 +797,8 @@ IMPORTANT RULES:
             turn_type=TurnType.USER,
             speaker_name=session.user_name or "User",
             content_text=transcript,
-            audio_duration_ms=stt_result.get("duration_ms"),
-            stt_provider="google",
+            audio_duration_ms=stt_result.get("duration_ms") if not text_input else None,
+            stt_provider="text" if text_input else "google",
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
         )
@@ -799,13 +852,29 @@ IMPORTANT RULES:
             # ── HESITATION PATH: 1 AI → User ──
             logger.info(f"[process_user_turn] User needs encouragement (eval={director_output.evaluation})")
             
-            # Pick first AI as bridge
+            # Pick bridge participant: Director-specified > fallback to first AI
             bridge_participant = None
             if session.template and session.template.participants:
-                for p in sorted(session.template.participants, key=lambda x: x.order_index):
-                    if p.participant_type != ParticipantType.USER:
-                        bridge_participant = p
-                        break
+                ai_participants = [
+                    p for p in sorted(session.template.participants, key=lambda x: x.order_index)
+                    if p.participant_type != ParticipantType.USER
+                ]
+                
+                # If Director specified a bridge_speaker, find by name
+                if director_output.bridge_speaker and ai_participants:
+                    bridge_participant = next(
+                        (p for p in ai_participants if p.name == director_output.bridge_speaker),
+                        None
+                    )
+                    if bridge_participant:
+                        logger.info(f"[process_user_turn] Director chose bridge: {bridge_participant.name}")
+                    else:
+                        logger.warning(f"[process_user_turn] Director bridge_speaker '{director_output.bridge_speaker}' not found")
+                
+                # Fallback: first AI participant
+                if not bridge_participant and ai_participants:
+                    bridge_participant = ai_participants[0]
+                    logger.info(f"[process_user_turn] Fallback bridge: {bridge_participant.name}")
             
             if bridge_participant:
                 encouragement_instruction = (
@@ -874,6 +943,29 @@ IMPORTANT RULES:
         # Override instruction if Director provided one
         if next_turn_info and director_output.instruction:
             next_turn_info["instruction"] = director_output.instruction
+        
+        # Mention-Based Override for user turns: check if user addressed a specific AI
+        if next_turn_info and session.template and session.template.participants:
+            # Director bridge_speaker takes priority over mention detection
+            mentioned = None
+            if director_output.bridge_speaker:
+                mentioned = next(
+                    (p for p in session.template.participants 
+                     if p.name == director_output.bridge_speaker and p.participant_type != ParticipantType.USER),
+                    None
+                )
+            if not mentioned:
+                mentioned = detect_mentioned_participant(
+                    transcript, session.template.participants
+                )
+            if mentioned and str(mentioned.id) != str(next_turn_info["next_participant"].id):
+                logger.info(
+                    f"[process_user_turn] Mention override: user addressed {mentioned.name} "
+                    f"(instead of round-robin {next_turn_info['next_participant'].name})"
+                )
+                next_turn_info["next_participant"] = mentioned
+                next_turn_info["turn_type"] = mentioned.participant_type.value if hasattr(mentioned.participant_type, 'value') else str(mentioned.participant_type)
+                next_turn_info["is_user_turn"] = mentioned.participant_type == ParticipantType.USER
         
         if next_turn_info:
             session.current_turn_index += 1

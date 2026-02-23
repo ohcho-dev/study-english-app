@@ -85,6 +85,7 @@ class ParticipantBase(BaseModel):
         description="Display/turn order",
     )
     # My Turn additions
+    difficulty: int | None = Field(None, ge=1, le=5, description="Difficulty level (1-5)")
     greeting_message: str | None = Field(
         None,
         description="First greeting message for this participant",
@@ -93,6 +94,11 @@ class ParticipantBase(BaseModel):
         None,
         description="Avatar image URL",
     )
+    # Model selection (admin-saved defaults)
+    llm_model: str | None = Field(None, max_length=100, description="LLM model ID")
+    stt_model: str | None = Field(None, max_length=100, description="STT model ID")
+    tts_model: str | None = Field(None, max_length=100, description="TTS model ID")
+    tts_provider: str | None = Field(None, max_length=50, description="TTS provider")
 
 
 class ParticipantCreate(ParticipantBase):
@@ -112,6 +118,10 @@ class ParticipantUpdate(BaseModel):
     order_index: int | None = Field(None, ge=0)
     greeting_message: str | None = None
     avatar_url: str | None = None
+    llm_model: str | None = None
+    stt_model: str | None = None
+    tts_model: str | None = None
+    tts_provider: str | None = None
 
 
 class ParticipantResponse(ParticipantBase):

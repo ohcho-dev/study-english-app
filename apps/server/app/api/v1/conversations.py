@@ -171,6 +171,89 @@ async def get_director_prompt_spec():
     }
 
 
+@router.put("/templates/{template_id}/participant-models")
+async def save_participant_models(
+    db: DbSession,
+    template_id: UUID,
+    models: list[dict],
+):
+    """Save per-participant model & voice settings (admin only).
+    
+    Body: [{"participant_id": "uuid", "llm_model": "...", "stt_model": "...",
+            "tts_model": "...", "tts_provider": "...", "voice_id": "...",
+            "speaking_rate": 1.0, "difficulty": 1}]
+    """
+    service = TemplateService(db)
+    template = await service.get_by_id(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+    
+    from sqlalchemy import select
+    from app.models.conversation import ConversationParticipant
+    
+    updated = []
+    for entry in models:
+        pid = entry.get("participant_id")
+        if not pid:
+            continue
+        
+        stmt = select(ConversationParticipant).where(
+            ConversationParticipant.id == pid,
+            ConversationParticipant.template_id == template_id,
+        )
+        result = await db.execute(stmt)
+        participant = result.scalar_one_or_none()
+        
+        if participant:
+            if "llm_model" in entry:
+                participant.llm_model = entry["llm_model"]
+            if "stt_model" in entry:
+                participant.stt_model = entry["stt_model"]
+            if "tts_model" in entry:
+                participant.tts_model = entry["tts_model"]
+            if "tts_provider" in entry:
+                participant.tts_provider = entry["tts_provider"]
+            if "voice_id" in entry and entry["voice_id"]:
+                participant.voice_id = entry["voice_id"]
+            if "difficulty" in entry:
+                participant.difficulty = entry["difficulty"]
+            if "speaking_rate" in entry:
+                # Store speaking_rate in voice_settings JSONB
+                vs = dict(participant.voice_settings or {})
+                vs["speaking_rate"] = entry["speaking_rate"]
+                participant.voice_settings = vs
+            updated.append(str(participant.id))
+    
+    await db.commit()
+    return {"updated": updated, "count": len(updated)}
+
+
+@router.post("/sessions/{session_id}/text")
+async def process_text_input(
+    db: DbSession,
+    session_id: UUID,
+    background_tasks: BackgroundTasks,
+    text: str = Form(..., description="User's text input"),
+):
+    """Process user text input for My Turn session (skips STT).
+    
+    Used in text input mode as alternative to audio recording.
+    """
+    service = MyTurnService(db)
+    
+    try:
+        return await service.process_user_turn(
+            session_id=session_id,
+            audio_data=None,
+            audio_format=None,
+            background_tasks=background_tasks,
+            t0_user_end=0.0,
+            text_input=text,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ============================================================================
 # Session Endpoints
 # ============================================================================

@@ -560,7 +560,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                     </div>
 
                                     {/* My Turn Additions: Greeting & Default Voice */}
-                                    <div className="grid grid-cols-2 gap-3">
+                                    {/* <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="text-xs text-muted-foreground block mb-1">
                                                 첫 인사말 (Greeting)
@@ -596,7 +596,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                                 ))}
                                             </select>
                                         </div>
-                                    </div>
+                                    </div> */}
                                 </div>
                             ))}
 
@@ -612,7 +612,7 @@ Keep responses concise (1-3 sentences) and conversational.`
             </div>
 
             {/* Turn Sequence Editor (Full Width) */}
-            < Card >
+            {/* < Card >
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div className="space-y-1">
                         <CardTitle className="text-base">시나리오 스크립트 (선택사항)</CardTitle>
@@ -704,7 +704,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                         </div>
                     )}
                 </CardContent>
-            </Card >
+            </Card > */}
         </div >
 
     );

@@ -231,12 +231,29 @@ export const useMyTurn = (sessionId: string | null) => {
             // metrics: t0 (user end) — 녹음 종료 시점 사용
             formData.append('t0_user_end', (t0UserEnd || Date.now()).toString());
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/audio`, {
-                method: 'POST',
-                body: formData,
-            });
+            let res: Response;
+            try {
+                res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/audio`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include',
+                });
+            } catch (networkErr) {
+                // CORS or network error — server likely crashed with 500
+                console.error('Network/CORS error sending audio:', networkErr);
+                setState(prev => ({
+                    ...prev,
+                    error: '서버 연결 오류 — 서버 로그를 확인하세요.',
+                    isProcessing: false,
+                }));
+                return;
+            }
 
-            if (!res.ok) throw new Error('Failed to send audio');
+            if (!res.ok) {
+                const errText = await res.text().catch(() => 'Unknown error');
+                console.error(`Audio API error ${res.status}:`, errText);
+                throw new Error(`Failed to send audio (${res.status})`);
+            }
             const data = await res.json();
 
             // Note: transcript update might come from turn_changed event too, but this gives immediate feedback
@@ -261,6 +278,44 @@ export const useMyTurn = (sessionId: string | null) => {
         }
     }, [sessionId]);
 
+    const sendText = useCallback(async (text: string) => {
+        if (!sessionId || !text.trim()) return;
+
+        setState(prev => ({ ...prev, isProcessing: true }));
+
+        try {
+            const formData = new FormData();
+            formData.append('text', text);
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/text`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!res.ok) throw new Error('Failed to send text');
+            const data = await res.json();
+
+            const userMsg: ChatMessage = {
+                id: Date.now().toString(),
+                speaker: 'Me',
+                text: text,
+                isUser: true,
+                timestamp: Date.now(),
+            };
+
+            setState(prev => ({
+                ...prev,
+                transcript: text,
+                isProcessing: false,
+                chatHistory: [...prev.chatHistory, userMsg]
+            }));
+
+        } catch (err) {
+            console.error(err);
+            setState(prev => ({ ...prev, error: 'Failed to send text', isProcessing: false }));
+        }
+    }, [sessionId]);
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -275,5 +330,6 @@ export const useMyTurn = (sessionId: string | null) => {
         startSession,
         endSession,
         sendAudio,
+        sendText,
     };
 };

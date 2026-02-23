@@ -80,9 +80,9 @@ class WebRTCService:
 
     async def close(self, session_id: str):
         """Closes a PeerConnection."""
-        if session_id in self.pcs:
-            await self.pcs[session_id].close()
-            del self.pcs[session_id]
+        pc = self.pcs.pop(session_id, None)
+        if pc:
+            await pc.close()
 
 
 # Global WebRTC service instance

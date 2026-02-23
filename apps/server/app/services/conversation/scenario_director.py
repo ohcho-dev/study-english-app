@@ -23,18 +23,21 @@ class DirectorOutput:
                  evaluation: str, 
                  instruction: str, 
                  next_speaker_id: Optional[str] = None,
-                 should_continue_script: bool = True):
+                 should_continue_script: bool = True,
+                 bridge_speaker: Optional[str] = None):
         self.evaluation = evaluation  # "PASS", "FAIL", "NEEDS_CLARIFICATION", etc.
         self.instruction = instruction  # Instruction for the next speaker
         self.next_speaker_id = next_speaker_id  # ID of the participant to speak next
         self.should_continue_script = should_continue_script  # Whether to advance strictly to next step
+        self.bridge_speaker = bridge_speaker  # Name of participant to handle HESITATION (optional, set via custom prompt)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "evaluation": self.evaluation,
             "instruction": self.instruction,
             "next_speaker_id": self.next_speaker_id,
-            "should_continue_script": self.should_continue_script
+            "should_continue_script": self.should_continue_script,
+            "bridge_speaker": self.bridge_speaker
         }
 
 
@@ -67,7 +70,7 @@ class ScenarioDirector:
         - Ambiguous fillers: "um", "um...", "Mmm...", "Hmm...", "Uh...", "Ah..." (without further speech)
         - When it's unclear if the user is thinking, agreeing, or disagreeing.
         → should_continue_script: false
-        → instruction: Tell the next AI to ask for clarification or gently encourage the user to speak more.
+        → instruction: Tell the next AI to gently encourage the user or re-ask the question more simply.
         
         ### "FAIL" — Gibberish, bad transcription, or off-topic
         The input is unintelligible or clearly a mistake.
@@ -92,7 +95,7 @@ class ScenarioDirector:
         CRITICAL: Do NOT mark "Mmm" or "Hmm" as PASS unless the user is clearly answering a question like "Is it tasty?". If the context is a general question like "How are you?" or "Introduction", "Mmm" is usually a hesitation -> Use Clarification_Needed.
         
         → should_continue_script: true
-        → instruction: Direct the next AI on how to continue the scenario.
+        → instruction: Direct the next AI on how to continue the conversation.
         
         ## IMPORTANT RULES
         - When in doubt, prefer Clarification_Needed or FAIL over PASS.
@@ -104,7 +107,10 @@ class ScenarioDirector:
         {
             "evaluation": "PASS" | "FAIL" | "Clarification_Needed" | "Simulate_Reaction",
             "instruction": "Specific instruction for the next AI speaker",
-            "should_continue_script": true | false
+            "should_continue_script": true | false,
+            "bridge_speaker": "(optional) Name of the specific AI participant who should respond.
+                              Use this when a particular participant is best suited to handle the situation.
+                              If omitted, the system picks automatically."
         }
         """
 
@@ -235,7 +241,8 @@ class ScenarioDirector:
             return DirectorOutput(
                 evaluation=result.get("evaluation", "PASS"),
                 instruction=result.get("instruction", "Respond naturally."),
-                should_continue_script=result.get("should_continue_script", True)
+                should_continue_script=result.get("should_continue_script", True),
+                bridge_speaker=result.get("bridge_speaker", None)
             )
             
         except Exception as e:

@@ -153,8 +153,13 @@ class TemplateService:
                     voice_id=p.voice_id,
                     voice_settings=p.voice_settings,
                     order_index=p.order_index,
+                    difficulty=p.difficulty,
                     greeting_message=p.greeting_message,
                     avatar_url=p.avatar_url,
+                    llm_model=p.llm_model,
+                    stt_model=p.stt_model,
+                    tts_model=p.tts_model,
+                    tts_provider=p.tts_provider,
                     created_at=p.created_at,
                     updated_at=p.updated_at,
                 )

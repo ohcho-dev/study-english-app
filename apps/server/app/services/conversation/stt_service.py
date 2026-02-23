@@ -64,6 +64,7 @@ class STTService:
                         "encoding": "WEBM_OPUS",
                         "sampleRateHertz": sample_rate_hertz,
                         "languageCode": language_code,
+
                         "enableWordTimeOffsets": True,
                         "enableAutomaticPunctuation": True,
                         "model": model,
@@ -99,9 +100,10 @@ class STTService:
                     "encoding": "LINEAR16",
                     "sampleRateHertz": actual_sample_rate,
                     "languageCode": language_code,
+
                     "enableWordTimeOffsets": True,
                     "enableAutomaticPunctuation": True,
-                    "model": model,  # Configurable STT model
+                    "model": model,
                 },
                 "audio": {
                     "content": base64.b64encode(audio_content).decode("utf-8"),

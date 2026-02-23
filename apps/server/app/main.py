@@ -85,6 +85,20 @@ app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent.parent / "static"), name="static")
 
 
+# Global exception handler — ensures CORS headers are included on 500 errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Catch unhandled exceptions and return proper JSON (with CORS headers)."""
+    import logging
+    from fastapi.responses import JSONResponse
+    logger = logging.getLogger(__name__)
+    logger.error(f"Unhandled error on {request.method} {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
+
+
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 async def health_check() -> HealthResponse:
     """Health check endpoint.

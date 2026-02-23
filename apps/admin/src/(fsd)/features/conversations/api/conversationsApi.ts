@@ -305,3 +305,48 @@ export const getLLMModels = async (): Promise<ModelOption[]> => {
 export const getTTSOptions = async (): Promise<TTSOptionsResponse> => {
     return api.get<TTSOptionsResponse>(`${CONVERSATIONS_BASE}/run0/models/tts`);
 };
+
+// ============================================================================
+// My Turn Stage API (Phase 2-4)
+// ============================================================================
+
+/** Save per-participant model settings to template (admin only) */
+export const saveParticipantModels = async (
+    templateId: string,
+    models: Array<{
+        participant_id: string;
+        llm_model?: string;
+        stt_model?: string;
+        tts_model?: string;
+        tts_provider?: string;
+        voice_id?: string;
+        speaking_rate?: number;
+        difficulty?: number;
+    }>
+): Promise<{ updated: string[]; count: number }> => {
+    return api.put<{ updated: string[]; count: number }>(
+        `${CONVERSATIONS_BASE}/templates/${templateId}/participant-models`,
+        models
+    );
+};
+
+/** Send text input instead of audio (text mode) */
+export const sendTextInput = async (
+    sessionId: string,
+    text: string
+): Promise<{ transcript: string; next_turn: number }> => {
+    const formData = new FormData();
+    formData.append('text', text);
+
+    const response = await fetch(
+        `${API_BASE_URL}${CONVERSATIONS_BASE}/sessions/${sessionId}/text`,
+        { method: 'POST', body: formData }
+    );
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(error.detail || `Request failed: ${response.status}`);
+    }
+
+    return response.json();
+};

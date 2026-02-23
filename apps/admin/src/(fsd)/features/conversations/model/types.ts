@@ -44,8 +44,14 @@ export interface Participant {
     voice_settings: VoiceSettings | null;
     order_index: number;
     // My Turn additions
+    difficulty: number | null;
     greeting_message: string | null;
     avatar_url: string | null;
+    // Model selection (admin-saved)
+    llm_model: string | null;
+    stt_model: string | null;
+    tts_model: string | null;
+    tts_provider: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -58,8 +64,6 @@ export interface ParticipantCreate {
     voice_settings?: VoiceSettings;
     order_index: number;
     // My Turn additions
-    greeting_message?: string;
-    avatar_url?: string;
     greeting_message?: string;
     avatar_url?: string;
 }
