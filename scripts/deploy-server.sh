@@ -34,7 +34,9 @@ echo "🚀 Cloud Run에 배포 중..."
 gcloud run deploy "$SERVICE_NAME" \
   --image "$IMAGE" \
   --region "$REGION" \
-  --project="$PROJECT_ID"
+  --project="$PROJECT_ID" \
+  --timeout=3600 \
+  --session-affinity
 
 echo "---------------------------------------------------"
 echo "✅ Server 배포 완료!"

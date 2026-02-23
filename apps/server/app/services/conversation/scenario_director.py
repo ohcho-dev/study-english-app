@@ -154,7 +154,7 @@ class ScenarioDirector:
             import re
             input_cleaned = user_input.strip() if user_input else ""
             # Matches "Mmm", "Hmm", "Uh", "Ah", "Huh" with optional punctuation (.,?!-) and whitespace
-            hesitation_pattern = re.compile(r"^(?i)(m+|h+m+|uh+|ah+|huh+)\s*[.,?!-]*$")
+            hesitation_pattern = re.compile(r"^(m+|h+m+|uh+|ah+|huh+)\s*[.,?!\-]*$", re.IGNORECASE)
             
             if hesitation_pattern.match(input_cleaned):
                 logger.info(f"[ScenarioDirector] Heuristic: '{input_cleaned}' detected as hesitation -> Force Clarification_Needed")

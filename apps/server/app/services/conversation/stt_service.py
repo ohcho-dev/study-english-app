@@ -62,7 +62,7 @@ class STTService:
                 request_body = {
                     "config": {
                         "encoding": "WEBM_OPUS",
-                        "sampleRateHertz": sample_rate_hertz,
+                        # Note: sampleRateHertz omitted — Google auto-detects for Opus
                         "languageCode": language_code,
 
                         "enableWordTimeOffsets": True,
