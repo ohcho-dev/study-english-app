@@ -61,7 +61,7 @@ def detect_mentioned_participant(text: str, participants, exclude_speaker_name: 
     
     return None
 
-async def run_ai_turn_background(session_id: UUID, participant_id: str, instruction: Optional[str] = None, return_to_user_after: bool = False):
+async def run_ai_turn_background(session_id: UUID, participant_id: str, instruction: Optional[str] = None, return_to_user_after: bool = False, user_emotion: Optional[str] = None):
     """Background task wrapper for AI turn processing."""
     from app.core.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
@@ -84,7 +84,7 @@ async def run_ai_turn_background(session_id: UUID, participant_id: str, instruct
              max_retries = 3
              for attempt in range(max_retries):
                  try:
-                     await service.process_ai_turn(session, participant, instruction, return_to_user_after=return_to_user_after)
+                     await service.process_ai_turn(session, participant, instruction, return_to_user_after=return_to_user_after, user_emotion=user_emotion)
                      break  # Success
                  except Exception as e:
                      logger.error(f"Error in background AI turn (Attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
@@ -490,7 +490,18 @@ class MyTurnService:
             history_text += f"{speaker}: {text}\n"
         return history_text
 
-    async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None, return_to_user_after: bool = False):
+    # Emotion → TTS parameter adjustments
+    EMOTION_TTS_MAP = {
+        "happy": {"pitch": 2.0, "speaking_rate_adj": 0.05},
+        "excited": {"pitch": 3.0, "speaking_rate_adj": 0.1},
+        "nervous": {"pitch": -1.0, "speaking_rate_adj": -0.1},
+        "confused": {"pitch": 0.0, "speaking_rate_adj": -0.15},
+        "frustrated": {"pitch": -2.0, "speaking_rate_adj": -0.05},
+        "shy": {"pitch": -1.0, "speaking_rate_adj": -0.1},
+        "neutral": {"pitch": 0.0, "speaking_rate_adj": 0.0},
+    }
+
+    async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None, return_to_user_after: bool = False, user_emotion: Optional[str] = None):
         """Generates AI response and saves it as a new turn."""
         # Status Check
         if session.status != SessionStatus.ACTIVE:
@@ -595,6 +606,10 @@ class MyTurnService:
         # Add Specific Instruction from Director
         if instruction:
             context += f"\n\n[DIRECTOR'S INSTRUCTION]: {instruction}\nFollow this instruction strictly."
+        
+        # Add Emotion Context (Phase 5)
+        if user_emotion and user_emotion != "neutral":
+            context += f"\n[USER EMOTION]: The user seems {user_emotion}. Adjust your tone and response accordingly — be empathetic and match the emotional context."
 
         # 2. Call LLM
         import google.generativeai as genai
@@ -695,10 +710,16 @@ IMPORTANT RULES:
             else:
                 from app.services.conversation.tts_service import TTSService
                 tts_service = TTSService()
+                # Apply emotion-based TTS adjustments (Phase 5)
+                emotion_adj = self.EMOTION_TTS_MAP.get(user_emotion or "neutral", {"pitch": 0.0, "speaking_rate_adj": 0.0})
+                adjusted_rate = max(0.5, min(2.0, speaking_rate + emotion_adj.get("speaking_rate_adj", 0.0)))
+                adjusted_pitch = emotion_adj.get("pitch", 0.0)
+                
                 tts_result = await tts_service.synthesize(
                     text=reply_text,
                     voice_id=voice_id or "en-US-Neural2-F",
-                    speaking_rate=speaking_rate,
+                    speaking_rate=adjusted_rate,
+                    pitch=adjusted_pitch,
                     save_file=False,
                 )
                 audio_base64 = tts_result.get("audio_base64")
@@ -910,13 +931,15 @@ IMPORTANT RULES:
                     "is_user_turn": False
                 })
                 
+                emotion = director_output.user_emotion if director_output else None
                 if background_tasks:
                     background_tasks.add_task(
                         run_ai_turn_background, 
                         session_id, 
                         str(bridge_participant.id),
                         encouragement_instruction,
-                        True  # return_to_user_after=True
+                        True,  # return_to_user_after=True
+                        emotion  # user_emotion
                     )
                 else:
                     asyncio.create_task(
@@ -924,7 +947,8 @@ IMPORTANT RULES:
                             session_id,
                             str(bridge_participant.id),
                             encouragement_instruction,
-                            True  # return_to_user_after=True
+                            True,  # return_to_user_after=True
+                            emotion  # user_emotion
                         )
                     )
                 
@@ -944,28 +968,49 @@ IMPORTANT RULES:
         if next_turn_info and director_output.instruction:
             next_turn_info["instruction"] = director_output.instruction
         
-        # Mention-Based Override for user turns: check if user addressed a specific AI
+        # Turn Routing Override (Phase 6): Director next_speaker > mention > bridge_speaker > round-robin
         if next_turn_info and session.template and session.template.participants:
-            # Director bridge_speaker takes priority over mention detection
-            mentioned = None
-            if director_output.bridge_speaker:
-                mentioned = next(
+            override_participant = None
+            override_source = None
+            
+            # Priority 1: Director's next_speaker (intelligent turn distribution)
+            if director_output.next_speaker:
+                override_participant = next(
+                    (p for p in session.template.participants 
+                     if p.name == director_output.next_speaker and p.participant_type != ParticipantType.USER),
+                    None
+                )
+                if override_participant:
+                    override_source = "Director next_speaker"
+            
+            # Priority 2: Director's bridge_speaker (for non-PASS, but also works here)
+            if not override_participant and director_output.bridge_speaker:
+                override_participant = next(
                     (p for p in session.template.participants 
                      if p.name == director_output.bridge_speaker and p.participant_type != ParticipantType.USER),
                     None
                 )
-            if not mentioned:
+                if override_participant:
+                    override_source = "Director bridge_speaker"
+            
+            # Priority 3: User mention detection
+            if not override_participant:
                 mentioned = detect_mentioned_participant(
                     transcript, session.template.participants
                 )
-            if mentioned and str(mentioned.id) != str(next_turn_info["next_participant"].id):
+                if mentioned:
+                    override_participant = mentioned
+                    override_source = "User mention"
+            
+            # Apply override
+            if override_participant and str(override_participant.id) != str(next_turn_info["next_participant"].id):
                 logger.info(
-                    f"[process_user_turn] Mention override: user addressed {mentioned.name} "
+                    f"[process_user_turn] {override_source}: routing to {override_participant.name} "
                     f"(instead of round-robin {next_turn_info['next_participant'].name})"
                 )
-                next_turn_info["next_participant"] = mentioned
-                next_turn_info["turn_type"] = mentioned.participant_type.value if hasattr(mentioned.participant_type, 'value') else str(mentioned.participant_type)
-                next_turn_info["is_user_turn"] = mentioned.participant_type == ParticipantType.USER
+                next_turn_info["next_participant"] = override_participant
+                next_turn_info["turn_type"] = override_participant.participant_type.value if hasattr(override_participant.participant_type, 'value') else str(override_participant.participant_type)
+                next_turn_info["is_user_turn"] = override_participant.participant_type == ParticipantType.USER
         
         if next_turn_info:
             session.current_turn_index += 1
@@ -992,19 +1037,24 @@ IMPORTANT RULES:
             # Trigger AI if next speaker is AI
             if not next_turn_info["is_user_turn"]:
                 instruction = next_turn_info.get("instruction")
+                emotion = director_output.user_emotion if director_output else None
                 if background_tasks:
                     background_tasks.add_task(
                         run_ai_turn_background,
                         session_id,
                         str(next_turn_info["next_participant"].id),
-                        instruction
+                        instruction,
+                        False,  # return_to_user_after
+                        emotion  # user_emotion
                     )
                 else:
                     asyncio.create_task(
                         run_ai_turn_background(
                             session_id,
                             str(next_turn_info["next_participant"].id),
-                            instruction
+                            instruction,
+                            False,  # return_to_user_after
+                            emotion  # user_emotion
                         )
                     )
         

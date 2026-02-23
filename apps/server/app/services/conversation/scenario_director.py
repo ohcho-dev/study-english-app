@@ -24,12 +24,16 @@ class DirectorOutput:
                  instruction: str, 
                  next_speaker_id: Optional[str] = None,
                  should_continue_script: bool = True,
-                 bridge_speaker: Optional[str] = None):
+                 bridge_speaker: Optional[str] = None,
+                 user_emotion: Optional[str] = None,
+                 next_speaker: Optional[str] = None):
         self.evaluation = evaluation  # "PASS", "FAIL", "NEEDS_CLARIFICATION", etc.
         self.instruction = instruction  # Instruction for the next speaker
         self.next_speaker_id = next_speaker_id  # ID of the participant to speak next
         self.should_continue_script = should_continue_script  # Whether to advance strictly to next step
-        self.bridge_speaker = bridge_speaker  # Name of participant to handle HESITATION (optional, set via custom prompt)
+        self.bridge_speaker = bridge_speaker  # Name of participant to handle non-PASS turns (optional, set via custom prompt)
+        self.user_emotion = user_emotion  # Detected user emotion: "happy", "nervous", "confused", "neutral", etc.
+        self.next_speaker = next_speaker  # Name of AI to speak next for PASS turns (overrides round-robin)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -37,7 +41,9 @@ class DirectorOutput:
             "instruction": self.instruction,
             "next_speaker_id": self.next_speaker_id,
             "should_continue_script": self.should_continue_script,
-            "bridge_speaker": self.bridge_speaker
+            "bridge_speaker": self.bridge_speaker,
+            "user_emotion": self.user_emotion,
+            "next_speaker": self.next_speaker,
         }
 
 
@@ -108,9 +114,9 @@ class ScenarioDirector:
             "evaluation": "PASS" | "FAIL" | "Clarification_Needed" | "Simulate_Reaction",
             "instruction": "Specific instruction for the next AI speaker",
             "should_continue_script": true | false,
-            "bridge_speaker": "(optional) Name of the specific AI participant who should respond.
-                              Use this when a particular participant is best suited to handle the situation.
-                              If omitted, the system picks automatically."
+            "bridge_speaker": "(optional) Name of the AI who should handle non-PASS situations (e.g. help the user).",
+            "user_emotion": "The user's emotional state inferred from their input and context. One of: happy, excited, nervous, confused, frustrated, neutral, shy",
+            "next_speaker": "(optional) For PASS turns, name of which AI participant should speak next. Use this to direct conversation flow. If omitted, system uses round-robin."
         }
         """
 
@@ -242,7 +248,9 @@ class ScenarioDirector:
                 evaluation=result.get("evaluation", "PASS"),
                 instruction=result.get("instruction", "Respond naturally."),
                 should_continue_script=result.get("should_continue_script", True),
-                bridge_speaker=result.get("bridge_speaker", None)
+                bridge_speaker=result.get("bridge_speaker", None),
+                user_emotion=result.get("user_emotion", "neutral"),
+                next_speaker=result.get("next_speaker", None),
             )
             
         except Exception as e:
