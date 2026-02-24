@@ -516,20 +516,18 @@ Cloud Run은 **`us-central1`(미국)** 에 배포 (Gemini API 호환성 때문�
 ### 현재 구성
 
 ```
+AS-IS (현재 코드)
+─────────────────────
 AI 발화 텍스트
   │
-  ├─ [기본값] Gemini TTS (Cloud TTS API 경유)
-  │    모델:   gemini-2.5-flash-tts
-  │    음성:   Kore (여성), Charon (남성) 등
-  │    제어:   자연어 스타일 프롬프트
-  │    출력:   MP3 (동기식)
-  │    ⚠️ 문제: 레이턴시 ~800-2000ms (LLM 추론 경유)
+  ├─ [UI 선택] Google Cloud TTS (기본 선택됨)
+  │    음성: Olivia · Neural2 등
+  │    ✅ 레이턴시 ~200-400ms
   │
-  └─ [폴백] Google Cloud TTS (Neural2)
-       음성:   en-US-Neural2-F
-       제어:   pitch/speaking_rate
-       출력:   MP3 (동기식)
-       ✅ 장점: 레이턴시 ~200-400ms
+  └─ [UI 선택] Gemini TTS
+       음성: Kore, Charon 등
+       ⚠️ 레이턴시 ~800-2000ms
+
 ```
 
 ### ⚠️ 현재 문제: Gemini TTS 레이턴시

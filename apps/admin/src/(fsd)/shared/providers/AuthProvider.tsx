@@ -80,11 +80,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         );
     }
 
-    // 인증 확인 중 또는 리다이렉트 중
-    if (loading || !user) {
+    // 인증 확인 중
+    if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
                 <div className="text-muted-foreground text-sm">로딩 중...</div>
+            </div>
+        );
+    }
+
+    // 인증 실패 → 로그인 페이지로 리다이렉트 중
+    if (!user) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="text-muted-foreground text-sm">로그인 페이지로 이동 중...</div>
             </div>
         );
     }
