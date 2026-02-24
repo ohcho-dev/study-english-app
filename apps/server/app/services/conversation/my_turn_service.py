@@ -704,6 +704,7 @@ IMPORTANT RULES:
                     text=reply_text,
                     model=tts_model or "gemini-2.5-flash-tts",
                     voice_name=voice_id or "Kore",
+                    user_emotion=user_emotion,
                     save_file=False,
                 )
                 audio_base64 = tts_result.get("audio_base64")

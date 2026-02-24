@@ -34,42 +34,23 @@ class TranslateRequest(BaseModel):
 
 @router.post("/translate")
 async def translate_text(request: TranslateRequest):
-    """Translate text using Gemini API."""
+    """Translate text using Google Cloud Translation API."""
     try:
-        from google import genai
-        from app.core.config import settings
+        from google.cloud import translate_v2 as translate
         
-        api_key = settings.GOOGLE_AI_API_KEY
-        if not api_key:
-            return {"translated_text": request.text, "error": "No API key configured"}
+        client = translate.Client()
         
-        client = genai.Client(api_key=api_key)
-        
-        lang_names = {"ko": "한국어", "ja": "日本語", "zh": "中文", "es": "Español"}
-        target_name = lang_names.get(request.target_language, request.target_language)
-        
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=f"번역할 텍스트: \"{request.text}\"",
-            config={
-                "system_instruction": (
-                    f"당신은 전문 번역가입니다. 입력받은 텍스트를 {target_name}로 정확하게 번역하세요. "
-                    f"번역된 텍스트만 출력하세요. 따옴표, 설명, 원문은 절대 포함하지 마세요."
-                ),
-                "temperature": 0.1,
-            }
+        result = client.translate(
+            request.text,
+            target_language=request.target_language,
+            format_="text",
         )
         
-        translated = response.text.strip() if response.text else request.text
-        # Strip any surrounding quotes the model might add
-        if translated.startswith('"') and translated.endswith('"'):
-            translated = translated[1:-1]
-        if translated.startswith("'") and translated.endswith("'"):
-            translated = translated[1:-1]
-            
+        translated = result["translatedText"]
         logger.info(f"Translation: '{request.text[:50]}' -> '{translated[:50]}'")
         return {"translated_text": translated}
         
     except Exception as e:
         logger.error(f"Translation error: {e}", exc_info=True)
         return {"translated_text": request.text, "error": str(e)}
+

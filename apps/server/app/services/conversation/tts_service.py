@@ -19,35 +19,35 @@ from app.core.config import settings
 # Available voices for conversation scenarios
 AVAILABLE_VOICES = {
     # English (US) - Female
-    "en-US-Wavenet-F": {"gender": "FEMALE", "name": "Sarah"},
-    "en-US-Wavenet-C": {"gender": "FEMALE", "name": "Emma"},
-    "en-US-Neural2-F": {"gender": "FEMALE", "name": "Olivia"},
-    "en-US-Neural2-C": {"gender": "FEMALE", "name": "Sophia"},
+    "en-US-Wavenet-F": {"gender": "FEMALE", "name": "Sarah · WaveNet"},
+    "en-US-Wavenet-C": {"gender": "FEMALE", "name": "Emma · WaveNet"},
+    "en-US-Neural2-F": {"gender": "FEMALE", "name": "Olivia · Neural2"},
+    "en-US-Neural2-C": {"gender": "FEMALE", "name": "Sophia · Neural2"},
     
     # English (US) - Male
-    "en-US-Wavenet-D": {"gender": "MALE", "name": "Mike"},
-    "en-US-Wavenet-B": {"gender": "MALE", "name": "James"},
-    "en-US-Neural2-D": {"gender": "MALE", "name": "David"},
-    "en-US-Neural2-J": {"gender": "MALE", "name": "Daniel"},
+    "en-US-Wavenet-D": {"gender": "MALE", "name": "Mike · WaveNet"},
+    "en-US-Wavenet-B": {"gender": "MALE", "name": "James · WaveNet"},
+    "en-US-Neural2-D": {"gender": "MALE", "name": "David · Neural2"},
+    "en-US-Neural2-J": {"gender": "MALE", "name": "Daniel · Neural2"},
     
     # English (UK)
-    "en-GB-Wavenet-A": {"gender": "FEMALE", "name": "Emily"},
-    "en-GB-Wavenet-B": {"gender": "MALE", "name": "Oliver"},
+    "en-GB-Wavenet-A": {"gender": "FEMALE", "name": "Emily · WaveNet"},
+    "en-GB-Wavenet-B": {"gender": "MALE", "name": "Oliver · WaveNet"},
     
     # English (Australia)
-    "en-AU-Wavenet-B": {"gender": "MALE", "name": "Jack"},
+    "en-AU-Wavenet-B": {"gender": "MALE", "name": "Jack · WaveNet"},
     
     # English (US) - Polyglot
     "en-US-Polyglot-1": {"gender": "MALE", "name": "Polyglot"},
 
     # Korean
-    "ko-KR-Wavenet-A": {"gender": "FEMALE", "name": "Sun-Hi"},
-    "ko-KR-Wavenet-B": {"gender": "FEMALE", "name": "Ji-Min"},
-    "ko-KR-Wavenet-C": {"gender": "MALE", "name": "In-Su"},
-    "ko-KR-Wavenet-D": {"gender": "MALE", "name": "Jun-Ho"},
-    "ko-KR-Neural2-A": {"gender": "FEMALE", "name": "Seo-Yun"},
-    "ko-KR-Neural2-B": {"gender": "FEMALE", "name": "Min-Ji"},
-    "ko-KR-Neural2-C": {"gender": "MALE", "name": "Min-Su"},
+    "ko-KR-Wavenet-A": {"gender": "FEMALE", "name": "Sun-Hi · WaveNet"},
+    "ko-KR-Wavenet-B": {"gender": "FEMALE", "name": "Ji-Min · WaveNet"},
+    "ko-KR-Wavenet-C": {"gender": "MALE", "name": "In-Su · WaveNet"},
+    "ko-KR-Wavenet-D": {"gender": "MALE", "name": "Jun-Ho · WaveNet"},
+    "ko-KR-Neural2-A": {"gender": "FEMALE", "name": "Seo-Yun · Neural2"},
+    "ko-KR-Neural2-B": {"gender": "FEMALE", "name": "Min-Ji · Neural2"},
+    "ko-KR-Neural2-C": {"gender": "MALE", "name": "Min-Su · Neural2"},
 }
 
 

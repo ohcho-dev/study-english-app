@@ -34,6 +34,7 @@ pillow = "^12.1.0"
 pydub = "^0.25.1"
 google-cloud-speech = "^2.36.1"
 google-cloud-texttospeech = "^2.34.0"
+google-cloud-translate = "^3.18.0"
 audioop-lts = {version = ">=0.2.1", markers = "python_version >= \"3.13\""}
 aiortc = "^1.14.0"
 pandas = "^3.0.0"
