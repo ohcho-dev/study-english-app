@@ -702,11 +702,16 @@ IMPORTANT RULES:
                 gemini_tts = GeminiTTSService()
                 tts_result = await gemini_tts.synthesize(
                     text=reply_text,
-                    model=tts_model or "gemini-2.5-flash-preview-tts",
+                    model=tts_model or "gemini-2.5-flash-tts",
                     voice_name=voice_id or "Kore",
                     save_file=False,
                 )
                 audio_base64 = tts_result.get("audio_base64")
+                
+                # Fallback to Google Cloud TTS if Gemini returned no audio
+                if not audio_base64:
+                    logger.warning(f"Gemini TTS returned no audio, falling back to Google Cloud TTS")
+                    raise Exception("Gemini TTS returned empty audio")
             else:
                 from app.services.conversation.tts_service import TTSService
                 tts_service = TTSService()
@@ -725,7 +730,25 @@ IMPORTANT RULES:
                 audio_base64 = tts_result.get("audio_base64")
         except Exception as e:
             logger.error(f"TTS Error ({tts_provider}): {e}")
-            audio_base64 = None
+            # Fallback: If Gemini failed, try Google Cloud TTS
+            if tts_provider == 'gemini':
+                try:
+                    logger.info(f"Falling back to Google Cloud TTS...")
+                    from app.services.conversation.tts_service import TTSService
+                    tts_service = TTSService()
+                    tts_result = await tts_service.synthesize(
+                        text=reply_text,
+                        voice_id="en-US-Neural2-F",
+                        speaking_rate=speaking_rate,
+                        save_file=False,
+                    )
+                    audio_base64 = tts_result.get("audio_base64")
+                    logger.info(f"Google Cloud TTS fallback succeeded")
+                except Exception as fallback_e:
+                    logger.error(f"Google Cloud TTS fallback also failed: {fallback_e}")
+                    audio_base64 = None
+            else:
+                audio_base64 = None
             
         t2_5_tts_ready = time.time() * 1000
 
