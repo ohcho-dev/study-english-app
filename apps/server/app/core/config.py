@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # AI
     GOOGLE_AI_API_KEY: str = ""
     GOOGLE_CLOUD_STT_TTS_API_KEY: str = ""
+    GOOGLE_CLOUD_PROJECT: str = ""  # GCP 프로젝트 ID (V2 STT API용)
     OPENAI_API_KEY: str = ""
 
     # Storage (GCS)

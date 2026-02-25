@@ -7,7 +7,7 @@
  * No template or scenario dependencies.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Square, RotateCcw, Download, MessageSquare } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
@@ -16,6 +16,7 @@ import { Badge } from '@/shared/ui/badge';
 import { resolveMediaUrl } from '@/shared/lib/api';
 
 import { useRun0, useTestPhrases } from '../model/useRun0';
+import { useStreamingSTT } from '../model/useStreamingSTT';
 import { VoiceRecorder } from './VoiceRecorder';
 import { Run0ConfigPanel } from './Run0ConfigPanel';
 import { MetricsDashboard } from './MetricsDashboard';
@@ -23,30 +24,82 @@ import { MetricsDashboard } from './MetricsDashboard';
 export const Run0Runner = () => {
     const run0 = useRun0();
     const { data: testPhrases = [] } = useTestPhrases();
+    const streamingSTT = useStreamingSTT();
 
     const [selectedPhrase, setSelectedPhrase] = useState<string | null>(null);
     const [showConversation, setShowConversation] = useState(true);
+    const isStreamingMode = run0.config.sttMode === 'streaming';
+
+    // Streaming mode: track when recording stopped (with timestamp for E2E)
+    const [recordingStopTime, setRecordingStopTime] = useState<number | null>(null);
+    const streamingProcessedRef = useRef(false);
 
     // Handle recording completion
     const handleRecordingComplete = (blob: Blob, t0UserEnd: number) => {
-        run0.processRecording(blob, t0UserEnd);
+        if (isStreamingMode) {
+            // In streaming mode: record stop time + show "처리중" immediately
+            console.log('[Run0Runner] Recording stopped (streaming mode), waiting for transcript...');
+            setRecordingStopTime(t0UserEnd);
+            // Show "처리중..." immediately on stop (don't wait for useEffect)
+            run0.setProcessing(true);
+        } else {
+            // Sync mode: send audio blob for full STT → LLM → TTS
+            run0.processRecording(blob, t0UserEnd, selectedPhrase || undefined);
+        }
     };
+
+    // Streaming mode: process result when ALL conditions are met:
+    // 1) Recording has stopped (recordingStopTime is set)
+    // 2) Server has finished ALL gRPC sessions and sent 'done' (isDone)
+    // 3) A transcript is available
+    useEffect(() => {
+        if (!isStreamingMode || !recordingStopTime || !streamingSTT.isDone) return;
+        if (streamingProcessedRef.current) return;
+
+        // Combine accumulated finals + any remaining interim
+        const transcript = [streamingSTT.finalTranscript, streamingSTT.interimTranscript]
+            .filter(Boolean).join(' ').trim();
+        if (!transcript) return;
+
+        streamingProcessedRef.current = true;
+        const t1AsrFinal = streamingSTT.finalTimestamp || Date.now();
+        const sttLatency = Math.max(0, t1AsrFinal - recordingStopTime);
+        console.log('[Run0Runner] ✅ Server done — processing full transcript:',
+            transcript, `STT: ${sttLatency}ms`);
+
+        run0.processStreamingResult(
+            transcript,
+            recordingStopTime,
+            t1AsrFinal,
+            selectedPhrase || undefined,
+            undefined,
+            sttLatency,
+        );
+
+        setRecordingStopTime(null);
+    }, [isStreamingMode, recordingStopTime, streamingSTT.isDone,
+        streamingSTT.finalTranscript, streamingSTT.interimTranscript,
+        streamingSTT.finalTimestamp, streamingSTT.connectTime,
+        selectedPhrase, run0]);
 
     // Export results as CSV
     const exportResults = () => {
         const csvRows = [
-            ['Iteration', 'IsWarmup', 'Transcript', 'Reply', 'ASR_ms', 'LLM_ms', 'TTS_ms', 'ClientLoad_ms', 'Server_ms', 'E2E_ms', 'Timestamp'],
+            ['Iteration', 'IsWarmup', 'Transcript', 'Reply', 'ReferenceText', 'ASR_ms', 'LLM_ms', 'TTS_ms', 'ClientLoad_ms', 'Server_ms', 'E2E_ms', 'WER', 'CER', 'Timestamp'],
             ...run0.results.map((r) => [
                 r.iteration.toString(),
                 r.isWarmup.toString(),
                 `"${r.transcript.replace(/"/g, '""')}"`,
                 `"${r.reply.replace(/"/g, '""')}"`,
+                `"${(r.referenceText || '').replace(/"/g, '""')}"`,
                 r.metrics.asrMs.toString(),
                 r.metrics.llmMs.toString(),
                 r.metrics.ttsMs.toString(),
                 r.metrics.clientLoadMs?.toString() || '',
                 r.metrics.serverTotalMs.toString(),
                 r.metrics.e2eMs?.toString() || '',
+                r.metrics.wer?.toString() || '',
+                r.metrics.cer?.toString() || '',
                 new Date(r.timestamp).toISOString(),
             ]),
         ];
@@ -146,6 +199,32 @@ export const Run0Runner = () => {
                                     size="lg"
                                     options={{
                                         maxDuration: 30,
+                                        enableVAD: true,
+                                        vadSilenceThreshold: 0.15,
+                                        vadSilenceTimeoutMs: 3000,
+                                        vadMinDurationSec: 1,
+                                        onStart: isStreamingMode
+                                            ? () => {
+                                                streamingProcessedRef.current = false;
+                                                streamingSTT.connect({
+                                                    model: run0.config.sttModel,
+                                                    language: 'en-US',
+                                                    interim_results: true,
+                                                });
+                                            }
+                                            : undefined,
+                                        onDataAvailable: isStreamingMode
+                                            ? (data) => {
+                                                streamingSTT.sendChunk(data);
+                                            }
+                                            : undefined,
+                                        onStop: isStreamingMode
+                                            ? () => {
+                                                // Don't disconnect — send stop signal so server
+                                                // can finish processing and return final result
+                                                streamingSTT.sendStop();
+                                            }
+                                            : undefined,
                                     }}
                                 />
 
@@ -156,6 +235,33 @@ export const Run0Runner = () => {
                                             선택된 테스트 문구:
                                         </p>
                                         <p className="font-medium">{selectedPhrase}</p>
+                                    </div>
+                                )}
+
+                                {/* Streaming STT Subtitle Area */}
+                                {isStreamingMode && (streamingSTT.isStreaming || streamingSTT.hasResult) && (
+                                    <div className="mt-4 p-4 bg-zinc-900 rounded-lg border border-zinc-700">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className={`h-2 w-2 rounded-full ${streamingSTT.isStreaming ? 'bg-green-500 animate-pulse' : 'bg-zinc-500'}`} />
+                                            <span className="text-xs text-muted-foreground">
+                                                {streamingSTT.isStreaming ? '실시간 인식 중...' : '인식 완료'}
+                                            </span>
+                                        </div>
+                                        <p className="text-lg font-mono text-white min-h-[2rem]">
+                                            {[streamingSTT.finalTranscript, streamingSTT.interimTranscript].filter(Boolean).join(' ') || '...'}
+                                        </p>
+                                        {streamingSTT.finalTranscript && (
+                                            <div className="mt-2 flex items-center gap-3">
+                                                <p className="text-xs text-green-400 font-mono">
+                                                    ✓ {streamingSTT.finalTranscript}
+                                                </p>
+                                                {streamingSTT.ttfrMs !== null && (
+                                                    <span className="text-xs text-zinc-400 font-mono">
+                                                        TTFR: {(streamingSTT.ttfrMs / 1000).toFixed(2)}s
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

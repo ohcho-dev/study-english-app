@@ -70,12 +70,15 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         voice_id: str = "en-US-Wavenet-F",
         system_prompt: str | None = None,
         stt_model: str = "latest_long",
+        stt_mode: str = "sync",
         llm_model: str = "gemini-2.5-flash",
         tts_provider: str = "google-cloud",
         tts_model: str | None = None,
+        tts_mode: str = "sync",
         difficulty: int | None = None,
         estimated_minutes: int | None = None,
         warmup_iterations: int = 2,
+        reference_text: str | None = None,
     ) -> Run0VoiceResponse:
         """Process voice input through the full pipeline.
         
@@ -124,17 +127,19 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             # Standalone Run0 mode — auto-create session for latency tracking
             session = await self.session_service.create_run0_session(
                 stt_model=stt_model,
+                stt_mode=stt_mode,
                 llm_model=llm_model,
                 tts_provider=tts_provider,
                 tts_model=tts_model,
+                tts_mode=tts_mode,
                 voice_id=voice_id,
                 system_prompt=system_prompt,
                 warmup_iterations=warmup_iterations,
             )
             session_id = session.id
         
-        # Step 1: STT - Convert speech to text
-        stt_result = await self.stt_service.transcribe(
+        # Step 1: STT - Convert speech to text (auto-selects V1/V2 by model)
+        stt_result = await self.stt_service.smart_transcribe(
             audio_data=audio_data,
             audio_format=audio_format,
             model=stt_model,
@@ -144,6 +149,12 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         transcript = stt_result["transcript"]
         if not transcript:
             transcript = "[No speech detected]"
+        
+        # Calculate WER/CER if reference text provided
+        accuracy = {"wer": None, "cer": None}
+        if reference_text and transcript != "[No speech detected]":
+            from app.services.conversation.stt_service import calculate_accuracy
+            accuracy = calculate_accuracy(transcript, reference_text)
         
         # Get first AI participant name for context (only if session exists)
         first_ai_speaker = None
@@ -204,6 +215,9 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             tts_voice=voice_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reference_text=reference_text,
+            wer=accuracy.get("wer"),
+            cer=accuracy.get("cer"),
         )
         turn_id = turn.id
         
@@ -239,6 +253,176 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             llm_latency_ms=llm_latency_ms,
             tts_latency_ms=tts_latency_ms,
             server_total_ms=server_total_ms,
+            stt_confidence=stt_result.get("confidence"),
+            recognition_api=stt_result.get("recognition_api"),
+            reference_text=reference_text,
+            wer=accuracy.get("wer"),
+            cer=accuracy.get("cer"),
+        )
+    
+    async def process_text(
+        self,
+        transcript: str,
+        t0_user_end: float,
+        t1_asr_final: float,
+        session_id: UUID | None = None,
+        voice_id: str = "en-US-Wavenet-F",
+        system_prompt: str | None = None,
+        stt_model: str = "chirp_3",
+        stt_mode: str = "streaming",
+        llm_model: str = "gemini-2.5-flash",
+        tts_provider: str = "google-cloud",
+        tts_model: str | None = None,
+        tts_mode: str = "sync",
+        warmup_iterations: int = 2,
+        reference_text: str | None = None,
+        stt_confidence: float | None = None,
+        stt_latency_ms: float | None = None,
+    ) -> Run0VoiceResponse:
+        """Process pre-transcribed text through LLM → TTS pipeline.
+        
+        Used in streaming STT mode where the transcript comes from 
+        the WebSocket streaming recognition (client-side).
+        No STT processing is done here.
+        
+        Timestamp design for streaming mode:
+            t0_user_end: Client timestamp when streaming started (connectTime)
+            t1_asr_final: Client timestamp when final transcript received
+            t1_server_received: Server timestamp when this request arrived
+            t2_llm_final: Server timestamp when LLM completed
+            t2_5_tts_ready: Server timestamp when TTS completed
+        
+        STT latency = t1_asr_final - t0_user_end (client-side, correct for streaming)
+        LLM latency = t2_llm_final - t1_server_received (server-side only, excludes HTTP transit)
+        TTS latency = t2_5_tts_ready - t2_llm_final (server-side only)
+        """
+        # Record when the server received this request (for accurate LLM timing)
+        t1_server_received = time.time() * 1000
+        
+        # Get or create session
+        if session_id:
+            is_timed_out = await self.session_service.check_session_timeout(session_id)
+            if is_timed_out:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=409, detail="Session has timed out")
+            session = await self.session_service.get_by_id(session_id)
+            if not session:
+                raise ValueError(f"Session {session_id} not found")
+        else:
+            session = await self.session_service.create_run0_session(
+                stt_model=stt_model,
+                stt_mode=stt_mode,
+                llm_model=llm_model,
+                tts_provider=tts_provider,
+                voice_id=voice_id,
+                system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
+                warmup_iterations=warmup_iterations,
+            )
+            session_id = session.id
+        
+        # Calculate WER/CER if reference text provided
+        accuracy: dict[str, float | None] = {"wer": None, "cer": None}
+        if reference_text and transcript and transcript != "[No speech detected]":
+            from app.services.conversation.stt_service import calculate_accuracy
+            accuracy = calculate_accuracy(transcript, reference_text)
+        
+        # Step 1: LLM - Generate response (STT already done on client)
+        reply_text = await self._generate_llm_response(
+            user_input=transcript,
+            system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
+            session_id=session_id,
+            speaker_name=None,
+            llm_model=llm_model,
+        )
+        t2_llm_final = time.time() * 1000
+        
+        input_tokens = len(transcript.split()) * 2
+        output_tokens = len(reply_text.split()) * 2
+        
+        # Step 2: TTS - Convert response to speech
+        if tts_provider == "gemini":
+            tts_result = await self.gemini_tts_service.synthesize(
+                text=reply_text,
+                model=tts_model or "gemini-2.5-flash-preview-tts",
+                voice_name=voice_id,
+                save_file=True,
+            )
+        else:
+            tts_result = await self.tts_service.synthesize(
+                text=reply_text,
+                voice_id=voice_id,
+                save_file=True,
+            )
+        t2_5_tts_ready = time.time() * 1000
+        
+        # Save turns to database
+        turn = await self.session_service.add_turn(
+            session_id=session_id,
+            turn_type=TurnType.USER,
+            speaker_name="User",
+            content_text=transcript,
+            t0_user_end=t0_user_end,
+            t1_asr_final=t1_asr_final,
+            t2_llm_final=t2_llm_final,
+            t2_5_tts_ready=t2_5_tts_ready,
+            model_name=llm_model,
+            stt_provider="google",
+            stt_model=stt_model,
+            tts_provider=tts_provider,
+            tts_voice=voice_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            reference_text=reference_text,
+            wer=accuracy.get("wer"),
+            cer=accuracy.get("cer"),
+        )
+        turn_id = turn.id
+        
+        await self.session_service.add_turn(
+            session_id=session_id,
+            turn_type=TurnType.AI,
+            speaker_name="AI",
+            content_text=reply_text,
+            audio_url=tts_result.get("audio_url"),
+            audio_duration_ms=tts_result.get("duration_ms"),
+        )
+        
+        await self.session_service.calculate_metrics(session_id)
+        
+        # STT: For streaming mode, measure the gap from recording stop to server
+        # processing start (t1_server_received - t0_user_end). This captures the
+        # pipeline overhead (React re-render + POST network) and makes
+        # E2E ≈ STT + LLM + TTS + Client. For sync mode, use timestamp diff.
+        if stt_latency_ms is not None:
+            # Streaming mode: time from recording stop to server starting processing
+            asr_latency_ms = max(0, int(t1_server_received - t0_user_end))
+        else:
+            asr_latency_ms = max(0, int(t1_asr_final - t0_user_end))
+        # LLM: server-side only (request received → LLM done), excludes HTTP transit
+        llm_latency_ms = int(t2_llm_final - t1_server_received)
+        # TTS: server-side only (LLM done → TTS done)
+        tts_latency_ms = int(t2_5_tts_ready - t2_llm_final)
+        server_total_ms = int(t2_5_tts_ready - t1_server_received)
+        
+        return Run0VoiceResponse(
+            session_id=session_id,
+            turn_id=turn_id,
+            transcript=transcript,
+            reply_text=reply_text,
+            audio_url=tts_result.get("audio_url"),
+            audio_base64=tts_result.get("audio_base64"),
+            t1_asr_final=t1_asr_final,
+            t2_llm_final=t2_llm_final,
+            t2_5_tts_ready=t2_5_tts_ready,
+            asr_latency_ms=asr_latency_ms,
+            llm_latency_ms=llm_latency_ms,
+            tts_latency_ms=tts_latency_ms,
+            server_total_ms=server_total_ms,
+            stt_confidence=stt_confidence,
+            recognition_api="v2-streaming",
+            reference_text=reference_text,
+            wer=accuracy.get("wer"),
+            cer=accuracy.get("cer"),
         )
     
     async def log_client_timestamp(

@@ -10,6 +10,7 @@ import {
     getTestPhrases,
     logClientTimestamp,
     processVoice,
+    processText,
 } from '../api/conversationsApi';
 import type { Run0VoiceResponse } from './types';
 import { resolveMediaUrl } from '@/shared/lib/api';
@@ -23,12 +24,16 @@ export interface Run0Config {
     voiceId: string;
     /** STT model */
     sttModel: string;
+    /** STT mode: sync (batch) or streaming */
+    sttMode: 'sync' | 'streaming';
     /** LLM model */
     llmModel: string;
     /** TTS provider: google-cloud or gemini */
     ttsProvider: string;
     /** TTS model (for Gemini TTS) */
     ttsModel: string;
+    /** TTS mode: sync (batch) or streaming */
+    ttsMode: 'sync' | 'streaming';
     /** Custom system prompt */
     systemPrompt: string;
     /** Auto-play response audio */
@@ -45,14 +50,24 @@ export interface Run0Config {
     targetLatencyMs: number;
     /** Max acceptable E2E latency (ms) */
     maxLatencyMs: number;
+    /** Enable TTS A/B comparison mode */
+    enableTtsComparison: boolean;
+    /** TTS B provider (for A/B comparison) */
+    ttsBProvider: string;
+    /** TTS B model */
+    ttsBModel: string;
+    /** TTS B voice ID */
+    ttsBVoiceId: string;
 }
 
 export const DEFAULT_RUN0_CONFIG: Run0Config = {
-    voiceId: 'en-US-Neural2-F',
-    sttModel: 'latest_long',
+    voiceId: 'en-US-Journey-F',
+    sttModel: 'chirp_3',
+    sttMode: 'sync',
     llmModel: 'gemini-2.5-flash',
     ttsProvider: 'google-cloud',
     ttsModel: 'gemini-2.5-flash-preview-tts',
+    ttsMode: 'sync',
     systemPrompt: `You are a helpful AI friend. We are currently discussing three options for our upcoming secret party. Always reply in one short English sentence within 12 words.`,
     autoPlayAudio: true,
     showMetrics: true,
@@ -61,6 +76,10 @@ export const DEFAULT_RUN0_CONFIG: Run0Config = {
     testIterations: 5,
     targetLatencyMs: 3000,
     maxLatencyMs: 5000,
+    enableTtsComparison: false,
+    ttsBProvider: 'gemini',
+    ttsBModel: 'gemini-2.5-flash-preview-tts',
+    ttsBVoiceId: 'Kore',
 };
 
 // ============================================================================
@@ -74,12 +93,19 @@ export interface LatencyMetrics {
     clientLoadMs: number | null; // null until t3 is logged
     serverTotalMs: number;
     e2eMs: number | null; // null until t3 is logged
+    // Phase 1: accuracy & performance metrics
+    sttConfidence?: number;
+    recognitionApi?: 'v1' | 'v2';
+    // Phase 2: WER/CER
+    wer?: number;
+    cer?: number;
 }
 
 export interface TestResult {
     iteration: number;
     transcript: string;
     reply: string;
+    referenceText?: string;
     metrics: LatencyMetrics;
     isWarmup: boolean;
     timestamp: number;
@@ -141,37 +167,19 @@ export const useRun0 = () => {
         return null;
     }, []);
 
-    // Process voice mutation
-    const processVoiceMutation = useMutation({
-        mutationFn: async ({
-            audioBlob,
-            t0UserEnd,
-        }: {
-            audioBlob: Blob;
-            t0UserEnd: number;
-        }) => {
-            return processVoice(audioBlob, t0UserEnd, {
-                sessionId: state.sessionId || undefined,
-                voiceId: config.voiceId,
-                systemPrompt: config.systemPrompt,
-                sttModel: config.sttModel,
-                llmModel: config.llmModel,
-                ttsProvider: config.ttsProvider,
-                ttsModel: config.ttsModel,
-                warmupIterations: config.warmupIterations,
-            });
-        },
-        onSuccess: async (response) => {
-            // Update session ID from first response
-            if (!state.sessionId) {
-                setState((prev) => ({ ...prev, sessionId: response.session_id }));
-            }
+    // Shared response handler (used by both sync and streaming modes)
+    const handleResponse = useCallback(async (response: Run0VoiceResponse) => {
+        // Capture completion info from setState to use in side effect
+        const completionInfo = { isComplete: false, sessionId: '' };
 
-            const isWarmup = state.currentIteration < config.warmupIterations;
+        // Use setState callback to get FRESH state (avoids stale closure)
+        setState((prev) => {
+            const isWarmup = prev.currentIteration < config.warmupIterations;
             const testResult: TestResult = {
-                iteration: state.currentIteration,
+                iteration: prev.currentIteration,
                 transcript: response.transcript,
                 reply: response.reply_text,
+                referenceText: response.reference_text,
                 metrics: {
                     asrMs: response.asr_latency_ms,
                     llmMs: response.llm_latency_ms,
@@ -179,103 +187,134 @@ export const useRun0 = () => {
                     clientLoadMs: null,
                     serverTotalMs: response.server_total_ms,
                     e2eMs: null,
+                    sttConfidence: response.stt_confidence,
+                    recognitionApi: response.recognition_api,
+                    wer: response.wer,
+                    cer: response.cer,
                 },
                 isWarmup,
                 timestamp: Date.now(),
             };
 
-            const nextIteration = state.currentIteration + 1;
+            const nextIteration = prev.currentIteration + 1;
             const totalIter = config.warmupIterations + config.testIterations;
             const isComplete = nextIteration >= totalIter;
+            const sessionId = prev.sessionId || response.session_id;
 
-            setState((prev) => ({
+            completionInfo.isComplete = isComplete;
+            completionInfo.sessionId = sessionId;
+
+            return {
                 ...prev,
+                sessionId,
                 lastResponse: response,
                 results: [...prev.results, testResult],
                 currentIteration: nextIteration,
                 isProcessing: false,
-                isRunning: !isComplete, // Stop running if complete
-            }));
+                isRunning: !isComplete,
+            };
+        });
 
-            // Auto-play audio if enabled
-            if (config.autoPlayAudio) {
-                const audio = audioRef();
-                if (audio) {
-                    // Build audio source - prefer audio_base64 for immediate playback
-                    let audioSrc: string | null = null;
+        // Auto-play audio if enabled
+        if (config.autoPlayAudio) {
+            const audio = audioRef();
+            if (audio) {
+                let audioSrc: string | null = null;
+                if (response.audio_base64) {
+                    audioSrc = `data:audio/mp3;base64,${response.audio_base64}`;
+                } else if (response.audio_url) {
+                    audioSrc = resolveMediaUrl(response.audio_url);
+                }
 
-                    if (response.audio_base64) {
-                        // Use base64 data URL directly for fastest playback
-                        audioSrc = `data:audio/mp3;base64,${response.audio_base64}`;
-                    } else if (response.audio_url) {
-                        audioSrc = resolveMediaUrl(response.audio_url);
-                    }
-
-                    if (audioSrc) {
-                        audio.src = audioSrc;
-                        audio.onplay = () => {
-                            // Log t3 timestamp
-                            if (config.enableTimestampLogging) {
-                                const t3 = Date.now();
-                                logClientTimestamp({
-                                    session_id: response.session_id,
-                                    turn_id: response.turn_id,
-                                    t3_audio_play_start: t3,
-                                }).then((logResult) => {
-                                    // Update E2E latency in results
-                                    setState((prev) => ({
-                                        ...prev,
-                                        results: prev.results.map((r, i) =>
-                                            i === prev.results.length - 1
-                                                ? {
-                                                    ...r,
-                                                    metrics: {
-                                                        ...r.metrics,
-                                                        e2eMs: logResult.e2e_latency_ms,
-                                                        clientLoadMs: t3 - response.t2_5_tts_ready,
-                                                    },
-                                                }
-                                                : r
-                                        ),
-                                    }));
-                                });
-                            }
-                        };
-                        audio.play().catch(console.error);
-                    }
+                if (audioSrc) {
+                    audio.src = audioSrc;
+                    audio.onplay = () => {
+                        if (config.enableTimestampLogging) {
+                            const t3 = Date.now();
+                            logClientTimestamp({
+                                session_id: response.session_id,
+                                turn_id: response.turn_id,
+                                t3_audio_play_start: t3,
+                            }).then((logResult) => {
+                                setState((prev) => ({
+                                    ...prev,
+                                    results: prev.results.map((r, i) =>
+                                        i === prev.results.length - 1
+                                            ? {
+                                                ...r,
+                                                metrics: {
+                                                    ...r.metrics,
+                                                    e2eMs: logResult.e2e_latency_ms,
+                                                    clientLoadMs: t3 - response.t2_5_tts_ready,
+                                                },
+                                            }
+                                            : r
+                                    ),
+                                }));
+                            });
+                        }
+                    };
+                    audio.play().catch(console.error);
                 }
             }
+        }
 
-            // Handle completion (non-blocking)
-            if (isComplete) {
-                // Call endSession API
-                const sessionIdToEnd = state.sessionId || response.session_id;
-                setTimeout(async () => {
-                    try {
-                        await endSession(sessionIdToEnd, 'completed');
-                        alert('모든 테스트가 완료되었습니다.');
-                    } catch (error) {
-                        console.error('Failed to auto-end session:', error);
-                    }
-                }, 100);
-            }
+        // Handle completion
+        if (completionInfo.isComplete) {
+            setTimeout(async () => {
+                try {
+                    await endSession(completionInfo.sessionId, 'completed');
+                    alert('모든 테스트가 완료되었습니다.');
+                } catch (error) {
+                    console.error('Failed to auto-end session:', error);
+                }
+            }, 100);
+        }
+    }, [config, audioRef]);
+
+    // Shared error handler
+    const handleError = useCallback((error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+        if (errorMessage.includes('409') || errorMessage.toLowerCase().includes('time out')) {
+            alert('세션이 만료되었습니다. 페이지를 새로고침합니다.');
+            window.location.reload();
+            return;
+        }
+
+        setState((prev) => ({
+            ...prev,
+            isProcessing: false,
+            error: errorMessage,
+        }));
+    }, []);
+
+    const processVoiceMutation = useMutation({
+        mutationFn: async ({
+            audioBlob,
+            t0UserEnd,
+            referenceText,
+        }: {
+            audioBlob: Blob;
+            t0UserEnd: number;
+            referenceText?: string;
+        }) => {
+            return processVoice(audioBlob, t0UserEnd, {
+                sessionId: state.sessionId || undefined,
+                voiceId: config.voiceId,
+                systemPrompt: config.systemPrompt,
+                sttModel: config.sttModel,
+                sttMode: config.sttMode,
+                llmModel: config.llmModel,
+                ttsProvider: config.ttsProvider,
+                ttsModel: config.ttsModel,
+                ttsMode: config.ttsMode,
+                referenceText,
+                warmupIterations: config.warmupIterations,
+            });
         },
-        onError: (error) => {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-            // Check for session timeout (409 Conflict)
-            if (errorMessage.includes('409') || errorMessage.toLowerCase().includes('time out')) {
-                alert('세션이 만료되었습니다. 페이지를 새로고침합니다.');
-                window.location.reload();
-                return;
-            }
-
-            setState((prev) => ({
-                ...prev,
-                isProcessing: false,
-                error: errorMessage,
-            }));
-        },
+        onSuccess: handleResponse,
+        onError: handleError,
     });
 
     // Start experiment
@@ -293,7 +332,6 @@ export const useRun0 = () => {
 
     // Stop experiment
     const stopExperiment = useCallback(async () => {
-        // Call end session API to set ended_at and calculate metrics
         if (state.sessionId) {
             try {
                 await endSession(state.sessionId, 'completed');
@@ -304,13 +342,46 @@ export const useRun0 = () => {
         setState((prev) => ({ ...prev, isRunning: false }));
     }, [state.sessionId]);
 
-    // Process a voice recording
+    // Process a voice recording (sync STT mode)
     const processRecording = useCallback(
-        (audioBlob: Blob, t0UserEnd: number) => {
+        (audioBlob: Blob, t0UserEnd: number, referenceText?: string) => {
             setState((prev) => ({ ...prev, isProcessing: true, error: null }));
-            processVoiceMutation.mutate({ audioBlob, t0UserEnd });
+            processVoiceMutation.mutate({ audioBlob, t0UserEnd, referenceText });
         },
         [processVoiceMutation]
+    );
+
+    // Process streaming STT result (streaming mode — skips STT, goes directly to LLM→TTS)
+    const processStreamingResult = useCallback(
+        async (transcript: string, t0UserEnd: number, t1AsrFinal: number, referenceText?: string, sttConfidence?: number, sttLatencyMs?: number) => {
+            // Get latest sessionId via setState callback (avoids stale closure)
+            let currentSessionId: string | undefined;
+            setState((prev) => {
+                currentSessionId = prev.sessionId || undefined;
+                return { ...prev, isProcessing: true, error: null };
+            });
+            try {
+                const response = await processText(transcript, t0UserEnd, t1AsrFinal, {
+                    sessionId: currentSessionId,
+                    voiceId: config.voiceId,
+                    systemPrompt: config.systemPrompt,
+                    sttModel: config.sttModel,
+                    sttMode: 'streaming',
+                    llmModel: config.llmModel,
+                    ttsProvider: config.ttsProvider,
+                    ttsModel: config.ttsModel,
+                    ttsMode: config.ttsMode,
+                    referenceText,
+                    warmupIterations: config.warmupIterations,
+                    sttConfidence,
+                    sttLatencyMs,
+                });
+                await handleResponse(response);
+            } catch (error) {
+                handleError(error);
+            }
+        },
+        [config, handleResponse, handleError]
     );
 
     // Update config
@@ -398,8 +469,10 @@ export const useRun0 = () => {
         startExperiment,
         stopExperiment,
         processRecording,
+        processStreamingResult,
         updateConfig,
         resetExperiment,
+        setProcessing: (isProcessing: boolean) => setState((prev) => ({ ...prev, isProcessing })),
     };
 };
 

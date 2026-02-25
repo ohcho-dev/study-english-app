@@ -30,9 +30,21 @@ AVAILABLE_VOICES = {
     "en-US-Neural2-D": {"gender": "MALE", "name": "David · Neural2"},
     "en-US-Neural2-J": {"gender": "MALE", "name": "Daniel · Neural2"},
     
+    # English (US) - Journey HD (natural, conversational)
+    "en-US-Journey-D": {"gender": "MALE", "name": "Alex · Journey HD"},
+    "en-US-Journey-F": {"gender": "FEMALE", "name": "Luna · Journey HD"},
+    "en-US-Journey-O": {"gender": "FEMALE", "name": "Aria · Journey HD"},
+    
+    # English (US) - Studio HD (professional, high-fidelity)
+    "en-US-Studio-M": {"gender": "MALE", "name": "Ryan · Studio HD"},
+    "en-US-Studio-O": {"gender": "FEMALE", "name": "Grace · Studio HD"},
+    "en-US-Studio-Q": {"gender": "MALE", "name": "Ethan · Studio HD"},
+    
     # English (UK)
     "en-GB-Wavenet-A": {"gender": "FEMALE", "name": "Emily · WaveNet"},
     "en-GB-Wavenet-B": {"gender": "MALE", "name": "Oliver · WaveNet"},
+    "en-GB-Journey-D": {"gender": "MALE", "name": "Harry · Journey HD"},
+    "en-GB-Journey-F": {"gender": "FEMALE", "name": "Charlotte · Journey HD"},
     
     # English (Australia)
     "en-AU-Wavenet-B": {"gender": "MALE", "name": "Jack · WaveNet"},
@@ -237,8 +249,14 @@ class TTSService:
             language = f"{parts[0]}-{parts[1]}"
             if "Polyglot" in voice_id:
                 voice_type = "Polyglot"
+            elif "Journey" in voice_id:
+                voice_type = "Journey HD"
+            elif "Studio" in voice_id:
+                voice_type = "Studio HD"
+            elif "Neural2" in voice_id:
+                voice_type = "Neural2"
             else:
-                voice_type = "WaveNet" if "Wavenet" in voice_id else "Neural2"
+                voice_type = "WaveNet"
             
             voices.append({
                 "id": voice_id,

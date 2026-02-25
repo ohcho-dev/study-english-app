@@ -273,7 +273,7 @@ export const SettingsDrawer = ({
                                                         STT (음성→텍스트)
                                                     </Label>
                                                     <Select
-                                                        value={pConfig.stt_model || 'latest_long'}
+                                                        value={pConfig.stt_model || 'chirp_3'}
                                                         onValueChange={(v) => handleChange(p.id, { stt_model: v })}
                                                         disabled={disabled}
                                                     >

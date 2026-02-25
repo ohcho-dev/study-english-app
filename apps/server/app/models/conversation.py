@@ -373,6 +373,11 @@ class ConversationTurn(Base):
     tts_voice = Column(String(100), nullable=True)  # Voice used
     stt_model = Column(String(100), nullable=True)  # STT model used (e.g., latest_long, chirp_2)
     
+    # Accuracy metrics (WER/CER)
+    reference_text = Column(Text, nullable=True)  # Ground truth text for WER comparison
+    wer = Column(Float, nullable=True)  # Word Error Rate (0.0~1.0+)
+    cer = Column(Float, nullable=True)  # Character Error Rate (0.0~1.0+)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
@@ -433,6 +438,10 @@ class SessionMetrics(Base):
     llm_avg_ms = Column(Float, nullable=True)
     tts_avg_ms = Column(Float, nullable=True)
     client_load_avg_ms = Column(Float, nullable=True)  # t2.5→t3 avg
+    
+    # Accuracy metrics (WER/CER averages)
+    avg_wer = Column(Float, nullable=True)  # Average Word Error Rate
+    avg_cer = Column(Float, nullable=True)  # Average Character Error Rate
     
     # Quality metrics
     total_turns = Column(Integer, nullable=False, default=0)

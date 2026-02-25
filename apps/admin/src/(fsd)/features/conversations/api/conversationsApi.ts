@@ -182,9 +182,12 @@ export const processVoice = async (
         voiceId?: string;
         systemPrompt?: string;
         sttModel?: string;
+        sttMode?: string;
         llmModel?: string;
         ttsProvider?: string;
         ttsModel?: string;
+        ttsMode?: string;
+        referenceText?: string;
         difficulty?: number;
         estimatedMinutes?: number;
         warmupIterations?: number;
@@ -209,6 +212,9 @@ export const processVoice = async (
     if (options.sttModel) {
         formData.append('stt_model', options.sttModel);
     }
+    if (options.sttMode) {
+        formData.append('stt_mode', options.sttMode);
+    }
     if (options.llmModel) {
         formData.append('llm_model', options.llmModel);
     }
@@ -217,6 +223,12 @@ export const processVoice = async (
     }
     if (options.ttsModel) {
         formData.append('tts_model', options.ttsModel);
+    }
+    if (options.ttsMode) {
+        formData.append('tts_mode', options.ttsMode);
+    }
+    if (options.referenceText) {
+        formData.append('reference_text', options.referenceText);
     }
     if (options.difficulty) {
         formData.append('difficulty', options.difficulty.toString());
@@ -229,6 +241,68 @@ export const processVoice = async (
     }
 
     const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/run0/voice`, {
+        method: 'POST',
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(error.detail || `Request failed: ${response.status}`);
+    }
+
+    return response.json();
+};
+
+/**
+ * Process pre-transcribed text through LLM → TTS pipeline.
+ * Used in streaming STT mode where transcript is already available.
+ */
+export const processText = async (
+    transcript: string,
+    t0UserEnd: number,
+    t1AsrFinal: number,
+    options: {
+        sessionId?: string;
+        voiceId?: string;
+        systemPrompt?: string;
+        sttModel?: string;
+        sttMode?: string;
+        llmModel?: string;
+        ttsProvider?: string;
+        ttsModel?: string;
+        ttsMode?: string;
+        referenceText?: string;
+        warmupIterations?: number;
+        sttConfidence?: number;
+        sttLatencyMs?: number;
+    }
+): Promise<Run0VoiceResponse> => {
+    const formData = new FormData();
+    formData.append('transcript', transcript);
+    formData.append('t0_user_end', t0UserEnd.toString());
+    formData.append('t1_asr_final', t1AsrFinal.toString());
+
+    if (options.sessionId) formData.append('session_id', options.sessionId);
+    if (options.voiceId) formData.append('voice_id', options.voiceId);
+    if (options.systemPrompt) formData.append('system_prompt', options.systemPrompt);
+    if (options.sttModel) formData.append('stt_model', options.sttModel);
+    if (options.sttMode) formData.append('stt_mode', options.sttMode || 'streaming');
+    if (options.llmModel) formData.append('llm_model', options.llmModel);
+    if (options.ttsProvider) formData.append('tts_provider', options.ttsProvider);
+    if (options.ttsModel) formData.append('tts_model', options.ttsModel);
+    if (options.ttsMode) formData.append('tts_mode', options.ttsMode);
+    if (options.referenceText) formData.append('reference_text', options.referenceText);
+    if (options.warmupIterations !== undefined) {
+        formData.append('warmup_iterations', options.warmupIterations.toString());
+    }
+    if (options.sttConfidence !== undefined) {
+        formData.append('stt_confidence', options.sttConfidence.toString());
+    }
+    if (options.sttLatencyMs !== undefined) {
+        formData.append('stt_latency_ms', options.sttLatencyMs.toString());
+    }
+
+    const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/run0/text`, {
         method: 'POST',
         body: formData,
     });

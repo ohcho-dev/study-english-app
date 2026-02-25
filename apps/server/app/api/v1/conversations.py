@@ -495,12 +495,13 @@ async def get_session_metrics(db: DbSession, session_id: UUID):
 async def get_stt_models():
     """Get list of available Speech-to-Text models."""
     return [
-        {"id": "latest_long", "name": "Latest Long", "description": "대화용 오디오에 최적화 (기본값)", "provider": "google"},
-        {"id": "latest_short", "name": "Latest Short", "description": "짧은 발화에 최적화", "provider": "google"},
-        {"id": "command_and_search", "name": "Command and Search", "description": "짧은 명령/검색어에 최적화 (고속)", "provider": "google"},
-        {"id": "phone_call", "name": "Phone Call", "description": "전화 통화 품질 오디오에 최적화", "provider": "google"},
-        {"id": "chirp_2", "name": "Chirp 2", "description": "차세대 고정확도 모델", "provider": "google"},
+        {"id": "chirp_3", "name": "Chirp 3 ⭐", "description": "최신 고정확도 다국어 모델 (추천, V2 API)", "provider": "google"},
+        {"id": "chirp_2", "name": "Chirp 2", "description": "차세대 고정확도 모델 (V2 API)", "provider": "google"},
         {"id": "chirp", "name": "Chirp", "description": "범용 음성 인식 모델", "provider": "google"},
+        {"id": "latest_long", "name": "Latest Long", "description": "대화용 오디오에 최적화 (V1 API)", "provider": "google"},
+        {"id": "latest_short", "name": "Latest Short", "description": "짧은 발화에 최적화 (V1 API)", "provider": "google"},
+        {"id": "command_and_search", "name": "Command and Search", "description": "짧은 명령/검색어에 최적화 (고속, V1 API)", "provider": "google"},
+        {"id": "phone_call", "name": "Phone Call", "description": "전화 통화 품질 오디오에 최적화 (V1 API)", "provider": "google"},
     ]
 
 
@@ -563,10 +564,13 @@ async def process_voice(
     template_id: UUID | None = Form(None, description="Template ID for new session"),
     voice_id: str = Form("en-US-Wavenet-F", description="TTS voice ID"),
     system_prompt: str | None = Form(None, description="Custom system prompt"),
-    stt_model: str = Form("latest_long", description="STT model (latest_long, chirp_2, latest_short)"),
+    stt_model: str = Form("latest_long", description="STT model (latest_long, chirp_2, chirp_3)"),
+    stt_mode: str = Form("sync", description="STT mode (sync, streaming)"),
     llm_model: str = Form("gemini-2.5-flash", description="LLM model name"),
     tts_provider: str = Form("google-cloud", description="TTS provider (google-cloud, gemini)"),
     tts_model: str | None = Form(None, description="TTS model for Gemini TTS"),
+    tts_mode: str = Form("sync", description="TTS mode (sync, streaming)"),
+    reference_text: str | None = Form(None, description="Reference text for WER/CER calculation"),
     difficulty: int | None = Form(None, ge=1, le=5, description="Difficulty level (1-5)"),
     estimated_minutes: int | None = Form(None, ge=1, description="Estimated session duration"),
     warmup_iterations: int = Form(2, ge=0, description="Number of warmup iterations to exclude from metrics"),
@@ -609,12 +613,76 @@ async def process_voice(
             voice_id=voice_id,
             system_prompt=system_prompt,
             stt_model=stt_model,
+            stt_mode=stt_mode,
             llm_model=llm_model,
             tts_provider=tts_provider,
             tts_model=tts_model,
+            tts_mode=tts_mode,
+            reference_text=reference_text,
             difficulty=difficulty,
             estimated_minutes=estimated_minutes,
             warmup_iterations=warmup_iterations,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal Server Error: {str(e)}",
+        ) from e
+
+
+@router.post("/run0/text", response_model=Run0VoiceResponse)
+async def process_text(
+    db: DbSession,
+    transcript: str = Form(..., description="Pre-transcribed text from streaming STT"),
+    t0_user_end: float = Form(..., description="Client timestamp when recording stopped (ms)"),
+    t1_asr_final: float = Form(..., description="Client timestamp when STT final received (ms)"),
+    session_id: UUID | None = Form(None, description="Existing session ID"),
+    voice_id: str = Form("en-US-Wavenet-F", description="TTS voice ID"),
+    system_prompt: str | None = Form(None, description="Custom system prompt"),
+    stt_model: str = Form("chirp_3", description="STT model used for streaming"),
+    stt_mode: str = Form("streaming", description="STT mode"),
+    llm_model: str = Form("gemini-2.5-flash", description="LLM model name"),
+    tts_provider: str = Form("google-cloud", description="TTS provider"),
+    tts_model: str | None = Form(None, description="TTS model for Gemini TTS"),
+    tts_mode: str = Form("sync", description="TTS mode"),
+    reference_text: str | None = Form(None, description="Reference text for WER/CER"),
+    warmup_iterations: int = Form(2, ge=0, description="Warmup iterations"),
+    stt_confidence: float | None = Form(None, description="STT confidence from streaming"),
+    stt_latency_ms: float | None = Form(None, description="Client-measured STT latency in ms (streaming mode)"),
+):
+    """Process pre-transcribed text through LLM → TTS pipeline.
+    
+    Used in streaming STT mode where the transcript is already available
+    from the WebSocket streaming recognition. Skips STT processing entirely.
+    """
+    service = Run0Service(db)
+    
+    try:
+        result = await service.process_text(
+            transcript=transcript,
+            t0_user_end=t0_user_end,
+            t1_asr_final=t1_asr_final,
+            session_id=session_id,
+            voice_id=voice_id,
+            system_prompt=system_prompt,
+            stt_model=stt_model,
+            stt_mode=stt_mode,
+            llm_model=llm_model,
+            tts_provider=tts_provider,
+            tts_model=tts_model,
+            tts_mode=tts_mode,
+            warmup_iterations=warmup_iterations,
+            reference_text=reference_text,
+            stt_confidence=stt_confidence,
+            stt_latency_ms=stt_latency_ms,
         )
         return result
     except ValueError as e:
@@ -747,3 +815,139 @@ async def session_websocket(websocket: WebSocket, session_id: UUID):
 async def list_available_voices():
     """Get list of available TTS voices."""
     return TTSService.get_available_voices()
+
+
+# ============================================================================
+# Streaming STT WebSocket
+# ============================================================================
+
+
+@router.websocket("/ws/stt/stream")
+async def websocket_stt_stream(websocket: WebSocket):
+    """WebSocket endpoint for streaming STT.
+    
+    Protocol:
+    1. Client sends config JSON: {"model": "chirp_3", "language": "en-US", ...}
+    2. Client sends binary audio frames
+    3. Server sends JSON results: {"type": "interim"|"final", "transcript": "...", ...}
+    4. Client sends {"type": "stop"} or closes connection to end
+    """
+    import json
+    import asyncio
+    from app.services.conversation.streaming_stt_service import StreamingSTTSession
+
+    await websocket.accept()
+    logger.info("Streaming STT WebSocket connected")
+
+    try:
+        # 1. Receive config message
+        config_msg = await websocket.receive_text()
+        config = json.loads(config_msg)
+        
+        model = config.get("model", "chirp_3")
+        language = config.get("language", "en-US")
+        interim = config.get("interim_results", True)
+        speech_end_timeout = config.get("speech_end_timeout", 5.0)
+        phrase_hints = config.get("phrase_hints")
+        enable_word_confidence = config.get("enable_word_confidence", False)
+        sample_rate = config.get("sample_rate", 48000)
+
+        logger.info(f"Streaming STT config: model={model}, lang={language}, sample_rate={sample_rate}")
+
+        # 2. Shared audio queue — WebSocket reader pushes chunks, gRPC sessions consume
+        audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        stop_received = False
+
+        async def ws_audio_reader():
+            """Read audio from WebSocket and push to shared queue."""
+            nonlocal stop_received
+            chunk_count = 0
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.receive(), timeout=1.0
+                    )
+                    if "bytes" in message and message["bytes"]:
+                        chunk_count += 1
+                        if chunk_count == 1:
+                            logger.info(f"WS STT: first audio chunk received ({len(message['bytes'])} bytes)")
+                        elif chunk_count % 50 == 0:
+                            logger.info(f"WS STT: {chunk_count} audio chunks received")
+                        await audio_queue.put(message["bytes"])
+                    elif "text" in message and message["text"]:
+                        data = json.loads(message["text"])
+                        if data.get("type") == "stop":
+                            logger.info(f"WS STT: stop received after {chunk_count} chunks")
+                            stop_received = True
+                            await audio_queue.put(None)  # Signal end
+                            return
+                except asyncio.TimeoutError:
+                    continue
+                except WebSocketDisconnect:
+                    logger.info(f"WS STT: disconnected after {chunk_count} chunks")
+                    stop_received = True
+                    await audio_queue.put(None)
+                    return
+
+        # Start WebSocket reader as background task
+        reader_task = asyncio.create_task(ws_audio_reader())
+
+        # 3. Stream results with auto-restart on is_final
+        # Each gRPC session ends after is_final, so we create new ones for subsequent utterances
+        try:
+            while not stop_received:
+                async def session_audio_generator():
+                    """Yield audio chunks from shared queue for one gRPC session."""
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(audio_queue.get(), timeout=2.0)
+                            if chunk is None:
+                                return  # Stop signal
+                            yield chunk
+                        except asyncio.TimeoutError:
+                            if stop_received:
+                                return
+                            continue
+
+                session = StreamingSTTSession(
+                    model=model,
+                    language_code=language,
+                    interim_results=interim,
+                    speech_end_timeout_sec=speech_end_timeout,
+                    phrase_hints=phrase_hints,
+                    enable_word_confidence=enable_word_confidence,
+                    sample_rate=sample_rate,
+                )
+
+                got_final = False
+                async for result in session.stream(session_audio_generator()):
+                    await websocket.send_json(result)
+                    if result.get("is_final"):
+                        got_final = True
+
+                if not got_final or stop_received:
+                    break
+                logger.info("WS STT: session ended with is_final, starting new session for next utterance")
+
+        finally:
+            reader_task.cancel()
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass
+
+        await websocket.send_json({"type": "done"})
+
+    except WebSocketDisconnect:
+        logger.info("Streaming STT WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Streaming STT error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "error": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

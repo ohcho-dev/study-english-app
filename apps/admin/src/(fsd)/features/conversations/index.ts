@@ -66,6 +66,20 @@ export {
 
 export { useVoiceOptions } from './model/useVoiceOptions';
 
+// Audio storage hook
+export {
+    useAudioStorage,
+    type AudioEntry,
+    type AudioStorageType,
+} from './model/useAudioStorage';
+
+// Streaming STT hook
+export {
+    useStreamingSTT,
+    type StreamingSTTConfig,
+    type StreamingSTTResult,
+} from './model/useStreamingSTT';
+
 // API
 export {
     getTemplates,

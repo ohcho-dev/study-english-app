@@ -19,7 +19,9 @@ import { Switch } from '@/shared/ui/switch';
 import {
     Select,
     SelectContent,
+    SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from '@/shared/ui/select';
@@ -75,6 +77,43 @@ export const Run0ConfigPanel = ({
     const geminiModels = useMemo(() => {
         return currentProvider?.models ?? [];
     }, [currentProvider]);
+
+    // Voice type priority order and labels
+    const VOICE_TYPE_ORDER = ['Journey HD', 'Studio HD', 'Neural2', 'WaveNet', 'Polyglot'];
+    const VOICE_TYPE_LABELS: Record<string, string> = {
+        'Journey HD': '🎧 Journey HD — 자연스럽고 대화체',
+        'Studio HD': '🎙️ Studio HD — 전문적, 고음질',
+        'Neural2': '🔊 Neural2 — 표준 품질',
+        'WaveNet': '📢 WaveNet — 기본',
+        'Polyglot': '🌍 Polyglot — 다국어',
+    };
+    const RECOMMENDED_VOICE = 'en-US-Journey-F';
+
+    // Group voices by type (Google Cloud TTS only; Gemini voices shown as flat list)
+    const groupedVoices = useMemo(() => {
+        if (config.ttsProvider === 'gemini') {
+            // Gemini voices don't have Google Cloud voice types — show as flat list
+            return [{ type: 'gemini', label: '🤖 Gemini 음성', voices: currentVoices }];
+        }
+        const groups: Record<string, typeof currentVoices> = {};
+        for (const voice of currentVoices) {
+            const type = voice.type || 'Other';
+            if (!groups[type]) groups[type] = [];
+            groups[type].push(voice);
+        }
+        // Sort by priority order, then append any unlisted types
+        const ordered = VOICE_TYPE_ORDER
+            .filter((type) => groups[type]?.length)
+            .map((type) => ({ type, label: VOICE_TYPE_LABELS[type] || type, voices: groups[type] }));
+        // Add any types not in VOICE_TYPE_ORDER
+        const listedTypes = new Set(VOICE_TYPE_ORDER);
+        for (const [type, voices] of Object.entries(groups)) {
+            if (!listedTypes.has(type)) {
+                ordered.push({ type, label: type, voices });
+            }
+        }
+        return ordered;
+    }, [currentVoices, config.ttsProvider]);
 
     return (
         <Card>
@@ -132,6 +171,32 @@ export const Run0ConfigPanel = ({
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {/* STT Mode Toggle */}
+                            <div className="flex items-center gap-1.5 mt-1">
+                                <span className="text-[10px] text-muted-foreground mr-1">모드:</span>
+                                <button
+                                    type="button"
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${config.sttMode === 'sync'
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-transparent text-muted-foreground border-border hover:border-primary/50'
+                                        }`}
+                                    onClick={() => onConfigChange({ sttMode: 'sync' })}
+                                    disabled={disabled}
+                                >
+                                    동기식
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${config.sttMode === 'streaming'
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-transparent text-muted-foreground border-border hover:border-primary/50'
+                                        }`}
+                                    onClick={() => onConfigChange({ sttMode: 'streaming' })}
+                                    disabled={disabled}
+                                >
+                                    스트리밍
+                                </button>
+                            </div>
                         </div>
 
                         {/* LLM Model */}
@@ -252,29 +317,160 @@ export const Run0ConfigPanel = ({
                                     <SelectValue placeholder="음성 선택" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {currentVoices.map((voice) => (
-                                        <SelectItem key={voice.id} value={voice.id}>
-                                            <span>
-                                                {voice.name}
-                                                {voice.gender && (
-                                                    <span className="text-xs text-muted-foreground ml-1">
-                                                        ({voice.gender === 'FEMALE' ? '여성' : '남성'}
-                                                        {voice.language ? `, ${voice.language}` : ''}
-                                                        {voice.description ? ` · ${voice.description}` : ''})
+                                    {groupedVoices.map((group) => (
+                                        <SelectGroup key={group.type}>
+                                            <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                                                {group.label}
+                                            </SelectLabel>
+                                            {group.voices.map((voice) => (
+                                                <SelectItem key={voice.id} value={voice.id}>
+                                                    <span className="flex items-center gap-1.5">
+                                                        {voice.id === RECOMMENDED_VOICE && (
+                                                            <span className="text-yellow-500">⭐</span>
+                                                        )}
+                                                        <span>{voice.name}</span>
+                                                        {voice.gender && (
+                                                            <span className="text-xs text-muted-foreground">
+                                                                ({voice.gender === 'FEMALE' ? '여성' : '남성'}
+                                                                {voice.language ? `, ${voice.language}` : ''})
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                )}
-                                            </span>
-                                        </SelectItem>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectGroup>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
 
+                        {/* TTS Mode Toggle */}
+                        <div className={`space-y-1.5 ${config.ttsProvider === 'gemini' ? 'pl-4 border-l-2 border-primary/20' : ''}`}>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground mr-1">TTS 모드:</span>
+                                <button
+                                    type="button"
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${config.ttsMode === 'sync'
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-transparent text-muted-foreground border-border hover:border-primary/50'
+                                        }`}
+                                    onClick={() => onConfigChange({ ttsMode: 'sync' })}
+                                    disabled={disabled}
+                                >
+                                    동기식
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${(() => {
+                                        // Streaming supported: Gemini TTS + Google Cloud Journey HD / Studio HD
+                                        const supportsStreaming = config.ttsProvider === 'gemini' ||
+                                            config.voiceId.includes('Journey') || config.voiceId.includes('Studio');
+                                        if (!supportsStreaming)
+                                            return 'opacity-40 cursor-not-allowed bg-transparent text-muted-foreground border-border';
+                                        return config.ttsMode === 'streaming'
+                                            ? 'bg-primary text-primary-foreground border-primary'
+                                            : 'bg-transparent text-muted-foreground border-border hover:border-primary/50';
+                                    })()}`}
+                                    onClick={() => onConfigChange({ ttsMode: 'streaming' })}
+                                    disabled={disabled || (config.ttsProvider !== 'gemini' && !config.voiceId.includes('Journey') && !config.voiceId.includes('Studio'))}
+                                    title={config.ttsProvider !== 'gemini' && !config.voiceId.includes('Journey') && !config.voiceId.includes('Studio')
+                                        ? 'Neural2/WaveNet은 스트리밍을 지원하지 않습니다. Journey HD 또는 Studio HD를 선택하세요.'
+                                        : undefined}
+                                >
+                                    스트리밍
+                                    {config.ttsProvider !== 'gemini' && !config.voiceId.includes('Journey') && !config.voiceId.includes('Studio') && (
+                                        <span className="ml-1 text-[9px] opacity-60">(HD만)</span>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* TTS A/B Comparison Toggle */}
+                        <div className="space-y-2 mt-3 pt-3 border-t border-dashed border-border/50">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    TTS A/B 비교
+                                </label>
+                                <button
+                                    type="button"
+                                    className={`text-[11px] px-3 py-1 rounded-full border transition-colors ${config.enableTtsComparison
+                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        : 'bg-transparent text-muted-foreground border-border hover:border-blue-400'
+                                        }`}
+                                    onClick={() => onConfigChange({ enableTtsComparison: !config.enableTtsComparison })}
+                                    disabled={disabled}
+                                >
+                                    {config.enableTtsComparison ? '비교 활성' : '비교 OFF'}
+                                </button>
+                            </div>
+
+                            {config.enableTtsComparison && (
+                                <div className="space-y-2 pl-3 border-l-2 border-blue-400/40">
+                                    <div className="text-[10px] text-blue-400 font-medium">TTS B 설정</div>
+
+                                    {/* TTS B Provider */}
+                                    <Select
+                                        value={config.ttsBProvider}
+                                        onValueChange={(value) => onConfigChange({ ttsBProvider: value })}
+                                        disabled={disabled}
+                                    >
+                                        <SelectTrigger className="w-full text-sm">
+                                            <SelectValue placeholder="TTS B 제공자" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="google-cloud">Google Cloud TTS</SelectItem>
+                                            <SelectItem value="gemini">Gemini TTS</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* TTS B Model (Gemini only) */}
+                                    {config.ttsBProvider === 'gemini' && (
+                                        <Select
+                                            value={config.ttsBModel}
+                                            onValueChange={(value) => onConfigChange({ ttsBModel: value })}
+                                            disabled={disabled}
+                                        >
+                                            <SelectTrigger className="w-full text-sm">
+                                                <SelectValue placeholder="TTS B 모델" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="gemini-2.5-flash-preview-tts">Flash Preview TTS</SelectItem>
+                                                <SelectItem value="gemini-2.5-pro-preview-tts">Pro Preview TTS</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+
+                                    {/* TTS B Voice */}
+                                    <Select
+                                        value={config.ttsBVoiceId}
+                                        onValueChange={(value) => onConfigChange({ ttsBVoiceId: value })}
+                                        disabled={disabled}
+                                    >
+                                        <SelectTrigger className="w-full text-sm">
+                                            <SelectValue placeholder="TTS B 음성" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {currentVoices.map((voice) => (
+                                                <SelectItem key={voice.id} value={voice.id}>
+                                                    {voice.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
+                        </div>
+
                         {/* Current selection summary */}
                         <div className="flex flex-col gap-1 text-xs text-muted-foreground bg-muted/50 rounded-md p-2 font-mono">
-                            <span>STT: {config.sttModel}</span>
+                            <span>STT: {config.sttModel} ({config.sttMode === 'streaming' ? '스트리밍' : '동기식'})</span>
                             <span>LLM: {config.llmModel}</span>
-                            <span>TTS: {config.ttsProvider === 'gemini' ? `Gemini (${config.ttsModel}) / ${config.voiceId}` : `Google Cloud / ${config.voiceId}`}</span>
+                            <span>TTS A: {config.ttsProvider === 'gemini' ? `Gemini (${config.ttsModel}) / ${config.voiceId}` : `Google Cloud / ${config.voiceId}`} ({config.ttsMode === 'streaming' ? '스트리밍' : '동기식'})</span>
+                            {config.enableTtsComparison && (
+                                <span className="text-blue-400">
+                                    TTS B: {config.ttsBProvider === 'gemini' ? `Gemini (${config.ttsBModel}) / ${config.ttsBVoiceId}` : `Google Cloud / ${config.ttsBVoiceId}`}
+                                </span>
+                            )}
                         </div>
                     </div>
 

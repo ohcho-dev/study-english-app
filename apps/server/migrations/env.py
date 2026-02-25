@@ -14,6 +14,7 @@ from app.models.base import Base
 
 # Import all models so they are registered with Base.metadata
 from app.models import experiment  # noqa: F401
+from app.models import conversation  # noqa: F401
 
 config = context.config
 

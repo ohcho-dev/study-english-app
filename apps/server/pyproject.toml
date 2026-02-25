@@ -39,6 +39,7 @@ audioop-lts = {version = ">=0.2.1", markers = "python_version >= \"3.13\""}
 aiortc = "^1.14.0"
 pandas = "^3.0.0"
 openpyxl = "^3.1.5"
+jiwer = "^4.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.14"

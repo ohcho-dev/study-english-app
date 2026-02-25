@@ -257,10 +257,15 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     <CardTitle className="text-base">🧪 파이프라인 설정</CardTitle>
                                                 </CardHeader>
                                                 <CardContent>
-                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                                                         <div>
                                                             <span className="text-muted-foreground">STT 모델</span>
                                                             <div className="font-mono font-medium">{cfg.stt_model || '-'}</div>
+                                                            {cfg.stt_mode && (
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    {cfg.stt_mode === 'streaming' ? '스트리밍' : '동기식'}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div>
                                                             <span className="text-muted-foreground">LLM 모델</span>
@@ -273,6 +278,11 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                         <div>
                                                             <span className="text-muted-foreground">TTS 모델</span>
                                                             <div className="font-mono font-medium">{cfg.tts_model || '-'}</div>
+                                                            {cfg.tts_mode && (
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    {cfg.tts_mode === 'streaming' ? '스트리밍' : '동기식'}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div>
                                                             <span className="text-muted-foreground">TTS 음성</span>
@@ -391,11 +401,13 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                 <thead>
                                                     <tr className="border-b text-muted-foreground">
                                                         <th className="text-left py-2 px-3">#</th>
+                                                        <th className="text-left py-2 px-3">STT 모델</th>
                                                         <th className="text-right py-2 px-3">STT (t0→t1)</th>
                                                         <th className="text-right py-2 px-3">LLM (t1→t2)</th>
                                                         <th className="text-right py-2 px-3">TTS (t2→t2.5)</th>
                                                         <th className="text-right py-2 px-3">Client (t2.5→t3)</th>
                                                         <th className="text-right py-2 px-3 font-bold">E2E (t0→t3)</th>
+                                                        <th className="text-right py-2 px-3">WER</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -404,6 +416,9 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                         .map((turn: Turn, idx: number) => (
                                                             <tr key={turn.id} className="border-b last:border-0 hover:bg-muted/50">
                                                                 <td className="py-2 px-3 text-muted-foreground">{idx + 1}</td>
+                                                                <td className="py-2 px-3 text-xs font-mono text-muted-foreground">
+                                                                    {turn.stt_model || '-'}
+                                                                </td>
                                                                 <td className="text-right py-2 px-3 font-mono">
                                                                     {formatDuration(turn.asr_latency_ms)}
                                                                 </td>
@@ -418,6 +433,9 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                                 </td>
                                                                 <td className="text-right py-2 px-3 font-mono font-bold">
                                                                     {formatDuration(turn.e2e_latency_ms)}
+                                                                </td>
+                                                                <td className={`text-right py-2 px-3 font-mono ${turn.wer !== null && turn.wer !== undefined ? (turn.wer <= 0.1 ? 'text-green-600' : turn.wer <= 0.3 ? 'text-yellow-600' : 'text-red-600') : 'text-muted-foreground'}`}>
+                                                                    {turn.wer !== null && turn.wer !== undefined ? `${(turn.wer * 100).toFixed(1)}%` : '-'}
                                                                 </td>
                                                             </tr>
                                                         ))}

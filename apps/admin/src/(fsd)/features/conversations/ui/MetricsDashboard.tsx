@@ -88,7 +88,27 @@ export const MetricsDashboard = ({
     const clientLoadLatencies = testResults
         .map((r) => r.metrics.clientLoadMs)
         .filter((v): v is number => v !== null);
-    // Server latencies can be added if needed: results.map(r => r.metrics.serverTotalMs)
+    const sttConfidences = testResults
+        .map((r) => r.metrics.sttConfidence)
+        .filter((v): v is number => v !== undefined && v !== null);
+    const latestApiVersion = testResults.length > 0
+        ? testResults[testResults.length - 1]?.metrics.recognitionApi
+        : undefined;
+
+    // WER/CER accuracy
+    const werValues = testResults
+        .map((r) => r.metrics.wer)
+        .filter((v): v is number => v !== undefined && v !== null);
+    const cerValues = testResults
+        .map((r) => r.metrics.cer)
+        .filter((v): v is number => v !== undefined && v !== null);
+    const avgWer = werValues.length > 0
+        ? werValues.reduce((a, b) => a + b, 0) / werValues.length
+        : null;
+    const avgCer = cerValues.length > 0
+        ? cerValues.reduce((a, b) => a + b, 0) / cerValues.length
+        : null;
+    const hasAccuracyData = werValues.length > 0;
 
     // Calculate stats
     const e2eStats = calculateStats(e2eLatencies);
@@ -96,7 +116,9 @@ export const MetricsDashboard = ({
     const llmStats = calculateStats(llmLatencies);
     const ttsStats = calculateStats(ttsLatencies);
     const clientLoadStats = calculateStats(clientLoadLatencies);
-    // Server stats available if needed: calculateStats(serverLatencies)
+    const avgConfidence = sttConfidences.length > 0
+        ? sttConfidences.reduce((a, b) => a + b, 0) / sttConfidences.length
+        : null;
 
     // Check if target is met
     const isTargetMet = e2eStats && e2eStats.avg <= targetLatencyMs;
@@ -131,93 +153,127 @@ export const MetricsDashboard = ({
 
             {/* Summary Cards */}
             {testResults.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    {/* E2E Average */}
-                    <Card className={isTargetMet ? 'border-green-500' : 'border-yellow-500'}>
-                        <CardContent className="py-4">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                                <Clock className="h-4 w-4" />
-                                E2E 평균
-                            </div>
-                            <div
-                                className={`text-2xl font-bold ${e2eStats
-                                    ? getLatencyColor(e2eStats.avg, targetLatencyMs, maxLatencyMs)
-                                    : ''
-                                    }`}
-                            >
-                                {formatMs(e2eStats?.avg)}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                                목표: {formatMs(targetLatencyMs)}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* ASR Latency */}
-                    <Card>
-                        <CardContent className="py-4">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                                <MessageSquare className="h-4 w-4" />
-                                STT 평균
-                            </div>
-                            <div className="text-2xl font-bold">
-                                {formatMs(asrStats?.avg)}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                                P95: {formatMs(asrStats?.p95)}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* LLM Latency */}
-                    <Card>
-                        <CardContent className="py-4">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                                <Zap className="h-4 w-4" />
-                                LLM 평균
-                            </div>
-                            <div className="text-2xl font-bold">
-                                {formatMs(llmStats?.avg)}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                                P95: {formatMs(llmStats?.p95)}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* TTS Latency */}
-                    <Card>
-                        <CardContent className="py-4">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                                <Volume2 className="h-4 w-4" />
-                                TTS 평균
-                            </div>
-                            <div className="text-2xl font-bold">
-                                {formatMs(ttsStats?.avg)}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                                P95: {formatMs(ttsStats?.p95)}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Client Load Latency */}
-                    {clientLoadStats && (
-                        <Card>
+                <div className='grid gap-4'>
+                    <div className={`grid grid-cols-2 ${hasAccuracyData ? 'md:grid-cols-4' : 'md:grid-cols-4'} gap-4`}>
+                        {/* E2E Average */}
+                        <Card className={isTargetMet ? 'border-green-500' : 'border-yellow-500'}>
                             <CardContent className="py-4">
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                                     <Clock className="h-4 w-4" />
-                                    Client Load 평균
+                                    E2E 평균
                                 </div>
-                                <div className="text-2xl font-bold">
-                                    {formatMs(clientLoadStats.avg)}
+                                <div
+                                    className={`text-2xl font-bold ${e2eStats
+                                        ? getLatencyColor(e2eStats.avg, targetLatencyMs, maxLatencyMs)
+                                        : ''
+                                        }`}
+                                >
+                                    {formatMs(e2eStats?.avg)}
                                 </div>
                                 <div className="text-xs text-muted-foreground mt-1">
-                                    t2.5→t3
+                                    목표: {formatMs(targetLatencyMs)}
                                 </div>
                             </CardContent>
                         </Card>
-                    )}
+
+                        {/* ASR Latency */}
+                        <Card>
+                            <CardContent className="py-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                    <MessageSquare className="h-4 w-4" />
+                                    STT 평균
+                                    {latestApiVersion && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${latestApiVersion === 'v2' ? 'bg-blue-500/20 text-blue-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
+                                            {latestApiVersion.toUpperCase()}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="text-2xl font-bold">
+                                    {formatMs(asrStats?.avg)}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                    P95: {formatMs(asrStats?.p95)}
+                                    {avgConfidence !== null && (
+                                        <span className="ml-2">
+                                            신뢰도: {(avgConfidence * 100).toFixed(1)}%
+                                        </span>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* LLM Latency */}
+                        <Card>
+                            <CardContent className="py-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                    <Zap className="h-4 w-4" />
+                                    LLM 평균
+                                </div>
+                                <div className="text-2xl font-bold">
+                                    {formatMs(llmStats?.avg)}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                    P95: {formatMs(llmStats?.p95)}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* TTS Latency */}
+                        <Card>
+                            <CardContent className="py-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                    <Volume2 className="h-4 w-4" />
+                                    TTS 평균
+                                </div>
+                                <div className="text-2xl font-bold">
+                                    {formatMs(ttsStats?.avg)}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                    P95: {formatMs(ttsStats?.p95)}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                    </div>
+                    <div className='grid grid-cols-2 md:grid-cols-2 gap-4'>
+
+                        {/* Client Load Latency */}
+                        {clientLoadStats && (
+                            <Card>
+                                <CardContent className="py-4">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <Clock className="h-4 w-4" />
+                                        Client Load 평균
+                                    </div>
+                                    <div className="text-2xl font-bold">
+                                        {formatMs(clientLoadStats.avg)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                        t2.5→t3
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* WER Accuracy Card */}
+                        {hasAccuracyData && (
+                            <Card className={avgWer !== null && avgWer <= 0.1 ? 'border-green-500' : avgWer !== null && avgWer <= 0.3 ? 'border-yellow-500' : 'border-red-500'}>
+                                <CardContent className="py-4">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <Target className="h-4 w-4" />
+                                        정확도 (WER)
+                                    </div>
+                                    <div className={`text-2xl font-bold ${avgWer !== null && avgWer <= 0.1 ? 'text-green-600' : avgWer !== null && avgWer <= 0.3 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                        {avgWer !== null ? `${(Math.max(0, 1 - avgWer) * 100).toFixed(1)}%` : '-'}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                        CER: {avgCer !== null ? `${(Math.max(0, 1 - avgCer) * 100).toFixed(1)}%` : '-'}
+                                        <span className="ml-1 opacity-60">(높을수록 좋음)</span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -302,6 +358,56 @@ export const MetricsDashboard = ({
                                 <div className="flex-1 border-t-2 border-dashed border-green-500" />
                                 <span>목표 ({formatMs(targetLatencyMs)})</span>
                             </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Accuracy Comparison Table */}
+            {hasAccuracyData && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <Target className="h-4 w-4" />
+                            인식 정확도 비교
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b text-muted-foreground">
+                                        <th className="text-left py-2 px-2">#</th>
+                                        <th className="text-left py-2 px-2">정답 (Reference)</th>
+                                        <th className="text-left py-2 px-2">STT 결과</th>
+                                        <th className="text-right py-2 px-2">단어정확도</th>
+                                        <th className="text-right py-2 px-2">문자정확도</th>
+                                        <th className="text-right py-2 px-2">신뢰도</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {testResults.map((r, idx) => (
+                                        <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
+                                            <td className="py-2 px-2 text-muted-foreground">{idx + 1}</td>
+                                            <td className="py-2 px-2 text-xs font-mono max-w-[200px] truncate" title={r.referenceText}>
+                                                {r.referenceText || '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-xs font-mono max-w-[200px] truncate" title={r.transcript}>
+                                                {r.transcript}
+                                            </td>
+                                            <td className={`text-right py-2 px-2 font-mono ${r.metrics.wer !== undefined && r.metrics.wer !== null ? (Math.max(0, (1 - r.metrics.wer)) * 100 >= 90 ? 'text-green-600' : Math.max(0, (1 - r.metrics.wer)) * 100 >= 70 ? 'text-yellow-600' : 'text-red-600') : ''}`}>
+                                                {r.metrics.wer !== undefined && r.metrics.wer !== null ? `${(Math.max(0, Math.min(100, (1 - r.metrics.wer) * 100))).toFixed(1)}%` : '-'}
+                                            </td>
+                                            <td className="text-right py-2 px-2 font-mono text-muted-foreground">
+                                                {r.metrics.cer !== undefined && r.metrics.cer !== null ? `${(Math.max(0, Math.min(100, (1 - r.metrics.cer) * 100))).toFixed(1)}%` : '-'}
+                                            </td>
+                                            <td className="text-right py-2 px-2 font-mono text-muted-foreground">
+                                                {r.metrics.sttConfidence !== undefined ? `${(r.metrics.sttConfidence * 100).toFixed(0)}%` : '-'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </CardContent>
                 </Card>

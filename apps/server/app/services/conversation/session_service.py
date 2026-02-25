@@ -237,9 +237,11 @@ class SessionService:
     async def create_run0_session(
         self,
         stt_model: str = "latest_long",
+        stt_mode: str = "sync",
         llm_model: str = "gemini-2.5-flash",
         tts_provider: str = "google-cloud",
         tts_model: str | None = None,
+        tts_mode: str = "sync",
         voice_id: str = "en-US-Neural2-F",
         system_prompt: str | None = None,
         warmup_iterations: int = 2,
@@ -265,11 +267,13 @@ class SessionService:
             "experiment_type": "run0",
             "pipeline_config": {
                 "stt_model": stt_model,
+                "stt_mode": stt_mode,
                 "llm_model": llm_model,
                 "tts_provider": tts_provider,
                 "tts_model": tts_model,
+                "tts_mode": tts_mode,
                 "tts_voice": voice_id,
-                "system_prompt": (system_prompt or "")[:200],  # Truncate for storage
+                "system_prompt": (system_prompt or "")[:200],
                 "warmup_iterations": warmup_iterations,
             },
         }
@@ -381,6 +385,9 @@ class SessionService:
         stt_model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        reference_text: str | None = None,
+        wer: float | None = None,
+        cer: float | None = None,
     ) -> TurnResponse:
         """Add a turn to a session.
         
@@ -437,6 +444,9 @@ class SessionService:
             stt_model=stt_model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reference_text=reference_text,
+            wer=wer,
+            cer=cer,
         )
         self.db.add(turn)
         
@@ -473,6 +483,9 @@ class SessionService:
             stt_model=turn.stt_model,
             tts_provider=turn.tts_provider,
             tts_voice=turn.tts_voice,
+            reference_text=turn.reference_text,
+            wer=turn.wer,
+            cer=turn.cer,
             created_at=turn.created_at,
         )
     
@@ -525,6 +538,9 @@ class SessionService:
             stt_model=turn.stt_model,
             tts_provider=turn.tts_provider,
             tts_voice=turn.tts_voice,
+            reference_text=turn.reference_text,
+            wer=turn.wer,
+            cer=turn.cer,
             created_at=turn.created_at,
         )
     
@@ -605,6 +621,9 @@ class SessionService:
                 stt_model=turn.stt_model,
                 tts_provider=turn.tts_provider,
                 tts_voice=turn.tts_voice,
+                reference_text=turn.reference_text,
+                wer=turn.wer,
+                cer=turn.cer,
                 created_at=turn.created_at,
             )
             for turn in turns

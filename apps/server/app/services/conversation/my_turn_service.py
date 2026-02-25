@@ -826,13 +826,31 @@ IMPORTANT RULES:
              raise ValueError("Session not found")
 
         # 1. STT (skip if text_input provided)
+        stt_result = {}
         if text_input:
             transcript = text_input
             t1_asr_final = time.time() * 1000
         else:
             from app.services.conversation.stt_service import STTService
             stt_service = STTService()
-            stt_result = await stt_service.transcribe(audio_data, audio_format)
+            
+            # Resolve STT model from session config > participant DB > default
+            stt_model = "chirp_3"
+            if session.variant:
+                try:
+                    variant_data = json.loads(session.variant)
+                    if "participants" in variant_data and session.current_speaker_id:
+                        p_config = variant_data["participants"].get(str(session.current_speaker_id), {})
+                        if "stt_model" in p_config and p_config["stt_model"]:
+                            stt_model = p_config["stt_model"]
+                except Exception:
+                    pass
+            
+            stt_result = await stt_service.smart_transcribe(
+                audio_data=audio_data,
+                audio_format=audio_format,
+                model=stt_model,
+            )
             transcript = stt_result.get("transcript", "")
             t1_asr_final = time.time() * 1000
         
@@ -844,6 +862,7 @@ IMPORTANT RULES:
             content_text=transcript,
             audio_duration_ms=stt_result.get("duration_ms") if not text_input else None,
             stt_provider="text" if text_input else "google",
+            stt_model=stt_result.get("recognition_api", "v1") if not text_input else None,
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
         )

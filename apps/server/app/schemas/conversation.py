@@ -389,6 +389,11 @@ class TurnResponse(BaseModel):
     tts_provider: str | None
     tts_voice: str | None
     
+    # Accuracy
+    reference_text: str | None = None
+    wer: float | None = None
+    cer: float | None = None
+    
     created_at: datetime
     
     class Config:
@@ -565,6 +570,15 @@ class Run0VoiceResponse(BaseModel):
     llm_latency_ms: int = Field(description="t2 - t1")
     tts_latency_ms: int = Field(description="t2_5 - t2")
     server_total_ms: int = Field(description="t2_5 - t0")
+    
+    # Accuracy / API info
+    stt_confidence: float | None = Field(None, description="STT confidence (0~1)")
+    recognition_api: str | None = Field(None, description="v1 or v2")
+    
+    # WER/CER accuracy
+    reference_text: str | None = Field(None, description="Ground truth text")
+    wer: float | None = Field(None, description="Word Error Rate (0~1+)")
+    cer: float | None = Field(None, description="Character Error Rate (0~1+)")
 
 
 class Run0LogRequest(BaseModel):

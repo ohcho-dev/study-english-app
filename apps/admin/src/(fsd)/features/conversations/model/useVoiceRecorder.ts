@@ -11,12 +11,16 @@ export interface RecordingState {
     isPaused: boolean;
     duration: number;
     audioLevel: number;
+    /** Whether voice is currently detected (VAD) */
+    isSpeaking: boolean;
 }
 
 export interface RecordingResult {
     blob: Blob;
     duration: number;
     t0UserEnd: number;
+    /** How recording ended: 'vad' (silence timeout) or 'button' (manual) */
+    speechEndMethod: 'vad' | 'button';
 }
 
 export interface UseVoiceRecorderOptions {
@@ -26,10 +30,20 @@ export interface UseVoiceRecorderOptions {
     onStart?: () => void;
     /** Callback when recording stops with result */
     onStop?: (result: RecordingResult) => void;
+    /** Callback when a chunk of audio data is available (for streaming STT) */
+    onDataAvailable?: (data: Blob) => void;
     /** Callback on error */
     onError?: (error: Error) => void;
     /** Audio level update interval in ms (default: 100) */
     levelUpdateInterval?: number;
+    /** Enable VAD (Voice Activity Detection) auto-stop (default: false) */
+    enableVAD?: boolean;
+    /** VAD: audio level threshold below which is considered silence (0~1, default: 0.05) */
+    vadSilenceThreshold?: number;
+    /** VAD: duration of silence before auto-stop in ms (default: 2000) */
+    vadSilenceTimeoutMs?: number;
+    /** VAD: minimum recording duration before VAD can trigger in seconds (default: 1) */
+    vadMinDurationSec?: number;
 }
 
 export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
@@ -37,8 +51,13 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         maxDuration = 60,
         onStart,
         onStop,
+        onDataAvailable,
         onError,
         levelUpdateInterval = 100,
+        enableVAD = false,
+        vadSilenceThreshold = 0.05,
+        vadSilenceTimeoutMs = 2000,
+        vadMinDurationSec = 1,
     } = options;
 
     const [state, setState] = useState<RecordingState>({
@@ -46,11 +65,13 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         isPaused: false,
         duration: 0,
         audioLevel: 0,
+        isSpeaking: false,
     });
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
+    const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const startTimeRef = useRef<number>(0);
     const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -61,6 +82,24 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     const pausedAtRef = useRef<number>(0);
     const totalPausedMsRef = useRef<number>(0);
     const isPausedRef = useRef<boolean>(false);
+    // VAD tracking
+    const silenceSinceRef = useRef<number | null>(null);
+    const hasSpokenRef = useRef<boolean>(false);
+    // Ref to performStop so updateAudioLevel can call it without circular dep
+    const performStopRef = useRef<() => void>(() => { });
+    // Track if VAD triggered the stop
+    const vadStoppedRef = useRef<boolean>(false);
+    // Refs for all callbacks to avoid stale closures in mediaRecorder event handlers
+    const onStopRef = useRef(onStop);
+    const onStartRef = useRef(onStart);
+    const onDataAvailableRef = useRef(onDataAvailable);
+    const onErrorRef = useRef(onError);
+
+    // Keep refs in sync with latest callbacks
+    onStopRef.current = onStop;
+    onStartRef.current = onStart;
+    onDataAvailableRef.current = onDataAvailable;
+    onErrorRef.current = onError;
 
     // Calculate audio level focused on human voice frequencies (85Hz – 3000Hz)
     const updateAudioLevel = useCallback(() => {
@@ -88,8 +127,32 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         const voiceAvg = voiceBins > 0 ? voiceSum / voiceBins : 0;
         const normalizedLevel = Math.min(voiceAvg / 128, 1);
 
-        setState((prev) => ({ ...prev, audioLevel: normalizedLevel }));
-    }, []);
+        // VAD: detect speech/silence
+        const speaking = normalizedLevel > vadSilenceThreshold;
+        if (enableVAD && isRecordingRef.current && !isPausedRef.current) {
+            if (speaking) {
+                hasSpokenRef.current = true;
+                silenceSinceRef.current = null;
+            } else if (hasSpokenRef.current) {
+                // Silence detected after speech
+                const now = Date.now();
+                if (silenceSinceRef.current === null) {
+                    silenceSinceRef.current = now;
+                } else {
+                    const silenceDuration = now - silenceSinceRef.current;
+                    const recordDuration = (now - startTimeRef.current - totalPausedMsRef.current) / 1000;
+                    if (silenceDuration >= vadSilenceTimeoutMs && recordDuration >= vadMinDurationSec) {
+                        // Auto-stop: silence timeout reached
+                        vadStoppedRef.current = true;
+                        performStopRef.current();
+                        return;
+                    }
+                }
+            }
+        }
+
+        setState((prev) => ({ ...prev, audioLevel: normalizedLevel, isSpeaking: speaking }));
+    }, [enableVAD, vadSilenceThreshold, vadSilenceTimeoutMs, vadMinDurationSec]);
 
     // Internal stop function (defined early so startRecording can reference it)
     const performStop = useCallback(() => {
@@ -115,9 +178,13 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                 isRecording: false,
                 isPaused: false,
                 audioLevel: 0,
+                isSpeaking: false,
             }));
         }
     }, []);
+
+    // Keep ref in sync
+    performStopRef.current = performStop;
 
     // Start recording
     const startRecording = useCallback(async () => {
@@ -137,7 +204,30 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             const source = audioContextRef.current.createMediaStreamSource(stream);
             source.connect(analyserRef.current);
 
-            // Set up media recorder
+            // If streaming STT is enabled, set up ScriptProcessorNode for raw PCM capture
+            if (onDataAvailableRef.current) {
+                const bufferSize = 1024; // ~21ms at 48kHz — smaller = more frequent chunks
+                const scriptProcessor = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
+                scriptProcessor.onaudioprocess = (e) => {
+                    const float32Data = e.inputBuffer.getChannelData(0);
+                    // Convert float32 [-1, 1] to int16 [-32768, 32767]
+                    const int16Data = new Int16Array(float32Data.length);
+                    for (let i = 0; i < float32Data.length; i++) {
+                        const s = Math.max(-1, Math.min(1, float32Data[i]));
+                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    onDataAvailableRef.current?.(new Blob([int16Data.buffer]));
+                };
+                source.connect(scriptProcessor);
+                // Connect to a silent gain node (NOT destination) to avoid mic feedback
+                const silentGain = audioContextRef.current.createGain();
+                silentGain.gain.value = 0;
+                silentGain.connect(audioContextRef.current.destination);
+                scriptProcessor.connect(silentGain);
+                scriptProcessorRef.current = scriptProcessor;
+            }
+
+            // Set up media recorder (for final recording blob)
             const mediaRecorder = new MediaRecorder(stream, {
                 mimeType: 'audio/webm;codecs=opus',
             });
@@ -147,6 +237,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data);
+                    // NOTE: onDataAvailable is now handled by ScriptProcessorNode above
                 }
             };
 
@@ -158,17 +249,23 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                 // Stop all tracks
                 stream.getTracks().forEach((track) => track.stop());
 
+                // Clean up script processor (streaming PCM)
+                if (scriptProcessorRef.current) {
+                    scriptProcessorRef.current.disconnect();
+                    scriptProcessorRef.current = null;
+                }
+
                 // Clean up audio context
                 if (audioContextRef.current) {
                     audioContextRef.current.close();
                     audioContextRef.current = null;
                 }
 
-                onStop?.({ blob, duration, t0UserEnd });
+                onStopRef.current?.({ blob, duration, t0UserEnd, speechEndMethod: vadStoppedRef.current ? 'vad' : 'button' });
             };
 
             mediaRecorder.onerror = () => {
-                onError?.(new Error('Recording error'));
+                onErrorRef.current?.(new Error('Recording error'));
             };
 
             // Start recording
@@ -177,6 +274,10 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             pausedAtRef.current = 0;
             isPausedRef.current = false;
             isRecordingRef.current = true;
+            // Reset VAD state
+            silenceSinceRef.current = null;
+            hasSpokenRef.current = false;
+            vadStoppedRef.current = false;
             mediaRecorder.start(100); // Collect data every 100ms
 
             // Update duration (skip when paused so visual timer freezes)
@@ -199,13 +300,14 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                 isPaused: false,
                 duration: 0,
                 audioLevel: 0,
+                isSpeaking: false,
             });
 
-            onStart?.();
+            onStartRef.current?.();
         } catch (error) {
-            onError?.(error instanceof Error ? error : new Error('Failed to start recording'));
+            onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to start recording'));
         }
-    }, [maxDuration, onStart, onStop, onError, levelUpdateInterval, updateAudioLevel, performStop]);
+    }, [maxDuration, levelUpdateInterval, updateAudioLevel, performStop]);
 
     // Stop recording (public API)
     const stopRecording = useCallback(() => {

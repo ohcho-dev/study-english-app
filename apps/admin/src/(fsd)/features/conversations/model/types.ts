@@ -236,6 +236,10 @@ export interface Turn {
     stt_model: string | null;
     tts_provider: string | null;
     tts_voice: string | null;
+    // Accuracy
+    reference_text: string | null;
+    wer: number | null;
+    cer: number | null;
     created_at: string;
 }
 
@@ -257,6 +261,13 @@ export interface Run0VoiceResponse {
     llm_latency_ms: number;
     tts_latency_ms: number;
     server_total_ms: number;
+    // Phase 1: accuracy metrics
+    stt_confidence?: number;
+    recognition_api?: 'v1' | 'v2';
+    // WER/CER accuracy
+    reference_text?: string;
+    wer?: number;
+    cer?: number;
 }
 
 export interface Run0LogRequest {
