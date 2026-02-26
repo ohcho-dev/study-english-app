@@ -62,6 +62,12 @@ class StreamingSTTSession:
             import os
             project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
         if not project_id:
+            try:
+                import google.auth
+                _, project_id = google.auth.default()
+            except Exception:
+                pass
+        if not project_id:
             raise ValueError("GOOGLE_CLOUD_PROJECT not set.")
         return project_id
     
