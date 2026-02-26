@@ -192,7 +192,7 @@ export const SessionList = ({
             ) : (
                 <Card>
                     <CardContent className="p-0">
-                        <div className="overflow-x-auto">
+                        <div className="max-w-[calc(100vw-350px)] overflow-x-auto">
                             <table className="w-full whitespace-nowrap">
                                 <thead>
                                     <tr className="border-b bg-muted/50">
@@ -295,7 +295,9 @@ export const SessionList = ({
                                                 <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
                                                     {cfg?.tts_model
                                                         ? `${cfg.tts_provider}/${cfg.tts_model}`
-                                                        : '-'}
+                                                        : cfg?.tts_voice
+                                                            ? `${cfg.tts_provider}/${cfg.tts_voice}`
+                                                            : '-'}
                                                 </td>
                                                 <td className="py-3 px-4 text-sm">
                                                     {formatDate(session.started_at)}

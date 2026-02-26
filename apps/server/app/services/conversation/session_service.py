@@ -174,6 +174,7 @@ class SessionService:
             ended_at=session.ended_at,
             device_type=session.device_type,
             browser=session.browser,
+            experiment_type=session.experiment_type,
             variant=session.variant,
             difficulty=session.difficulty,
             estimated_minutes=session.estimated_minutes,
@@ -489,6 +490,20 @@ class SessionService:
             created_at=turn.created_at,
         )
     
+    async def increment_turn_index(self, session_id: UUID) -> None:
+        """Increment the session's current_turn_index.
+        
+        Used by Run0 after saving a User+AI turn pair so the next
+        pair gets a higher turn_index for proper ordering.
+        """
+        result = await self.db.execute(
+            select(ConversationSession).where(ConversationSession.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            session.current_turn_index += 1
+            await self.db.commit()
+    
     async def update_turn_timestamp(
         self,
         turn_id: UUID,
@@ -557,7 +572,7 @@ class SessionService:
         query = (
             select(ConversationTurn)
             .where(ConversationTurn.session_id == session_id)
-            .order_by(ConversationTurn.turn_index)
+            .order_by(ConversationTurn.turn_index, ConversationTurn.created_at)
         )
         
         if limit:
@@ -599,7 +614,7 @@ class SessionService:
         result = await self.db.execute(query)
         turns = result.scalars().all()
         # Return sorted by index ASC
-        turns = sorted(turns, key=lambda t: t.turn_index)
+        turns = sorted(turns, key=lambda t: (t.turn_index, t.created_at))
         
         return [
             TurnResponse(

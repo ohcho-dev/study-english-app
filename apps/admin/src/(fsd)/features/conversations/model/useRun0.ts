@@ -2,7 +2,7 @@
  * RUN0 Hook - Experiment orchestration with customizable settings
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
@@ -159,6 +159,9 @@ export const useRun0 = () => {
         error: null,
     });
 
+    // Use a ref to synchronously track sessionId, avoiding React batching/stale closure issues
+    const sessionIdRef = useRef<string | null>(null);
+
     // Audio element for playback
     const audioRef = useCallback(() => {
         if (typeof window !== 'undefined') {
@@ -200,6 +203,9 @@ export const useRun0 = () => {
             const totalIter = config.warmupIterations + config.testIterations;
             const isComplete = nextIteration >= totalIter;
             const sessionId = prev.sessionId || response.session_id;
+
+            // Sync ref for identical latest ID
+            sessionIdRef.current = sessionId;
 
             completionInfo.isComplete = isComplete;
             completionInfo.sessionId = sessionId;
@@ -299,8 +305,9 @@ export const useRun0 = () => {
             t0UserEnd: number;
             referenceText?: string;
         }) => {
+            const currentSessionId = sessionIdRef.current || undefined;
             return processVoice(audioBlob, t0UserEnd, {
-                sessionId: state.sessionId || undefined,
+                sessionId: currentSessionId,
                 voiceId: config.voiceId,
                 systemPrompt: config.systemPrompt,
                 sttModel: config.sttModel,
@@ -319,6 +326,7 @@ export const useRun0 = () => {
 
     // Start experiment
     const startExperiment = useCallback(async () => {
+        sessionIdRef.current = null;
         setState({
             sessionId: null,
             isRunning: true,
@@ -354,12 +362,9 @@ export const useRun0 = () => {
     // Process streaming STT result (streaming mode — skips STT, goes directly to LLM→TTS)
     const processStreamingResult = useCallback(
         async (transcript: string, t0UserEnd: number, t1AsrFinal: number, referenceText?: string, sttConfidence?: number, sttLatencyMs?: number) => {
-            // Get latest sessionId via setState callback (avoids stale closure)
-            let currentSessionId: string | undefined;
-            setState((prev) => {
-                currentSessionId = prev.sessionId || undefined;
-                return { ...prev, isProcessing: true, error: null };
-            });
+            const currentSessionId = sessionIdRef.current || undefined;
+            setState((prev) => ({ ...prev, isProcessing: true, error: null }));
+
             try {
                 const response = await processText(transcript, t0UserEnd, t1AsrFinal, {
                     sessionId: currentSessionId,
@@ -391,6 +396,7 @@ export const useRun0 = () => {
 
     // Reset experiment
     const resetExperiment = useCallback(() => {
+        sessionIdRef.current = null;
         setState({
             sessionId: null,
             isRunning: false,

@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<SessionStatus, string> = {
 export default function SessionDetailPage({ params }: { params: Promise<PageParams> }) {
     const { id } = use(params);
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState('conversation');
+    const [activeTab, setActiveTab] = useState('metrics');
 
     const { data: session, isLoading: sessionLoading } = useSession(id);
     const { data: turnsData, isLoading: turnsLoading } = useSessionTurns(id);
@@ -44,13 +44,51 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     // API returns Turn[] directly, not { items: Turn[] }
     const turns = turnsData || [];
 
+    // Filter out warmup turns for display
+    let displayTurns = turns;
+    if (session?.experiment_type === 'run0' && session?.variant) {
+        try {
+            const variantData = typeof session.variant === 'string'
+                ? JSON.parse(session.variant)
+                : session.variant;
+
+            let warmupIterations = 0;
+            if (variantData?.pipeline_config?.warmup_iterations !== undefined) {
+                warmupIterations = variantData.pipeline_config.warmup_iterations;
+            } else if (variantData?.warmup_iterations !== undefined) {
+                warmupIterations = variantData.warmup_iterations;
+            }
+
+            if (warmupIterations > 0) {
+                let userTurnsSeen = 0;
+                let startIndex = 0;
+                for (let i = 0; i < turns.length; i++) {
+                    if (turns[i].turn_type === 'user') {
+                        userTurnsSeen++;
+                        if (userTurnsSeen > warmupIterations) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
+                }
+                if (userTurnsSeen <= warmupIterations && userTurnsSeen > 0) {
+                    displayTurns = [];
+                } else if (startIndex > 0) {
+                    displayTurns = turns.slice(startIndex);
+                }
+            }
+        } catch (e) {
+            // Ignore parse errors
+        }
+    }
+
     // Format timestamp
     const formatTime = (dateString: string) => {
         return new Date(dateString).toLocaleString('ko-KR');
     };
 
     // Format duration
-    const formatDuration = (ms?: number) => {
+    const formatDuration = (ms?: number | null) => {
         if (!ms) return '-';
         if (ms < 1000) return `${Math.round(ms)}ms`;
         return `${(ms / 1000).toFixed(2)}s`;
@@ -134,7 +172,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                             <MessageSquare className="h-4 w-4" />
                             총 턴 수
                         </div>
-                        <div className="font-medium text-xl">{turns.length}</div>
+                        <div className="font-medium text-xl">{displayTurns.length}</div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -165,7 +203,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                 <div className="h-4 bg-muted rounded w-1/4 mx-auto" />
                             </CardContent>
                         </Card>
-                    ) : turns.length === 0 ? (
+                    ) : displayTurns.length === 0 ? (
                         <Card>
                             <CardContent className="py-8 text-center text-muted-foreground">
                                 대화 내용이 없습니다
@@ -174,7 +212,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                     ) : (
                         <Card>
                             <CardContent className="py-4 space-y-4">
-                                {turns.map((turn: Turn) => (
+                                {displayTurns.map((turn: Turn) => (
                                     <div
                                         key={turn.id}
                                         className={`flex gap-3 ${turn.turn_type === 'user'
@@ -277,7 +315,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                         </div>
                                                         <div>
                                                             <span className="text-muted-foreground">TTS 모델</span>
-                                                            <div className="font-mono font-medium">{cfg.tts_model || '-'}</div>
+                                                            <div className="font-mono font-medium">{cfg.tts_model || cfg.tts_voice || '-'}</div>
                                                             {cfg.tts_mode && (
                                                                 <div className="text-xs text-muted-foreground">
                                                                     {cfg.tts_mode === 'streaming' ? '스트리밍' : '동기식'}
@@ -390,7 +428,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                             </Card>
 
                             {/* Per-Turn Latency Table */}
-                            {turns.filter((t: Turn) => t.turn_type === 'user' && t.t0_user_end).length > 0 && (
+                            {displayTurns.filter((t: Turn) => t.turn_type === 'user' && t.t0_user_end).length > 0 && (
                                 <Card>
                                     <CardHeader>
                                         <CardTitle className="text-base">턴별 레이턴시</CardTitle>
@@ -411,7 +449,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {turns
+                                                    {displayTurns
                                                         .filter((t: Turn) => t.turn_type === 'user' && t.t0_user_end)
                                                         .map((turn: Turn, idx: number) => (
                                                             <tr key={turn.id} className="border-b last:border-0 hover:bg-muted/50">

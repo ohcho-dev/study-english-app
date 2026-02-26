@@ -165,6 +165,7 @@ export interface Session {
     ended_at: string | null;
     device_type: string | null;
     browser: string | null;
+    experiment_type: string | null;
     variant: string | null;
     difficulty: number | null;
     estimated_minutes: number | null;

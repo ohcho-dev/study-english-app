@@ -296,6 +296,7 @@ class SessionResponse(BaseModel):
     ended_at: datetime | None
     device_type: str | None
     browser: str | None
+    experiment_type: str | None
     variant: str | None
     difficulty: int | None
     estimated_minutes: int | None

@@ -231,6 +231,9 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             audio_duration_ms=tts_result.get("duration_ms"),
         )
         
+        # Increment turn_index for next iteration
+        await self.session_service.increment_turn_index(session_id)
+        
         await self.session_service.calculate_metrics(session_id)
         
         # Calculate latencies
@@ -386,6 +389,9 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             audio_url=tts_result.get("audio_url"),
             audio_duration_ms=tts_result.get("duration_ms"),
         )
+        
+        # Increment turn_index for next iteration
+        await self.session_service.increment_turn_index(session_id)
         
         await self.session_service.calculate_metrics(session_id)
         
