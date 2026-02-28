@@ -274,17 +274,37 @@ class TemplateService:
         
         # Update participants if provided
         if data.participants is not None:
-            # Match existing participants by order_index to preserve their settings
-            existing_participants = {p.order_index: p for p in template.participants}
+            # Group existing participants by ID and Name to gracefully handle any potential duplicates
+            existing_by_id = {str(p.id): p for p in template.participants}
+            existing_by_name = {}
+            for p in template.participants:
+                if p.name not in existing_by_name:
+                    existing_by_name[p.name] = []
+                existing_by_name[p.name].append(p)
+                
             new_participants = []
             
             for p_data in data.participants:
-                if p_data.order_index in existing_participants:
+                p_match = None
+                p_id_str = str(p_data.id) if p_data.id else None
+                
+                # 1. Match by explicit ID (Best case, handles renames and reorders perfectly)
+                if p_id_str and p_id_str in existing_by_id:
+                    p_match = existing_by_id[p_id_str]
+                    # Remove from name map so it doesn't get double-matched later
+                    if p_match.name in existing_by_name and p_match in existing_by_name[p_match.name]:
+                        existing_by_name[p_match.name].remove(p_match)
+                # 2. Match by Name (Fallback for older payloads lacking ID)
+                elif p_data.name in existing_by_name and existing_by_name[p_data.name]:
+                    p_match = existing_by_name[p_data.name].pop(0) # pop the first match
+
+                if p_match:
                     # Update existing participant
-                    p = existing_participants[p_data.order_index]
+                    p = p_match
                     p.participant_type = p_data.participant_type
-                    p.name = p_data.name
+                    p.name = p_data.name # Safely update name
                     p.persona = p_data.persona
+                    p.order_index = p_data.order_index
                     
                     # Preserve voice_id if not explicitly overwritten (TemplateEditor usually sends it, but just in case)
                     if p_data.voice_id is not None:
@@ -306,8 +326,9 @@ class TemplateService:
                     p.avatar_url = p_data.avatar_url if p_data.avatar_url is not None else p.avatar_url
                     
                     new_participants.append(p)
-                    # Remove from dict so we know what's left to delete
-                    del existing_participants[p_data.order_index]
+                    # Mark as kept so we don't delete it
+                    if str(p.id) in existing_by_id:
+                        del existing_by_id[str(p.id)]
                 else:
                     # Create new participant
                     participant = ConversationParticipant(
@@ -329,8 +350,8 @@ class TemplateService:
                     self.db.add(participant)
                     new_participants.append(participant)
             
-            # Delete any remaining old participants that weren't matched
-            for p_to_delete in existing_participants.values():
+            # Delete any remaining old participants that weren't matched (including duplicates)
+            for p_to_delete in existing_by_id.values():
                 await self.db.delete(p_to_delete)
         
         await self.db.commit()

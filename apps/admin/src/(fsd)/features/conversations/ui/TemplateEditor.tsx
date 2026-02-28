@@ -84,6 +84,7 @@ Keep responses concise (1-3 sentences) and conversational.`
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
         template?.participants?.map((p) => ({
+            id: p.id,
             participant_type: p.participant_type,
             name: p.name,
             persona: p.persona || undefined,

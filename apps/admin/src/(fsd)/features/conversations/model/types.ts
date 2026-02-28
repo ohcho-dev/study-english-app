@@ -57,6 +57,7 @@ export interface Participant {
 }
 
 export interface ParticipantCreate {
+    id?: string;
     participant_type: ParticipantType;
     name: string;
     persona?: string;

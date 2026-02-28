@@ -104,7 +104,7 @@ class ParticipantBase(BaseModel):
 class ParticipantCreate(ParticipantBase):
     """Schema for creating a participant."""
     
-    pass
+    id: UUID | None = Field(None, description="Optional UUID for matching during updates")
 
 
 class ParticipantUpdate(BaseModel):
