@@ -242,21 +242,40 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     className="mt-2 w-full h-8"
                                                 />
                                             )}
-                                            {(turn.asr_latency_ms ||
-                                                turn.llm_latency_ms ||
-                                                turn.tts_latency_ms) && (
+                                            {/* Latency Metrics Display logic */}
+                                            {session?.experiment_type === 'run0' ? (
+                                                /* Latency Lab (run0): Show everything on the User's turn for E2E perspective */
+                                                (turn.asr_latency_ms || turn.llm_latency_ms || turn.tts_latency_ms) && (
                                                     <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
-                                                        {turn.asr_latency_ms && (
-                                                            <span>STT: {turn.asr_latency_ms}ms</span>
-                                                        )}
-                                                        {turn.llm_latency_ms && (
-                                                            <span>LLM: {turn.llm_latency_ms}ms</span>
-                                                        )}
-                                                        {turn.tts_latency_ms && (
-                                                            <span>TTS: {turn.tts_latency_ms}ms</span>
-                                                        )}
+                                                        {turn.asr_latency_ms && <span>STT: {turn.asr_latency_ms}ms</span>}
+                                                        {turn.llm_latency_ms && <span>LLM: {turn.llm_latency_ms}ms</span>}
+                                                        {turn.tts_latency_ms && <span>TTS: {turn.tts_latency_ms}ms</span>}
                                                     </div>
-                                                )}
+                                                )
+                                            ) : (
+                                                /* My Turn (regular): Separate User (STT, E2E) and AI (LLM, TTS) */
+                                                <>
+                                                    {turn.turn_type === 'user' && (turn.asr_latency_ms || turn.e2e_latency_ms || turn.stt_model) && (
+                                                        <div className="flex gap-2 mt-2 text-xs text-muted-foreground items-center">
+                                                            {turn.stt_model && <span className="font-mono bg-muted/50 px-1 rounded truncate max-w-[200px]">{turn.stt_model}</span>}
+                                                            {turn.asr_latency_ms && <span>STT: {turn.asr_latency_ms}ms</span>}
+                                                            {turn.e2e_latency_ms && <span className="font-semibold text-primary/80">E2E: {Math.round(turn.e2e_latency_ms)}ms</span>}
+                                                        </div>
+                                                    )}
+                                                    {turn.turn_type !== 'user' && (turn.llm_latency_ms || turn.tts_latency_ms || turn.model_name || turn.tts_voice || turn.tts_provider) && (
+                                                        <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted-foreground items-center">
+                                                            {turn.model_name && <span className="font-mono bg-muted/50 px-1 rounded truncate max-w-[200px]" title="LLM Model">{turn.model_name}</span>}
+                                                            {turn.llm_latency_ms && <span>LLM: {turn.llm_latency_ms}ms</span>}
+                                                            {(turn.tts_provider || turn.tts_voice) && (
+                                                                <span className="font-mono bg-muted/50 px-1 rounded truncate max-w-[200px]" title="TTS Config">
+                                                                    {turn.tts_provider === 'gemini' ? 'Gemini' : turn.tts_provider === 'google-cloud' ? 'Google' : turn.tts_provider || 'TTS'}{turn.tts_voice ? ` / ${turn.tts_voice}` : ''}
+                                                                </span>
+                                                            )}
+                                                            {turn.tts_latency_ms && <span>TTS: {turn.tts_latency_ms}ms</span>}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

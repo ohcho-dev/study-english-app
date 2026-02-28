@@ -87,6 +87,12 @@ Keep responses concise (1-3 sentences) and conversational.`
             participant_type: p.participant_type,
             name: p.name,
             persona: p.persona || undefined,
+            // Preserve model settings
+            difficulty: p.difficulty ?? undefined,
+            llm_model: p.llm_model ?? undefined,
+            stt_model: p.stt_model ?? undefined,
+            tts_model: p.tts_model ?? undefined,
+            tts_provider: p.tts_provider ?? undefined,
             // voice_id is set in experiment page
             order_index: p.order_index,
         })) || [

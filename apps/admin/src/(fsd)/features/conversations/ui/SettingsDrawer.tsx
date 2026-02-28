@@ -81,9 +81,13 @@ export const SettingsDrawer = ({
     currentSpeakerId,
     templateId,
 }: SettingsDrawerProps) => {
-    const aiParticipants = participants.filter(p => p.participant_type !== 'user');
+    // Admin sees all participants, Tester sees only AI participants
+    const displayParticipants = isAdmin
+        ? participants
+        : participants.filter(p => p.participant_type !== 'user');
+
     const [expandedParticipant, setExpandedParticipant] = useState<string | null>(
-        aiParticipants[0]?.id || null
+        displayParticipants[0]?.id || null
     );
     const queryClient = useQueryClient();
 
@@ -111,7 +115,8 @@ export const SettingsDrawer = ({
     const handleSave = async () => {
         if (!templateId) return;
         const { saveParticipantModels } = await import('../api/conversationsApi');
-        const models = aiParticipants.map(p => {
+        // Save models for all currently displayed participants (which includes 'user' if admin)
+        const models = displayParticipants.map(p => {
             const pConfig = getConfig(p.id);
             return {
                 participant_id: p.id,
@@ -180,7 +185,7 @@ export const SettingsDrawer = ({
                 </SheetHeader>
 
                 <div className="space-y-4 overflow-y-auto flex-1 custom-scrollbar max-h-[60vh] pb-4">
-                    {aiParticipants.map((p) => {
+                    {displayParticipants.map((p) => {
                         const pConfig = getConfig(p.id);
                         const isExpanded = expandedParticipant === p.id;
                         const currentTtsProvider = pConfig.tts_provider || 'google-cloud';
@@ -208,12 +213,16 @@ export const SettingsDrawer = ({
                                                 'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white',
                                                 p.participant_type === 'moderator'
                                                     ? 'bg-violet-500'
-                                                    : 'bg-blue-500'
+                                                    : p.participant_type === 'user'
+                                                        ? 'bg-gray-500'
+                                                        : 'bg-blue-500'
                                             )}
                                         >
                                             {p.name.charAt(0)}
                                         </div>
-                                        <span className="text-sm font-medium">{p.name}</span>
+                                        <span className="text-sm font-medium">
+                                            {p.participant_type === 'user' ? `${p.name} (Me)` : p.name}
+                                        </span>
                                     </div>
                                     {isExpanded ? (
                                         <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -226,38 +235,42 @@ export const SettingsDrawer = ({
                                 {isExpanded && (
                                     <div className="space-y-3 pt-1">
                                         {/* Speaking Rate */}
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                                <Label className="text-xs text-muted-foreground">🔊 발화 속도</Label>
-                                                <span className="text-xs font-mono text-foreground">
-                                                    {(pConfig.speaking_rate || 1.0).toFixed(1)}x
-                                                </span>
+                                        {p.participant_type !== 'user' && (
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center justify-between">
+                                                    <Label className="text-xs text-muted-foreground">🔊 발화 속도</Label>
+                                                    <span className="text-xs font-mono text-foreground">
+                                                        {(pConfig.speaking_rate || 1.0).toFixed(1)}x
+                                                    </span>
+                                                </div>
+                                                <Slider
+                                                    value={[pConfig.speaking_rate || 1.0]}
+                                                    min={0.5}
+                                                    max={2.0}
+                                                    step={0.1}
+                                                    onValueChange={([v]) => handleChange(p.id, { speaking_rate: v })}
+                                                    disabled={disabled}
+                                                />
                                             </div>
-                                            <Slider
-                                                value={[pConfig.speaking_rate || 1.0]}
-                                                min={0.5}
-                                                max={2.0}
-                                                step={0.1}
-                                                onValueChange={([v]) => handleChange(p.id, { speaking_rate: v })}
-                                                disabled={disabled}
-                                            />
-                                        </div>
+                                        )}
 
                                         {/* Difficulty */}
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                                <Label className="text-xs text-muted-foreground">🎯 난이도</Label>
-                                                <DifficultyLabel value={pConfig.difficulty || 1} />
+                                        {p.participant_type !== 'user' && (
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center justify-between">
+                                                    <Label className="text-xs text-muted-foreground">🎯 난이도</Label>
+                                                    <DifficultyLabel value={pConfig.difficulty || 1} />
+                                                </div>
+                                                <Slider
+                                                    value={[pConfig.difficulty || 1]}
+                                                    min={1}
+                                                    max={5}
+                                                    step={1}
+                                                    onValueChange={([v]) => handleChange(p.id, { difficulty: v })}
+                                                    disabled={disabled}
+                                                />
                                             </div>
-                                            <Slider
-                                                value={[pConfig.difficulty || 1]}
-                                                min={1}
-                                                max={5}
-                                                step={1}
-                                                onValueChange={([v]) => handleChange(p.id, { difficulty: v })}
-                                                disabled={disabled}
-                                            />
-                                        </div>
+                                        )}
 
                                         {/* ── Pipeline Model Selection (Admin only) ── */}
                                         {isAdmin && (
@@ -268,95 +281,101 @@ export const SettingsDrawer = ({
                                                 </h4>
 
                                                 {/* STT Model */}
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                                        STT (음성→텍스트)
-                                                    </Label>
-                                                    <Select
-                                                        value={pConfig.stt_model || 'chirp_3'}
-                                                        onValueChange={(v) => handleChange(p.id, { stt_model: v })}
-                                                        disabled={disabled}
-                                                    >
-                                                        <SelectTrigger className="h-8 text-xs">
-                                                            <SelectValue placeholder="STT 모델" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {sttModels.map((m) => (
-                                                                <SelectItem key={m.id} value={m.id}>
-                                                                    <span>{m.name}</span>
-                                                                    {m.description && (
-                                                                        <span className="text-[10px] text-muted-foreground ml-1.5">
-                                                                            — {m.description}
-                                                                        </span>
-                                                                    )}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                                {p.participant_type === 'user' && (
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            STT (음성→텍스트)
+                                                        </Label>
+                                                        <Select
+                                                            value={pConfig.stt_model || 'chirp_3'}
+                                                            onValueChange={(v) => handleChange(p.id, { stt_model: v })}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="STT 모델" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {sttModels.map((m) => (
+                                                                    <SelectItem key={m.id} value={m.id}>
+                                                                        <span>{m.name}</span>
+                                                                        {m.description && (
+                                                                            <span className="text-[10px] text-muted-foreground ml-1.5">
+                                                                                — {m.description}
+                                                                            </span>
+                                                                        )}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
 
                                                 {/* LLM Model */}
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                                        LLM (대화 생성)
-                                                    </Label>
-                                                    <Select
-                                                        value={pConfig.llm_model || 'gemini-2.5-flash'}
-                                                        onValueChange={(v) => handleChange(p.id, { llm_model: v })}
-                                                        disabled={disabled}
-                                                    >
-                                                        <SelectTrigger className="h-8 text-xs">
-                                                            <SelectValue placeholder="LLM 모델" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {llmModels.map((m) => (
-                                                                <SelectItem key={m.id} value={m.id}>
-                                                                    <span>{m.name}</span>
-                                                                    {m.description && (
-                                                                        <span className="text-[10px] text-muted-foreground ml-1.5">
-                                                                            — {m.description}
-                                                                        </span>
-                                                                    )}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                                {p.participant_type !== 'user' && (
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            LLM (대화 생성)
+                                                        </Label>
+                                                        <Select
+                                                            value={pConfig.llm_model || 'gemini-2.5-flash'}
+                                                            onValueChange={(v) => handleChange(p.id, { llm_model: v })}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="LLM 모델" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {llmModels.map((m) => (
+                                                                    <SelectItem key={m.id} value={m.id}>
+                                                                        <span>{m.name}</span>
+                                                                        {m.description && (
+                                                                            <span className="text-[10px] text-muted-foreground ml-1.5">
+                                                                                — {m.description}
+                                                                            </span>
+                                                                        )}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
 
                                                 {/* TTS Provider */}
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                                        TTS (텍스트→음성) — 프로바이더
-                                                    </Label>
-                                                    <Select
-                                                        value={currentTtsProvider}
-                                                        onValueChange={(v) => {
-                                                            handleChange(p.id, {
-                                                                tts_provider: v,
-                                                                voice_id: v === 'google-cloud' ? 'en-US-Neural2-F' : 'Kore',
-                                                                tts_model: v === 'gemini' ? 'gemini-2.5-flash-preview-tts' : '',
-                                                            });
-                                                        }}
-                                                        disabled={disabled}
-                                                    >
-                                                        <SelectTrigger className="h-8 text-xs">
-                                                            <SelectValue placeholder="TTS 프로바이더" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {ttsOptions?.providers?.map((provider) => (
-                                                                <SelectItem key={provider.id} value={provider.id}>
-                                                                    <span>{provider.name}</span>
-                                                                    <span className="text-[10px] text-muted-foreground ml-1.5">
-                                                                        — {provider.description}
-                                                                    </span>
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                                {p.participant_type !== 'user' && (
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            TTS (텍스트→음성) — 프로바이더
+                                                        </Label>
+                                                        <Select
+                                                            value={currentTtsProvider}
+                                                            onValueChange={(v) => {
+                                                                handleChange(p.id, {
+                                                                    tts_provider: v,
+                                                                    voice_id: v === 'google-cloud' ? 'en-US-Neural2-F' : 'Kore',
+                                                                    tts_model: v === 'gemini' ? 'gemini-2.5-flash-preview-tts' : '',
+                                                                });
+                                                            }}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="TTS 프로바이더" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {ttsOptions?.providers?.map((provider) => (
+                                                                    <SelectItem key={provider.id} value={provider.id}>
+                                                                        <span>{provider.name}</span>
+                                                                        <span className="text-[10px] text-muted-foreground ml-1.5">
+                                                                            — {provider.description}
+                                                                        </span>
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
 
                                                 {/* Gemini TTS Model (conditional) */}
-                                                {currentTtsProvider === 'gemini' && geminiModels.length > 0 && (
+                                                {p.participant_type !== 'user' && currentTtsProvider === 'gemini' && geminiModels.length > 0 && (
                                                     <div className="space-y-1 pl-3 border-l-2 border-primary/20">
                                                         <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
                                                             Gemini TTS 모델
@@ -381,49 +400,57 @@ export const SettingsDrawer = ({
                                                 )}
 
                                                 {/* TTS Voice */}
-                                                <div className={cn(
-                                                    'space-y-1',
-                                                    currentTtsProvider === 'gemini' && 'pl-3 border-l-2 border-primary/20'
-                                                )}>
-                                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                                        TTS 음성
-                                                    </Label>
-                                                    <Select
-                                                        value={pConfig.voice_id || p.voice_id || 'en-US-Neural2-F'}
-                                                        onValueChange={(v) => handleChange(p.id, { voice_id: v })}
-                                                        disabled={disabled}
-                                                    >
-                                                        <SelectTrigger className="h-8 text-xs">
-                                                            <SelectValue placeholder="음성 선택" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {voices.map((voice) => (
-                                                                <SelectItem key={voice.id} value={voice.id}>
-                                                                    <span>
-                                                                        {voice.name}
-                                                                        {voice.gender && (
-                                                                            <span className="text-[10px] text-muted-foreground ml-1">
-                                                                                ({voice.gender === 'FEMALE' ? '여성' : '남성'}
-                                                                                {voice.language ? `, ${voice.language}` : ''})
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                                {p.participant_type !== 'user' && (
+                                                    <div className={cn(
+                                                        'space-y-1',
+                                                        currentTtsProvider === 'gemini' && 'pl-3 border-l-2 border-primary/20'
+                                                    )}>
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            TTS 음성
+                                                        </Label>
+                                                        <Select
+                                                            value={pConfig.voice_id || p.voice_id || 'en-US-Neural2-F'}
+                                                            onValueChange={(v) => handleChange(p.id, { voice_id: v })}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="음성 선택" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {voices.map((voice) => (
+                                                                    <SelectItem key={voice.id} value={voice.id}>
+                                                                        <span>
+                                                                            {voice.name}
+                                                                            {voice.gender && (
+                                                                                <span className="text-[10px] text-muted-foreground ml-1">
+                                                                                    ({voice.gender === 'FEMALE' ? '여성' : '남성'}
+                                                                                    {voice.language ? `, ${voice.language}` : ''})
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
 
                                                 {/* Summary */}
                                                 <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground bg-muted/30 rounded-md p-2 font-mono">
-                                                    <span>STT: {pConfig.stt_model || 'latest_long'}</span>
-                                                    <span>LLM: {pConfig.llm_model || 'gemini-2.5-flash'}</span>
-                                                    <span>
-                                                        TTS: {currentTtsProvider === 'gemini'
-                                                            ? `Gemini / ${pConfig.voice_id || 'Kore'}`
-                                                            : `Google Cloud / ${pConfig.voice_id || p.voice_id || 'default'}`
-                                                        }
-                                                    </span>
+                                                    {p.participant_type === 'user' && (
+                                                        <span>STT: {pConfig.stt_model || 'latest_long'}</span>
+                                                    )}
+                                                    {p.participant_type !== 'user' && (
+                                                        <span>LLM: {pConfig.llm_model || 'gemini-2.5-flash'}</span>
+                                                    )}
+                                                    {p.participant_type !== 'user' && (
+                                                        <span>
+                                                            TTS: {currentTtsProvider === 'gemini'
+                                                                ? `Gemini / ${pConfig.voice_id || 'Kore'}`
+                                                                : `Google Cloud / ${pConfig.voice_id || p.voice_id || 'default'}`
+                                                            }
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}

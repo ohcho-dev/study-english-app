@@ -64,8 +64,14 @@ export interface ParticipantCreate {
     voice_settings?: VoiceSettings;
     order_index: number;
     // My Turn additions
+    difficulty?: number;
     greeting_message?: string;
     avatar_url?: string;
+    // Model selection (admin-saved defaults)
+    llm_model?: string;
+    stt_model?: string;
+    tts_model?: string;
+    tts_provider?: string;
 }
 
 export interface ScenarioStep {

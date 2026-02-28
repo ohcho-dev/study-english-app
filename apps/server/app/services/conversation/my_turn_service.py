@@ -612,6 +612,8 @@ class MyTurnService:
             context += f"\n[USER EMOTION]: The user seems {user_emotion}. Adjust your tone and response accordingly — be empathetic and match the emotional context."
 
         # 2. Call LLM
+        t1_llm_start = time.time() * 1000
+        
         import google.generativeai as genai
         from app.core.config import settings
         
@@ -674,6 +676,9 @@ IMPORTANT RULES:
                 # Actually, the Director's Instruction already covers this ("Ask clarification...").
                 
                 # Generate
+                
+                # Re-capture t1_llm_start right before actual generation for maximum accuracy
+                t1_llm_start = time.time() * 1000
                 response = model.generate_content(generation_prompt)
                 reply_text = response.text.strip()
                 
@@ -760,12 +765,20 @@ IMPORTANT RULES:
         if return_to_user_after:
             saved_model_name += ":ENCOURAGEMENT"
             
+        # Determine actual TurnType from participant (handles moderator vs AI)
+        actual_turn_type = TurnType.MODERATOR if getattr(participant.participant_type, 'value', participant.participant_type) == 'moderator' else TurnType.AI
+            
         await self.session_service.add_turn(
             session_id=session.id,
-            turn_type=TurnType.AI,
+            turn_type=actual_turn_type,
             speaker_name=participant.name,
             content_text=reply_text,
             model_name=saved_model_name,
+            t1_asr_final=t1_llm_start,   # Used by TurnResponse to compute llm_latency_ms
+            t2_llm_final=t2_llm_final,
+            t2_5_tts_ready=t2_5_tts_ready,
+            tts_provider=tts_provider,
+            tts_voice=voice_id,
         )
         
         # 5. METRICS: Find last USER turn to associate latencies
@@ -839,11 +852,29 @@ IMPORTANT RULES:
             if session.variant:
                 try:
                     variant_data = json.loads(session.variant)
-                    if "participants" in variant_data and session.current_speaker_id:
-                        p_config = variant_data["participants"].get(str(session.current_speaker_id), {})
+                    
+                    # 1. Find the User participant ID from the template participants
+                    user_participant_id = None
+                    if session.template and session.template.participants:
+                        # Assuming ParticipantType is accessible or we check as string
+                        user_participant = next(
+                            (p for p in session.template.participants 
+                             if (hasattr(p.participant_type, 'value') and p.participant_type.value == 'user') or 
+                                str(p.participant_type) == 'user' or 
+                                str(p.participant_type) == 'ParticipantType.USER'), 
+                            None
+                        )
+                        if user_participant:
+                            user_participant_id = str(user_participant.id)
+
+                    # 2. Extract the user's explicit stt_model setting
+                    if "participants" in variant_data and user_participant_id:
+                        p_config = variant_data["participants"].get(user_participant_id, {})
                         if "stt_model" in p_config and p_config["stt_model"]:
                             stt_model = p_config["stt_model"]
-                except Exception:
+                            logger.info(f"[process_user_turn] Using User's custom STT model: {stt_model} for participant {user_participant_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to resolve custom User STT model: {e}")
                     pass
             
             stt_result = await stt_service.smart_transcribe(

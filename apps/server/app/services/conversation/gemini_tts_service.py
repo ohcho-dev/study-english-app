@@ -113,9 +113,31 @@ class GeminiTTSService:
             prompt=style_prompt,
         )
         
+        # Determine language code based on voice name or mapping
+        language_code = "en-US"
+        
+        # Check standard voice ID format first (e.g., ko-KR-Wavenet-A)
+        if "-" in voice_name and len(voice_name.split("-")) >= 2:
+           potential_lang = "-".join(voice_name.split("-")[:2])
+           # Basic validation: xx-XX length is 5
+           if len(potential_lang) == 5 and potential_lang[2] == "-":
+               language_code = potential_lang
+        
+        # Fallback for Gemini Voices (Kore, Aoede, etc.)
+        # Important: Google Cloud API requires language_code. But if we force ko-KR with a Gemini voice,
+        # it might return empty audio if the text is entirely English. We must set it carefully.
+        import re
+        if re.search(r'[가-힣]', text):
+            # If Korean exists in the text, setting to ko-KR helps pronunciation.
+            # But the underlying base for Gemini might still expect en-US for empty/mixed.
+            language_code = "ko-KR"
+            logger.info(f"Gemini TTS: Detected Korean text, setting language_code to {language_code}")
+        else:
+            language_code = "en-US"
+        
         # Voice selection with Gemini model
         voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
+            language_code=language_code,
             name=voice_name,
             model_name=model,
         )
@@ -193,6 +215,13 @@ class GeminiTTSService:
     def get_available_voices() -> list[dict[str, Any]]:
         """Get list of available Gemini TTS voices."""
         return [
-            {"id": name, "name": name, "gender": info["gender"], "description": info["description"]}
+            {
+                "id": name, 
+                "name": name, 
+                # Provide defaults so the frontend SettingsDrawer renders them properly
+                "gender": info.get("gender", "MALE" if name in ["Start", "Puck"] else "FEMALE"), 
+                "language": info.get("language", "en-US"),
+                "description": info["description"]
+            }
             for name, info in GEMINI_TTS_VOICES.items()
         ]

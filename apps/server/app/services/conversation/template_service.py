@@ -206,6 +206,13 @@ class TemplateService:
                 voice_id=p_data.voice_id,
                 voice_settings=p_data.voice_settings.model_dump() if p_data.voice_settings else None,
                 order_index=p_data.order_index,
+                difficulty=p_data.difficulty,
+                llm_model=p_data.llm_model,
+                stt_model=p_data.stt_model,
+                tts_model=p_data.tts_model,
+                tts_provider=p_data.tts_provider,
+                greeting_message=p_data.greeting_message,
+                avatar_url=p_data.avatar_url,
             )
             self.db.add(participant)
         
@@ -265,24 +272,66 @@ class TemplateService:
         if data.director_system_prompt is not None:
             template.director_system_prompt = data.director_system_prompt
         
-        # Update participants if provided (replace all)
+        # Update participants if provided
         if data.participants is not None:
-            # Delete existing participants
-            for participant in template.participants:
-                await self.db.delete(participant)
+            # Match existing participants by order_index to preserve their settings
+            existing_participants = {p.order_index: p for p in template.participants}
+            new_participants = []
             
-            # Create new participants
             for p_data in data.participants:
-                participant = ConversationParticipant(
-                    template_id=template.id,
-                    participant_type=p_data.participant_type,
-                    name=p_data.name,
-                    persona=p_data.persona,
-                    voice_id=p_data.voice_id,
-                    voice_settings=p_data.voice_settings.model_dump() if p_data.voice_settings else None,
-                    order_index=p_data.order_index,
-                )
-                self.db.add(participant)
+                if p_data.order_index in existing_participants:
+                    # Update existing participant
+                    p = existing_participants[p_data.order_index]
+                    p.participant_type = p_data.participant_type
+                    p.name = p_data.name
+                    p.persona = p_data.persona
+                    
+                    # Preserve voice_id if not explicitly overwritten (TemplateEditor usually sends it, but just in case)
+                    if p_data.voice_id is not None:
+                        p.voice_id = p_data.voice_id
+                        
+                    # Merge voice_settings (preserve speaking_rate from SettingsDrawer)
+                    existing_vs = p.voice_settings or {}
+                    incoming_vs = p_data.voice_settings.model_dump() if p_data.voice_settings else {}
+                    if incoming_vs:
+                        p.voice_settings = {**existing_vs, **incoming_vs}
+                        
+                    # Preserve advanced settings from SettingsDrawer if not explicitly provided in payload
+                    p.difficulty = p_data.difficulty if p_data.difficulty is not None else p.difficulty
+                    p.llm_model = p_data.llm_model if p_data.llm_model is not None else p.llm_model
+                    p.stt_model = p_data.stt_model if p_data.stt_model is not None else p.stt_model
+                    p.tts_model = p_data.tts_model if p_data.tts_model is not None else p.tts_model
+                    p.tts_provider = p_data.tts_provider if p_data.tts_provider is not None else p.tts_provider
+                    p.greeting_message = p_data.greeting_message if p_data.greeting_message is not None else p.greeting_message
+                    p.avatar_url = p_data.avatar_url if p_data.avatar_url is not None else p.avatar_url
+                    
+                    new_participants.append(p)
+                    # Remove from dict so we know what's left to delete
+                    del existing_participants[p_data.order_index]
+                else:
+                    # Create new participant
+                    participant = ConversationParticipant(
+                        template_id=template.id,
+                        participant_type=p_data.participant_type,
+                        name=p_data.name,
+                        persona=p_data.persona,
+                        voice_id=p_data.voice_id,
+                        voice_settings=p_data.voice_settings.model_dump() if p_data.voice_settings else None,
+                        order_index=p_data.order_index,
+                        difficulty=p_data.difficulty,
+                        llm_model=p_data.llm_model,
+                        stt_model=p_data.stt_model,
+                        tts_model=p_data.tts_model,
+                        tts_provider=p_data.tts_provider,
+                        greeting_message=p_data.greeting_message,
+                        avatar_url=p_data.avatar_url,
+                    )
+                    self.db.add(participant)
+                    new_participants.append(participant)
+            
+            # Delete any remaining old participants that weren't matched
+            for p_to_delete in existing_participants.values():
+                await self.db.delete(p_to_delete)
         
         await self.db.commit()
         
