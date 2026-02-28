@@ -472,8 +472,8 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                                 <td className="text-right py-2 px-3 font-mono font-bold">
                                                                     {formatDuration(turn.e2e_latency_ms)}
                                                                 </td>
-                                                                <td className={`text-right py-2 px-3 font-mono ${turn.wer !== null && turn.wer !== undefined ? (turn.wer <= 0.1 ? 'text-green-600' : turn.wer <= 0.3 ? 'text-yellow-600' : 'text-red-600') : 'text-muted-foreground'}`}>
-                                                                    {turn.wer !== null && turn.wer !== undefined ? `${(turn.wer * 100).toFixed(1)}%` : '-'}
+                                                                <td className={`text-right py-2 px-3 font-mono ${turn.wer !== null && turn.wer !== undefined ? (Math.max(0, 1 - turn.wer) * 100 >= 90 ? 'text-green-600' : Math.max(0, 1 - turn.wer) * 100 >= 70 ? 'text-yellow-600' : 'text-red-600') : 'text-muted-foreground'}`}>
+                                                                    {turn.wer !== null && turn.wer !== undefined ? `${(Math.max(0, Math.min(100, (1 - turn.wer) * 100))).toFixed(1)}%` : '-'}
                                                                 </td>
                                                             </tr>
                                                         ))}
