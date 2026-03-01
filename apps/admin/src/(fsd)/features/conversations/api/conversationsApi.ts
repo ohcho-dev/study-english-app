@@ -275,6 +275,7 @@ export const processText = async (
         warmupIterations?: number;
         sttConfidence?: number;
         sttLatencyMs?: number;
+        serverFinalTimestampMs?: number;
     }
 ): Promise<Run0VoiceResponse> => {
     const formData = new FormData();
@@ -300,6 +301,9 @@ export const processText = async (
     }
     if (options.sttLatencyMs !== undefined) {
         formData.append('stt_latency_ms', options.sttLatencyMs.toString());
+    }
+    if (options.serverFinalTimestampMs !== undefined) {
+        formData.append('server_final_timestamp_ms', options.serverFinalTimestampMs.toString());
     }
 
     const response = await fetch(`${API_BASE_URL}${CONVERSATIONS_BASE}/run0/text`, {
@@ -409,10 +413,14 @@ export const saveParticipantModels = async (
 /** Send text input instead of audio (text mode) */
 export const sendTextInput = async (
     sessionId: string,
-    text: string
+    text: string,
+    t0UserEnd?: number,
+    t1ServerFinal?: number,
 ): Promise<{ transcript: string; next_turn: number }> => {
     const formData = new FormData();
     formData.append('text', text);
+    if (t0UserEnd) formData.append('t0_user_end', t0UserEnd.toString());
+    if (t1ServerFinal) formData.append('t1_server_final', t1ServerFinal.toString());
 
     const response = await fetch(
         `${API_BASE_URL}${CONVERSATIONS_BASE}/sessions/${sessionId}/text`,

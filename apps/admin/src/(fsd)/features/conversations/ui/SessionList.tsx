@@ -205,6 +205,9 @@ export const SessionList = ({
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             상태
                                         </th>
+                                        <th className="text-left py-3 px-3 text-sm font-medium">
+                                            유형
+                                        </th>
                                         <th className="text-left py-3 px-4 text-sm font-medium">
                                             템플릿
                                         </th>
@@ -228,6 +231,9 @@ export const SessionList = ({
                                         </th>
                                         <th className="text-right py-3 px-3 text-sm font-medium">
                                             STT avg
+                                        </th>
+                                        <th className="text-right py-3 px-3 text-sm font-medium text-amber-600">
+                                            Transit avg
                                         </th>
                                         <th className="text-right py-3 px-3 text-sm font-medium">
                                             LLM avg
@@ -278,6 +284,11 @@ export const SessionList = ({
                                                         {statusConfig.label}
                                                     </Badge>
                                                 </td>
+                                                <td className="py-3 px-3">
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        {session.experiment_type === 'run0' ? 'Latency Lab' : 'My Turn'}
+                                                    </Badge>
+                                                </td>
                                                 <td className="py-3 px-4">
                                                     <div className="font-medium">
                                                         {session.template_name || '템플릿 없음'}
@@ -288,6 +299,8 @@ export const SessionList = ({
                                                 </td>
                                                 <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
                                                     {cfg?.stt_model || '-'}
+                                                    <br />
+                                                    {cfg?.stt_mode || '-'}
                                                 </td>
                                                 <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
                                                     {cfg?.llm_model || '-'}
@@ -310,6 +323,9 @@ export const SessionList = ({
                                                 </td>
                                                 <td className="py-3 px-3 text-sm text-right font-mono">
                                                     {formatLatency(session.asr_avg_ms)}
+                                                </td>
+                                                <td className="py-3 px-3 text-sm text-right font-mono text-amber-600">
+                                                    {formatLatency(session.network_transit_avg_ms)}
                                                 </td>
                                                 <td className="py-3 px-3 text-sm text-right font-mono">
                                                     {formatLatency(session.llm_avg_ms)}

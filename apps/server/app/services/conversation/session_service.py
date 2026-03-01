@@ -88,6 +88,7 @@ class SessionService:
                 func.count(ConversationTurn.id).label("turn_count"),
                 SessionMetrics.e2e_avg_ms,
                 SessionMetrics.asr_avg_ms,
+                SessionMetrics.network_transit_avg_ms,
                 SessionMetrics.llm_avg_ms,
                 SessionMetrics.tts_avg_ms,
                 SessionMetrics.client_load_avg_ms,
@@ -100,6 +101,7 @@ class SessionService:
                 ConversationTemplate.name,
                 SessionMetrics.e2e_avg_ms,
                 SessionMetrics.asr_avg_ms,
+                SessionMetrics.network_transit_avg_ms,
                 SessionMetrics.llm_avg_ms,
                 SessionMetrics.tts_avg_ms,
                 SessionMetrics.client_load_avg_ms,
@@ -131,11 +133,12 @@ class SessionService:
                 variant=json.loads(session.variant) if session.variant else None,
                 e2e_avg_ms=e2e_avg,
                 asr_avg_ms=asr_avg,
+                network_transit_avg_ms=nt_avg,
                 llm_avg_ms=llm_avg,
                 tts_avg_ms=tts_avg,
                 client_load_avg_ms=cl_avg,
             )
-            for session, template_name, turn_count, e2e_avg, asr_avg, llm_avg, tts_avg, cl_avg in rows
+            for session, template_name, turn_count, e2e_avg, asr_avg, nt_avg, llm_avg, tts_avg, cl_avg in rows
         ]
         
         return items, total
@@ -377,6 +380,7 @@ class SessionService:
         audio_duration_ms: int | None = None,
         t0_user_end: float | None = None,
         t1_asr_final: float | None = None,
+        t1_5_llm_start: float | None = None,
         t2_llm_final: float | None = None,
         t2_5_tts_ready: float | None = None,
         model_name: str | None = None,
@@ -436,6 +440,7 @@ class SessionService:
             audio_duration_ms=audio_duration_ms,
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
+            t1_5_llm_start=t1_5_llm_start,
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
             model_name=model_name,
@@ -476,9 +481,38 @@ class SessionService:
             audio_duration_ms=turn.audio_duration_ms,
             t0_user_end=turn.t0_user_end,
             t1_asr_final=turn.t1_asr_final,
+            t1_5_llm_start=turn.t1_5_llm_start,
             t2_llm_final=turn.t2_llm_final,
             t2_5_tts_ready=turn.t2_5_tts_ready,
             t3_audio_play_start=turn.t3_audio_play_start,
+            # Computed latencies
+            asr_latency_ms=(
+                max(0, turn.t1_asr_final - turn.t0_user_end)
+                if turn.t0_user_end and turn.t1_asr_final else None
+            ),
+            network_transit_ms=(
+                max(0, turn.t1_5_llm_start - turn.t1_asr_final)
+                if turn.t1_5_llm_start and turn.t1_asr_final else None
+            ),
+            llm_latency_ms=(
+                (turn.t2_llm_final - turn.t1_5_llm_start)
+                if turn.t2_llm_final and turn.t1_5_llm_start
+                else (turn.t2_llm_final - turn.t1_asr_final)
+                if turn.t2_llm_final and turn.t1_asr_final
+                else None
+            ),
+            tts_latency_ms=(
+                (turn.t2_5_tts_ready - turn.t2_llm_final)
+                if turn.t2_5_tts_ready and turn.t2_llm_final else None
+            ),
+            client_load_ms=(
+                (turn.t3_audio_play_start - turn.t2_5_tts_ready)
+                if turn.t3_audio_play_start and turn.t2_5_tts_ready else None
+            ),
+            e2e_latency_ms=(
+                (turn.t3_audio_play_start - turn.t0_user_end)
+                if turn.t3_audio_play_start and turn.t0_user_end else None
+            ),
             model_name=turn.model_name,
             stt_provider=turn.stt_provider,
             stt_model=turn.stt_model,
@@ -545,9 +579,38 @@ class SessionService:
             audio_duration_ms=turn.audio_duration_ms,
             t0_user_end=turn.t0_user_end,
             t1_asr_final=turn.t1_asr_final,
+            t1_5_llm_start=turn.t1_5_llm_start,
             t2_llm_final=turn.t2_llm_final,
             t2_5_tts_ready=turn.t2_5_tts_ready,
             t3_audio_play_start=turn.t3_audio_play_start,
+            # Computed latencies
+            asr_latency_ms=(
+                max(0, turn.t1_asr_final - turn.t0_user_end)
+                if turn.t0_user_end and turn.t1_asr_final else None
+            ),
+            network_transit_ms=(
+                max(0, turn.t1_5_llm_start - turn.t1_asr_final)
+                if turn.t1_5_llm_start and turn.t1_asr_final else None
+            ),
+            llm_latency_ms=(
+                (turn.t2_llm_final - turn.t1_5_llm_start)
+                if turn.t2_llm_final and turn.t1_5_llm_start
+                else (turn.t2_llm_final - turn.t1_asr_final)
+                if turn.t2_llm_final and turn.t1_asr_final
+                else None
+            ),
+            tts_latency_ms=(
+                (turn.t2_5_tts_ready - turn.t2_llm_final)
+                if turn.t2_5_tts_ready and turn.t2_llm_final else None
+            ),
+            client_load_ms=(
+                (turn.t3_audio_play_start - turn.t2_5_tts_ready)
+                if turn.t3_audio_play_start and turn.t2_5_tts_ready else None
+            ),
+            e2e_latency_ms=(
+                (turn.t3_audio_play_start - turn.t0_user_end)
+                if turn.t3_audio_play_start and turn.t0_user_end else None
+            ),
             model_name=turn.model_name,
             stt_provider=turn.stt_provider,
             stt_model=turn.stt_model,
@@ -628,9 +691,38 @@ class SessionService:
                 audio_duration_ms=turn.audio_duration_ms,
                 t0_user_end=turn.t0_user_end,
                 t1_asr_final=turn.t1_asr_final,
+                t1_5_llm_start=turn.t1_5_llm_start,
                 t2_llm_final=turn.t2_llm_final,
                 t2_5_tts_ready=turn.t2_5_tts_ready,
                 t3_audio_play_start=turn.t3_audio_play_start,
+                # Computed latencies
+                asr_latency_ms=(
+                    max(0, turn.t1_asr_final - turn.t0_user_end)
+                    if turn.t0_user_end and turn.t1_asr_final else None
+                ),
+                network_transit_ms=(
+                    max(0, turn.t1_5_llm_start - turn.t1_asr_final)
+                    if turn.t1_5_llm_start and turn.t1_asr_final else None
+                ),
+                llm_latency_ms=(
+                    (turn.t2_llm_final - turn.t1_5_llm_start)
+                    if turn.t2_llm_final and turn.t1_5_llm_start
+                    else (turn.t2_llm_final - turn.t1_asr_final)
+                    if turn.t2_llm_final and turn.t1_asr_final
+                    else None
+                ),
+                tts_latency_ms=(
+                    (turn.t2_5_tts_ready - turn.t2_llm_final)
+                    if turn.t2_5_tts_ready and turn.t2_llm_final else None
+                ),
+                client_load_ms=(
+                    (turn.t3_audio_play_start - turn.t2_5_tts_ready)
+                    if turn.t3_audio_play_start and turn.t2_5_tts_ready else None
+                ),
+                e2e_latency_ms=(
+                    (turn.t3_audio_play_start - turn.t0_user_end)
+                    if turn.t3_audio_play_start and turn.t0_user_end else None
+                ),
                 model_name=turn.model_name,
                 stt_provider=turn.stt_provider,
                 stt_model=turn.stt_model,
@@ -692,6 +784,7 @@ class SessionService:
         # Calculate latencies
         e2e_latencies = []
         asr_latencies = []
+        network_transit_latencies = []
         llm_latencies = []
         tts_latencies = []
         client_load_latencies = []
@@ -710,8 +803,18 @@ class SessionService:
                 # max(0, ...) because streaming STT may finalize before stop (t1 < t0)
                 asr_latencies.append(max(0, turn.t1_asr_final - turn.t0_user_end))
             
-            if turn.t1_asr_final and turn.t2_llm_final:
-                llm_latencies.append(turn.t2_llm_final - turn.t1_asr_final)
+            # Network Transit: t1.5 - t1 (server-server, only for streaming)
+            if turn.t1_5_llm_start and turn.t1_asr_final:
+                network_transit_latencies.append(
+                    max(0, turn.t1_5_llm_start - turn.t1_asr_final)
+                )
+            
+            # LLM: prefer t1.5 as start if available, fallback to t1
+            if turn.t2_llm_final:
+                if turn.t1_5_llm_start:
+                    llm_latencies.append(turn.t2_llm_final - turn.t1_5_llm_start)
+                elif turn.t1_asr_final:
+                    llm_latencies.append(turn.t2_llm_final - turn.t1_asr_final)
             
             if turn.t2_llm_final and turn.t2_5_tts_ready:
                 tts_latencies.append(turn.t2_5_tts_ready - turn.t2_llm_final)
@@ -758,6 +861,7 @@ class SessionService:
         metrics.e2e_p50_ms = percentile(e2e_latencies, 0.5)
         metrics.e2e_p95_ms = percentile(e2e_latencies, 0.95)
         metrics.asr_avg_ms = avg(asr_latencies)
+        metrics.network_transit_avg_ms = avg(network_transit_latencies)
         metrics.llm_avg_ms = avg(llm_latencies)
         metrics.tts_avg_ms = avg(tts_latencies)
         metrics.client_load_avg_ms = avg(client_load_latencies)
@@ -804,6 +908,7 @@ class SessionService:
             e2e_p50_ms=metrics.e2e_p50_ms,
             e2e_p95_ms=metrics.e2e_p95_ms,
             asr_avg_ms=metrics.asr_avg_ms,
+            network_transit_avg_ms=metrics.network_transit_avg_ms,
             llm_avg_ms=metrics.llm_avg_ms,
             tts_avg_ms=metrics.tts_avg_ms,
             client_load_avg_ms=metrics.client_load_avg_ms,

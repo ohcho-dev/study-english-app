@@ -205,6 +205,7 @@ export interface SessionListItem {
     // Latency metrics (averages in ms)
     e2e_avg_ms: number | null;
     asr_avg_ms: number | null;
+    network_transit_avg_ms: number | null;
     llm_avg_ms: number | null;
     tts_avg_ms: number | null;
     client_load_avg_ms: number | null;
@@ -236,11 +237,13 @@ export interface Turn {
     audio_duration_ms: number | null;
     t0_user_end: number | null;
     t1_asr_final: number | null;
+    t1_5_llm_start: number | null;
     t2_llm_final: number | null;
     t2_5_tts_ready: number | null;
     t3_audio_play_start: number | null;
     // Computed latencies (ms)
     asr_latency_ms: number | null;
+    network_transit_ms: number | null;
     llm_latency_ms: number | null;
     tts_latency_ms: number | null;
     client_load_ms: number | null;
@@ -273,6 +276,7 @@ export interface Run0VoiceResponse {
     t2_llm_final: number;
     t2_5_tts_ready: number;
     asr_latency_ms: number;
+    network_transit_ms: number;
     llm_latency_ms: number;
     tts_latency_ms: number;
     server_total_ms: number;
@@ -322,6 +326,7 @@ export interface SessionMetrics {
     e2e_p50_ms: number | null;
     e2e_p95_ms: number | null;
     asr_avg_ms: number | null;
+    network_transit_avg_ms: number | null;
     llm_avg_ms: number | null;
     tts_avg_ms: number | null;
     client_load_avg_ms: number | null;

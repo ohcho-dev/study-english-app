@@ -15,7 +15,7 @@ import { Button } from '@/shared/ui/button';
 import { useAuth } from '@/(fsd)/shared/providers/AuthProvider';
 import { useTemplate } from '@/features/conversations/model/useTemplates';
 import { useTemplates } from '@/features/conversations/model/useTemplates';
-import { createSession } from '@/features/conversations/api/conversationsApi';
+import { createSession, endSession } from '@/features/conversations/api/conversationsApi';
 import { ConversationStage } from '@/features/conversations/ui/ConversationStage';
 import { SettingsDrawer } from '@/features/conversations/ui/SettingsDrawer';
 import type { SessionConfig } from '@/features/conversations/ui/SettingsDrawer';
@@ -184,7 +184,15 @@ const MyTurnContent = () => {
         }
     };
 
-    const handleSessionEnd = () => {
+    const handleSessionEnd = async () => {
+        // Actually end the session on the server first
+        if (sessionId) {
+            try {
+                await endSession(sessionId);
+            } catch (err) {
+                console.error('Failed to end session:', err);
+            }
+        }
         setPageState('ended');
     };
 

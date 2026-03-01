@@ -30,6 +30,7 @@ export interface StreamingSTTResult {
     interim_count?: number;
     processing_ms?: number;
     speech_end_method?: string;
+    server_final_timestamp_ms?: number;
     error?: string;
 }
 
@@ -60,6 +61,8 @@ export interface UseStreamingSTTReturn {
     finalTimestamp: number | null;
     /** Whether server has finished processing (sent 'done' message) */
     isDone: boolean;
+    /** Server timestamp when is_final was received (server clock, for accurate t1) */
+    serverFinalTimestamp: number | null;
     /** Error message */
     error: string | null;
     /** Timestamp when WebSocket connected (streaming start time) */
@@ -82,6 +85,7 @@ export const useStreamingSTT = (): UseStreamingSTTReturn => {
     const [ttfrMs, setTtfrMs] = useState<number | null>(null);
     const [finalTimestamp, setFinalTimestamp] = useState<number | null>(null);
     const [isDone, setIsDone] = useState(false);
+    const [serverFinalTimestamp, setServerFinalTimestamp] = useState<number | null>(null);
 
     const wsRef = useRef<WebSocket | null>(null);
     const connectTimeRef = useRef<number>(0);
@@ -109,6 +113,10 @@ export const useStreamingSTT = (): UseStreamingSTTReturn => {
                 // Accumulate multiple final results (user may pause and continue)
                 setFinalTranscript((prev) => prev ? `${prev} ${result.transcript}` : result.transcript!);
                 setFinalTimestamp(Date.now());
+                // Capture server's is_final timestamp for accurate t1 measurement
+                if (result.server_final_timestamp_ms) {
+                    setServerFinalTimestamp(result.server_final_timestamp_ms);
+                }
                 setInterimTranscript('');
                 hasResultRef.current = true;
                 setHasResult(true);
@@ -284,6 +292,7 @@ export const useStreamingSTT = (): UseStreamingSTTReturn => {
         error,
         connectTime: connectTimeRef.current,
         isDone,
+        serverFinalTimestamp,
     };
 };
 

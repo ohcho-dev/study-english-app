@@ -361,7 +361,7 @@ export const useRun0 = () => {
 
     // Process streaming STT result (streaming mode — skips STT, goes directly to LLM→TTS)
     const processStreamingResult = useCallback(
-        async (transcript: string, t0UserEnd: number, t1AsrFinal: number, referenceText?: string, sttConfidence?: number, sttLatencyMs?: number) => {
+        async (transcript: string, t0UserEnd: number, t1AsrFinal: number, referenceText?: string, sttConfidence?: number, sttLatencyMs?: number, serverFinalTimestampMs?: number) => {
             const currentSessionId = sessionIdRef.current || undefined;
             setState((prev) => ({ ...prev, isProcessing: true, error: null }));
 
@@ -380,6 +380,7 @@ export const useRun0 = () => {
                     warmupIterations: config.warmupIterations,
                     sttConfidence,
                     sttLatencyMs,
+                    serverFinalTimestampMs,
                 });
                 await handleResponse(response);
             } catch (error) {

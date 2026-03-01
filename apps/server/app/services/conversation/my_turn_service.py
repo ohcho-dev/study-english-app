@@ -806,6 +806,9 @@ IMPORTANT RULES:
                 if not last_user_turn.t2_llm_final:
                     last_user_turn.t2_llm_final = t2_llm_final
                     last_user_turn.t2_5_tts_ready = t2_5_tts_ready
+                    # Backfill t1_5_llm_start if not already set
+                    if not last_user_turn.t1_5_llm_start:
+                        last_user_turn.t1_5_llm_start = t1_llm_start
                     await self.session_service.db.commit()
                     
                     # Update metrics immediately
@@ -832,7 +835,7 @@ IMPORTANT RULES:
         # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal from client.
         # This ensures the AI text is fully spoken before the next turn is calculated.
 
-    async def process_user_turn(self, session_id: UUID, audio_data: bytes = None, audio_format: str = None, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0, text_input: str = None):
+    async def process_user_turn(self, session_id: UUID, audio_data: bytes = None, audio_format: str = None, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0, text_input: str = None, t1_server_final: float = 0.0):
         """Processes user audio or text input."""
         session = await self.session_service.get_by_id_with_template(session_id)
         if not session:
@@ -840,9 +843,14 @@ IMPORTANT RULES:
 
         # 1. STT (skip if text_input provided)
         stt_result = {}
+        t1_5_llm_start = time.time() * 1000  # POST arrival time = t1.5
         if text_input:
             transcript = text_input
-            t1_asr_final = time.time() * 1000
+            # Streaming: use server's is_final timestamp if available
+            if t1_server_final and t1_server_final > 0:
+                t1_asr_final = t1_server_final
+            else:
+                t1_asr_final = time.time() * 1000
         else:
             from app.services.conversation.stt_service import STTService
             stt_service = STTService()
@@ -884,6 +892,7 @@ IMPORTANT RULES:
             )
             transcript = stt_result.get("transcript", "")
             t1_asr_final = time.time() * 1000
+            t1_5_llm_start = t1_asr_final  # Sync: no network transit
         
         # 2. Save Turn
         await self.session_service.add_turn(
@@ -896,6 +905,7 @@ IMPORTANT RULES:
             stt_model=stt_result.get("recognition_api", "v1") if not text_input else None,
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
+            t1_5_llm_start=t1_5_llm_start,
         )
         
         # Calculate intermediate metrics (ASR latency)

@@ -278,7 +278,7 @@ export const useMyTurn = (sessionId: string | null) => {
         }
     }, [sessionId]);
 
-    const sendText = useCallback(async (text: string) => {
+    const sendText = useCallback(async (text: string, t0UserEnd?: number, t1ServerFinal?: number) => {
         if (!sessionId || !text.trim()) return;
 
         setState(prev => ({ ...prev, isProcessing: true }));
@@ -286,6 +286,8 @@ export const useMyTurn = (sessionId: string | null) => {
         try {
             const formData = new FormData();
             formData.append('text', text);
+            if (t0UserEnd) formData.append('t0_user_end', t0UserEnd.toString());
+            if (t1ServerFinal) formData.append('t1_server_final', t1ServerFinal.toString());
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/text`, {
                 method: 'POST',

@@ -224,6 +224,7 @@ class StreamingSTTSession:
                                 "words": words,
                                 "processing_ms": int((now - self._start_time) * 1000),
                                 "speech_end_method": "vad",
+                                "server_final_timestamp_ms": int(now * 1000),
                             }
                         else:
                             self._interim_count += 1

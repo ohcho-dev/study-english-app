@@ -173,8 +173,8 @@ export const ConversationStage = ({
         setStreamingIsFinal(true);
         setShowStreamingMessage(true);
 
-        // Send transcript to server (async — response will add to chatHistory)
-        sendText(transcript);
+        // Send transcript to server with timing (async — response will add to chatHistory)
+        sendText(transcript, recordingStopTime || undefined, streamingSTT.serverFinalTimestamp || undefined);
         setRecordingStopTime(null);
 
         // Reset streaming STT for next turn

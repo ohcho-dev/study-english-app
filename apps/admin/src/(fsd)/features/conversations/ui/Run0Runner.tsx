@@ -74,6 +74,7 @@ export const Run0Runner = () => {
             selectedPhrase || undefined,
             undefined,
             sttLatency,
+            streamingSTT.serverFinalTimestamp || undefined,
         );
 
         setRecordingStopTime(null);

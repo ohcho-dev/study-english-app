@@ -145,6 +145,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             model=stt_model,
         )
         t1_asr_final = time.time() * 1000  # Current timestamp in ms
+        t1_5_llm_start = t1_asr_final  # Sync: no network transit (STT and LLM on same server)
         
         transcript = stt_result["transcript"]
         if not transcript:
@@ -206,6 +207,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             audio_duration_ms=stt_result.get("duration_ms"),
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
+            t1_5_llm_start=t1_5_llm_start,
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
             model_name=llm_model,
@@ -236,9 +238,10 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         
         await self.session_service.calculate_metrics(session_id)
         
-        # Calculate latencies
+        # Calculate latencies (sync: transit = 0, LLM = t2 - t1.5 = t2 - t1)
         asr_latency_ms = int(t1_asr_final - t0_user_end)
-        llm_latency_ms = int(t2_llm_final - t1_asr_final)
+        network_transit_ms = 0  # Sync mode: no network transit
+        llm_latency_ms = int(t2_llm_final - t1_5_llm_start)
         tts_latency_ms = int(t2_5_tts_ready - t2_llm_final)
         server_total_ms = int(t2_5_tts_ready - t0_user_end)
         
@@ -253,6 +256,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
             asr_latency_ms=asr_latency_ms,
+            network_transit_ms=network_transit_ms,
             llm_latency_ms=llm_latency_ms,
             tts_latency_ms=tts_latency_ms,
             server_total_ms=server_total_ms,
@@ -281,6 +285,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         reference_text: str | None = None,
         stt_confidence: float | None = None,
         stt_latency_ms: float | None = None,
+        server_final_timestamp_ms: float | None = None,
     ) -> Run0VoiceResponse:
         """Process pre-transcribed text through LLM → TTS pipeline.
         
@@ -289,18 +294,23 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         No STT processing is done here.
         
         Timestamp design for streaming mode:
-            t0_user_end: Client timestamp when streaming started (connectTime)
-            t1_asr_final: Client timestamp when final transcript received
-            t1_server_received: Server timestamp when this request arrived
+            t0_user_end: Client timestamp when recording started/stopped
+            t1_asr_final: Server timestamp when gRPC is_final received (= server_final_timestamp_ms)
+            t1_5_llm_start: Server timestamp when this POST request arrived
             t2_llm_final: Server timestamp when LLM completed
             t2_5_tts_ready: Server timestamp when TTS completed
         
-        STT latency = t1_asr_final - t0_user_end (client-side, correct for streaming)
-        LLM latency = t2_llm_final - t1_server_received (server-side only, excludes HTTP transit)
-        TTS latency = t2_5_tts_ready - t2_llm_final (server-side only)
+        STT latency = t1_asr_final - t0_user_end (mixed clocks, unavoidable)
+        Network Transit = t1_5_llm_start - t1_asr_final (server-server ✅)
+        LLM latency = t2_llm_final - t1_5_llm_start (server-server ✅)
+        TTS latency = t2_5_tts_ready - t2_llm_final (server-server ✅)
         """
-        # Record when the server received this request (for accurate LLM timing)
-        t1_server_received = time.time() * 1000
+        # t1.5: Record when the server received this POST request
+        t1_5_llm_start = time.time() * 1000
+        
+        # Use server's is_final timestamp as t1 if available (server clock)
+        if server_final_timestamp_ms:
+            t1_asr_final = server_final_timestamp_ms
         
         # Get or create session
         if session_id:
@@ -366,6 +376,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             content_text=transcript,
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
+            t1_5_llm_start=t1_5_llm_start,
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
             model_name=llm_model,
@@ -396,21 +407,19 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         await self.session_service.calculate_metrics(session_id)
         
         # STT latency calculation:
-        # - Streaming mode: use client-reported stt_latency_ms (stop → final transcript)
-        #   In streaming, the final transcript may arrive BEFORE the stop button is
-        #   pressed, so server-side calculation would be meaningless/negative.
-        #   Client calculates: max(0, finalTimestamp - recordingStopTime)
-        # - Sync mode: t1_asr_final - t0_user_end (always positive, server-side STT)
+        # - Streaming mode: use client-reported stt_latency_ms if available
+        # - Fallback: t1 - t0 (mixed clocks, but best we can do)
         if stt_latency_ms is not None:
-            # Streaming mode: use client's actual measurement
             asr_latency_ms = int(stt_latency_ms)
         else:
             asr_latency_ms = max(0, int(t1_asr_final - t0_user_end))
-        # LLM: server-side only (request received → LLM done), excludes HTTP transit
-        llm_latency_ms = int(t2_llm_final - t1_server_received)
-        # TTS: server-side only (LLM done → TTS done)
+        # Network transit: t1.5 - t1 (server-server, accurate)
+        network_transit_ms = max(0, int(t1_5_llm_start - t1_asr_final))
+        # LLM: t2 - t1.5 (server-server, pure LLM processing)
+        llm_latency_ms = int(t2_llm_final - t1_5_llm_start)
+        # TTS: t2.5 - t2 (server-server)
         tts_latency_ms = int(t2_5_tts_ready - t2_llm_final)
-        server_total_ms = int(t2_5_tts_ready - t1_server_received)
+        server_total_ms = int(t2_5_tts_ready - t1_5_llm_start)
         
         return Run0VoiceResponse(
             session_id=session_id,
@@ -423,6 +432,7 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
             t2_llm_final=t2_llm_final,
             t2_5_tts_ready=t2_5_tts_ready,
             asr_latency_ms=asr_latency_ms,
+            network_transit_ms=network_transit_ms,
             llm_latency_ms=llm_latency_ms,
             tts_latency_ms=tts_latency_ms,
             server_total_ms=server_total_ms,

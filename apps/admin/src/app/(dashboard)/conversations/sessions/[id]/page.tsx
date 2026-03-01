@@ -99,7 +99,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
 
     // Format duration
     const formatDuration = (ms?: number | null) => {
-        if (!ms) return '-';
+        if (ms === null || ms === undefined) return '-';
         if (ms < 1000) return `${Math.round(ms)}ms`;
         return `${(ms / 1000).toFixed(2)}s`;
     };
@@ -255,9 +255,10 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             {/* Latency Metrics Display logic */}
                                             {session?.experiment_type === 'run0' ? (
                                                 /* Latency Lab (run0): Show everything on the User's turn for E2E perspective */
-                                                (turn.asr_latency_ms || turn.llm_latency_ms || turn.tts_latency_ms) && (
+                                                (turn.asr_latency_ms || turn.llm_latency_ms || turn.tts_latency_ms || turn.network_transit_ms) && (
                                                     <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
                                                         {turn.asr_latency_ms && <span>STT: {turn.asr_latency_ms}ms</span>}
+                                                        {turn.network_transit_ms != null && turn.network_transit_ms > 0 && <span className="text-amber-600">Transit: {turn.network_transit_ms}ms</span>}
                                                         {turn.llm_latency_ms && <span>LLM: {turn.llm_latency_ms}ms</span>}
                                                         {turn.tts_latency_ms && <span>TTS: {turn.tts_latency_ms}ms</span>}
                                                     </div>
@@ -415,7 +416,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                     <CardTitle className="text-base">컴포넌트별 레이턴시</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="grid grid-cols-4 gap-4 text-center">
+                                    <div className="grid grid-cols-5 gap-4 text-center">
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
                                                 STT 평균
@@ -427,12 +428,21 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                         </div>
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
+                                                Transit 평균
+                                            </div>
+                                            <div className="text-xl font-bold text-amber-600">
+                                                {formatDuration(metrics.network_transit_avg_ms)}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">t1→t1.5</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-muted-foreground mb-1">
                                                 LLM 평균
                                             </div>
                                             <div className="text-xl font-bold">
                                                 {formatDuration(metrics.llm_avg_ms)}
                                             </div>
-                                            <div className="text-xs text-muted-foreground">t1→t2</div>
+                                            <div className="text-xs text-muted-foreground">t1.5→t2</div>
                                         </div>
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
@@ -470,7 +480,8 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                         <th className="text-left py-2 px-3">#</th>
                                                         <th className="text-left py-2 px-3">STT 모델</th>
                                                         <th className="text-right py-2 px-3">STT ({isStreamingSTT ? 'stop→final' : 't0→t1'})</th>
-                                                        <th className="text-right py-2 px-3">LLM (t1→t2)</th>
+                                                        <th className="text-right py-2 px-3">Transit (t1→t1.5)</th>
+                                                        <th className="text-right py-2 px-3">LLM (t1.5→t2)</th>
                                                         <th className="text-right py-2 px-3">TTS (t2→t2.5)</th>
                                                         <th className="text-right py-2 px-3">Client (t2.5→t3)</th>
                                                         <th className="text-right py-2 px-3 font-bold">E2E (t0→t3)</th>
@@ -488,6 +499,9 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                                 </td>
                                                                 <td className="text-right py-2 px-3 font-mono">
                                                                     {formatDuration(turn.asr_latency_ms)}
+                                                                </td>
+                                                                <td className="text-right py-2 px-3 font-mono text-amber-600">
+                                                                    {formatDuration(turn.network_transit_ms)}
                                                                 </td>
                                                                 <td className="text-right py-2 px-3 font-mono">
                                                                     {formatDuration(turn.llm_latency_ms)}

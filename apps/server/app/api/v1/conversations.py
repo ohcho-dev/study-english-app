@@ -242,10 +242,12 @@ async def process_text_input(
     session_id: UUID,
     background_tasks: BackgroundTasks,
     text: str = Form(..., description="User's text input"),
+    t0_user_end: float = Form(0.0, description="Client timestamp when recording stopped"),
+    t1_server_final: float = Form(0.0, description="Server timestamp when STT is_final received"),
 ):
     """Process user text input for My Turn session (skips STT).
     
-    Used in text input mode as alternative to audio recording.
+    Used in text input mode or after streaming STT provides final text.
     """
     service = MyTurnService(db)
     
@@ -255,8 +257,9 @@ async def process_text_input(
             audio_data=None,
             audio_format=None,
             background_tasks=background_tasks,
-            t0_user_end=0.0,
+            t0_user_end=t0_user_end,
             text_input=text,
+            t1_server_final=t1_server_final,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -665,6 +668,7 @@ async def process_text(
     warmup_iterations: int = Form(2, ge=0, description="Warmup iterations"),
     stt_confidence: float | None = Form(None, description="STT confidence from streaming"),
     stt_latency_ms: float | None = Form(None, description="Client-measured STT latency in ms (streaming mode)"),
+    server_final_timestamp_ms: float | None = Form(None, description="Server timestamp when is_final received (ms)"),
 ):
     """Process pre-transcribed text through LLM → TTS pipeline.
     
@@ -691,6 +695,7 @@ async def process_text(
             reference_text=reference_text,
             stt_confidence=stt_confidence,
             stt_latency_ms=stt_latency_ms,
+            server_final_timestamp_ms=server_final_timestamp_ms,
         )
         return result
     except ValueError as e:

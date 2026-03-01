@@ -363,6 +363,7 @@ class ConversationTurn(Base):
     # RUN0 timestamps (milliseconds, Unix epoch)
     t0_user_end = Column(Float, nullable=True)
     t1_asr_final = Column(Float, nullable=True)
+    t1_5_llm_start = Column(Float, nullable=True)  # LLM POST arrival (server clock)
     t2_llm_final = Column(Float, nullable=True)
     t2_5_tts_ready = Column(Float, nullable=True)
     t3_audio_play_start = Column(Float, nullable=True)
@@ -438,6 +439,7 @@ class SessionMetrics(Base):
     e2e_p50_ms = Column(Float, nullable=True)
     e2e_p95_ms = Column(Float, nullable=True)
     asr_avg_ms = Column(Float, nullable=True)
+    network_transit_avg_ms = Column(Float, nullable=True)  # t1→t1.5 avg
     llm_avg_ms = Column(Float, nullable=True)
     tts_avg_ms = Column(Float, nullable=True)
     client_load_avg_ms = Column(Float, nullable=True)  # t2.5→t3 avg

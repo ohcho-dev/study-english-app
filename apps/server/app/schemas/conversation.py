@@ -340,6 +340,7 @@ class SessionListItem(BaseModel):
     # Latency metrics (averages in ms)
     e2e_avg_ms: float | None = None
     asr_avg_ms: float | None = None
+    network_transit_avg_ms: float | None = None
     llm_avg_ms: float | None = None
     tts_avg_ms: float | None = None
     client_load_avg_ms: float | None = None
@@ -382,12 +383,14 @@ class TurnResponse(BaseModel):
     # Timing
     t0_user_end: float | None
     t1_asr_final: float | None
+    t1_5_llm_start: float | None = None
     t2_llm_final: float | None
     t2_5_tts_ready: float | None
     t3_audio_play_start: float | None
     
     # Computed latencies (ms)
     asr_latency_ms: float | None = None
+    network_transit_ms: float | None = None
     llm_latency_ms: float | None = None
     tts_latency_ms: float | None = None
     client_load_ms: float | None = None
@@ -450,6 +453,7 @@ class SessionMetricsResponse(BaseModel):
     e2e_p50_ms: float | None
     e2e_p95_ms: float | None
     asr_avg_ms: float | None
+    network_transit_avg_ms: float | None = None
     llm_avg_ms: float | None
     tts_avg_ms: float | None
     client_load_avg_ms: float | None = None
@@ -579,9 +583,10 @@ class Run0VoiceResponse(BaseModel):
     
     # Metrics
     asr_latency_ms: int = Field(description="t1 - t0")
-    llm_latency_ms: int = Field(description="t2 - t1")
-    tts_latency_ms: int = Field(description="t2_5 - t2")
-    server_total_ms: int = Field(description="t2_5 - t0")
+    network_transit_ms: int = Field(0, description="t1.5 - t1")
+    llm_latency_ms: int = Field(description="t2 - t1.5")
+    tts_latency_ms: int = Field(description="t2.5 - t2")
+    server_total_ms: int = Field(description="t2.5 - t1.5")
     
     # Accuracy / API info
     stt_confidence: float | None = Field(None, description="STT confidence (0~1)")
