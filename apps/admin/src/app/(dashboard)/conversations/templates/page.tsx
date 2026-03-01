@@ -32,7 +32,9 @@ export default function TemplatesPage() {
     };
 
     const handleDuplicate = async (id: string) => {
-        await duplicateTemplateMutation.mutateAsync(id);
+        const t = templates.find((x) => x.id === id);
+        const newName = t ? `${t.name} (Copy)` : 'Copy';
+        await duplicateTemplateMutation.mutateAsync({ id, newName });
     };
 
     const handleCreate = () => {

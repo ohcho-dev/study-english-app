@@ -126,11 +126,18 @@ class ScenarioDirector:
         
         # Determine LLM Model
         llm_model = "gemini-2.5-flash"
+        
+        # Priority 1: Template level Director model
+        if hasattr(self.template, 'director_llm_model') and self.template.director_llm_model:
+            llm_model = self.template.director_llm_model
+            
+        # Priority 2: Session Variant override
         if session.variant:
             try:
                 import json
                 variant_data = json.loads(session.variant)
-                llm_model = variant_data.get("llm_model", "gemini-2.5-flash")
+                if "llm_model" in variant_data:
+                     llm_model = variant_data.get("llm_model")
             except:
                 pass
 

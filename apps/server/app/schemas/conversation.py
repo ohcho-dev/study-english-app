@@ -199,6 +199,11 @@ class TemplateBase(BaseModel):
         None,
         description="Custom instruction for Scenario Director",
     )
+    director_llm_model: str | None = Field(
+        None,
+        max_length=100,
+        description="LLM model used for the Scenario Director",
+    )
 
 
 class TemplateCreate(TemplateBase):
@@ -225,6 +230,7 @@ class TemplateUpdate(BaseModel):
     first_speaker: FirstSpeakerType | None = None
     scene_context: str | None = None
     director_system_prompt: str | None = None
+    director_llm_model: str | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

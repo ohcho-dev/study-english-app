@@ -142,6 +142,7 @@ class ConversationTemplate(Base):
     
     # Director Settings
     director_system_prompt = Column(Text, nullable=True)  # Custom instruction for Scenario Director
+    director_llm_model = Column(String(100), nullable=True)  # LLM model for Scenario Director
     
     difficulty = Column(Integer, nullable=True)  # 1-5
     estimated_minutes = Column(Integer, nullable=True)

@@ -343,6 +343,10 @@ class ModelInfo(BaseModel):
     description: str | None = Field(default=None, description="Detailed model description")
     use_cases: list[str] = Field(default_factory=list, description="Recommended use cases")
     max_context_tokens: int | None = Field(default=None, description="Maximum context window")
+    
+    # Lifecycle dates
+    release_date: str | None = Field(default=None, description="Model release date in YYYY-MM-DD")
+    deprecation_date: str | None = Field(default=None, description="Model deprecation date in YYYY-MM-DD")
 
 
 # ============================================================================

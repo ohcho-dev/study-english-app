@@ -100,6 +100,7 @@ export interface Template {
     scene_context: string | null;
     // Director Settings
     director_system_prompt: string | null;
+    director_llm_model?: string | null;
     turn_sequence: ScenarioStep[] | null;
     participants: Participant[];
     created_at: string;
@@ -136,6 +137,7 @@ export interface TemplateCreate {
     director_system_prompt?: string;
     turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
+    director_llm_model?: string;
 }
 
 export interface TemplateUpdate {
@@ -155,6 +157,7 @@ export interface TemplateUpdate {
     director_system_prompt?: string;
     turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
+    director_llm_model?: string;
 }
 
 // ============================================================================

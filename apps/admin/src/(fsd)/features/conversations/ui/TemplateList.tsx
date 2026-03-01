@@ -71,7 +71,8 @@ export const TemplateList = ({
     };
 
     // Get difficulty stars
-    const getDifficultyStars = (difficulty: number) => {
+    const getDifficultyStars = (difficulty: number | null) => {
+        if (!difficulty) return 'N/A';
         return '⭐'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
     };
 
@@ -235,13 +236,12 @@ export const TemplateList = ({
                                 </div>
 
                                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                    <span title={`난이도 ${template.difficulty}/5`}>
-                                        {getDifficultyStars(template.difficulty)}
-                                    </span>
                                     <span>
                                         참여자 {template.participant_count}명
                                     </span>
-                                    <span>~{template.estimated_minutes}분</span>
+                                    <span>
+                                        {template.is_active ? '활성화' : '비활성화'}
+                                    </span>
                                 </div>
                             </CardContent>
                         </Card>

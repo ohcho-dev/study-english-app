@@ -116,6 +116,10 @@ async def create_template(db: DbSession, data: TemplateCreate):
 @router.patch("/templates/{template_id}", response_model=TemplateResponse)
 async def update_template(db: DbSession, template_id: UUID, data: TemplateUpdate):
     """Update a conversation template."""
+    import logging
+    logging.warning(f"DEBUG: update_template payload: {data.model_dump(exclude={'participants'})}")
+    logging.warning(f"DEBUG: director_llm_model explicitly: {data.director_llm_model}")
+    
     service = TemplateService(db)
     template = await service.update(template_id, data)
     

@@ -8,9 +8,9 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
     # ========================================================================
     # Gemini 3 (Latest - Preview)
     # ========================================================================
-    "gemini-3-pro-preview": ModelInfo(
-        id="gemini-3-pro-preview",
-        name="Gemini 3 Pro (Preview)",
+    "gemini-3.1-pro-preview": ModelInfo(
+        id="gemini-3.1-pro-preview",
+        name="Gemini 3.1 Pro (Preview)",
         provider="google",
         input_price_per_1m=2.50,
         output_price_per_1m=10.00,
@@ -18,9 +18,11 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         supports_audio_input=True,
         supports_audio_output=False,
         category="general",
-        description="최신 Gemini 3 Pro 모델. 복잡한 추론과 멀티모달 분석에 최적화.",
+        description="최신 Gemini 3.1 Pro 프리뷰 모델. 복잡한 추론과 멀티모달 분석에 최적화.",
         use_cases=["복잡한 분석", "문서 이해", "코드 생성", "이미지/동영상 분석"],
         max_context_tokens=2_000_000,
+        release_date="2026-02-19",
+        deprecation_date=None,
     ),
     "gemini-3-flash-preview": ModelInfo(
         id="gemini-3-flash-preview",
@@ -32,9 +34,11 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         supports_audio_input=True,
         supports_audio_output=False,
         category="general",
-        description="빠르고 저렴한 Gemini 3 모델. 일반적인 파이프라인 실험에 추천.",
+        description="빠르고 저렴한 Gemini 3 Flash 모델.",
         use_cases=["빠른 응답", "대량 처리", "간단한 분석", "멀티모달 입력"],
         max_context_tokens=1_000_000,
+        release_date="2025-12-17",
+        deprecation_date=None,
     ),
     
     # ========================================================================
@@ -42,7 +46,7 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
     # ========================================================================
     "gemini-2.5-pro": ModelInfo(
         id="gemini-2.5-pro",
-        name="Gemini 2.5 Pro",
+        name="Gemini 2.5 Pro (Deprecated: 2026-06-17)",
         provider="google",
         input_price_per_1m=1.50,
         output_price_per_1m=6.00,
@@ -50,13 +54,15 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         supports_audio_input=True,
         supports_audio_output=False,
         category="general",
-        description="안정적인 프로덕션용 Pro 모델. 정확도 높은 분석에 적합.",
+        description="안정적인 프로덕션용 Pro 모델. (권장 교체: gemini-3.1-pro-preview)",
         use_cases=["프로덕션 배포", "정확한 피드백", "긴 문맥 처리"],
         max_context_tokens=2_000_000,
+        release_date="2025-06-17",
+        deprecation_date="2026-06-17",
     ),
     "gemini-2.5-flash": ModelInfo(
         id="gemini-2.5-flash",
-        name="Gemini 2.5 Flash",
+        name="Gemini 2.5 Flash (Deprecated: 2026-06-17)",
         provider="google",
         input_price_per_1m=0.10,
         output_price_per_1m=0.40,
@@ -64,17 +70,35 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         supports_audio_input=True,
         supports_audio_output=False,
         category="general",
-        description="범용 실험용 모델. 속도와 비용 효율성의 균형.",
+        description="범용 실험용 모델. (권장 교체: gemini-3-flash-preview)",
         use_cases=["일반 실험", "파이프라인 테스트", "학습자 발화 분석"],
         max_context_tokens=1_000_000,
+        release_date="2025-06-17",
+        deprecation_date="2026-06-17",
+    ),
+    "gemini-2.5-flash-lite": ModelInfo(
+        id="gemini-2.5-flash-lite",
+        name="Gemini 2.5 Flash-Lite (Deprecated: 2026-07-22)",
+        provider="google",
+        input_price_per_1m=0.075,
+        output_price_per_1m=0.30,
+        supports_multimodal=True,
+        supports_audio_input=True,
+        supports_audio_output=False,
+        category="general",
+        description="경량화된 Gemini 2.5 모델.",
+        use_cases=["대량 트래픽 처리", "단순 응답"],
+        max_context_tokens=1_000_000,
+        release_date="2025-07-22",
+        deprecation_date="2026-07-22",
     ),
     
     # ========================================================================
-    # Gemini 2.0
+    # Gemini 2.0 (Deprecated Soon)
     # ========================================================================
     "gemini-2.0-flash": ModelInfo(
         id="gemini-2.0-flash",
-        name="Gemini 2.0 Flash",
+        name="Gemini 2.0 Flash (Deprecated: 2026-06-01)",
         provider="google",
         input_price_per_1m=0.10,
         output_price_per_1m=0.40,
@@ -82,8 +106,73 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         supports_audio_input=True,
         supports_audio_output=False,
         category="general",
-        description="이전 세대 Flash 모델. 레거시 호환용.",
-        use_cases=["기존 파이프라인 호환", "비용 절감"],
+        description="Gemini 2.0 주력 모델. (권장 교체: gemini-2.5-flash)",
+        use_cases=["범용 작업", "실시간 처리"],
+        max_context_tokens=1_000_000,
+        release_date="2025-02-05",
+        deprecation_date="2026-06-01",
+    ),
+    "gemini-2.0-flash-lite": ModelInfo(
+        id="gemini-2.0-flash-lite",
+        name="Gemini 2.0 Flash-Lite (Deprecated: 2026-06-01)",
+        provider="google",
+        input_price_per_1m=0.075,
+        output_price_per_1m=0.30,
+        supports_multimodal=True,
+        supports_audio_input=True,
+        supports_audio_output=False,
+        category="general",
+        description="경량화된 Gemini 2.0 모델. (권장 교체: gemini-2.5-flash-lite)",
+        use_cases=["대량 트래픽 처리", "간단한 분류"],
+        max_context_tokens=1_000_000,
+        release_date="2025-02-25",
+        deprecation_date="2026-06-01",
+    ),
+
+    
+    # ========================================================================
+    # Gemini 1.5
+    # ========================================================================
+    "gemini-1.5-pro": ModelInfo(
+        id="gemini-1.5-pro",
+        name="Gemini 1.5 Pro",
+        provider="google",
+        input_price_per_1m=1.25,
+        output_price_per_1m=5.00,
+        supports_multimodal=True,
+        supports_audio_input=True,
+        supports_audio_output=False,
+        category="general",
+        description="대부분의 작업에 준수한 성능을 보여주는 구세대 Pro.",
+        use_cases=["일반 추론"],
+        max_context_tokens=2_000_000,
+    ),
+    "gemini-1.5-flash": ModelInfo(
+        id="gemini-1.5-flash",
+        name="Gemini 1.5 Flash",
+        provider="google",
+        input_price_per_1m=0.075,
+        output_price_per_1m=0.30,
+        supports_multimodal=True,
+        supports_audio_input=True,
+        supports_audio_output=False,
+        category="general",
+        description="기본적인 텍스트 및 멀티모달 처리를 저비용으로 해결.",
+        use_cases=["비용 절감", "빠른 테스트"],
+        max_context_tokens=1_000_000,
+    ),
+    "gemini-1.5-flash-8b": ModelInfo(
+        id="gemini-1.5-flash-8b",
+        name="Gemini 1.5 Flash-8B",
+        provider="google",
+        input_price_per_1m=0.0375,
+        output_price_per_1m=0.15,
+        supports_multimodal=True,
+        supports_audio_input=True,
+        supports_audio_output=False,
+        category="general",
+        description="매우 가벼운 8B 파라미터 기반 Flash 모델. 가장 저렴함.",
+        use_cases=["프론트엔드 기본", "단순 응답"],
         max_context_tokens=1_000_000,
     ),
     
@@ -134,39 +223,7 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         description="양방향 오디오 모델. 음성 입력 분석 + 음성 출력 생성. 감정/억양 인식 가능.",
         use_cases=["학습자 발화 분석 + 음성 피드백", "대화형 AI", "실시간 음성 튜터"],
         max_context_tokens=1_000_000,
-    ),
-    
-    # ========================================================================
-    # OpenAI
-    # ========================================================================
-    "gpt-4o": ModelInfo(
-        id="gpt-4o",
-        name="GPT-4o",
-        provider="openai",
-        input_price_per_1m=5.00,
-        output_price_per_1m=15.00,
-        supports_multimodal=True,
-        supports_audio_input=True,
-        supports_audio_output=False,
-        category="general",
-        description="OpenAI의 최신 멀티모달 모델. 이미지/오디오 분석 지원.",
-        use_cases=["멀티모달 분석", "복잡한 추론", "다국어 지원"],
-        max_context_tokens=128_000,
-    ),
-    "gpt-4-turbo": ModelInfo(
-        id="gpt-4-turbo",
-        name="GPT-4 Turbo",
-        provider="openai",
-        input_price_per_1m=10.00,
-        output_price_per_1m=30.00,
-        supports_multimodal=True,
-        supports_audio_input=False,
-        supports_audio_output=False,
-        category="general",
-        description="GPT-4 고성능 버전. 긴 문맥과 정확한 지시 따르기에 최적화.",
-        use_cases=["정밀한 분석", "긴 문서 처리", "복잡한 지시"],
-        max_context_tokens=128_000,
-    ),
+    )
 }
 
 

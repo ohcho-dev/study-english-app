@@ -15,7 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs'; // 
 import { Textarea } from '@/shared/ui/textarea'; // Assuming Textarea exists, or verify later. Wait, Textarea is usually in standard shadcn. Check `textarea.tsx` or use `textarea` html tag if not found.
 import { Label } from '@/shared/ui/label'; // Import Label
 import { useEffect } from 'react';
-import { getDirectorPromptSpec } from '../api/conversationsApi';
+import { useQuery } from '@tanstack/react-query';
+import { getDirectorPromptSpec, getLLMModels } from '../api/conversationsApi';
 import { useVoiceOptions } from '../model/useVoiceOptions';
 
 // Voice settings are controlled in experiment page, not template
@@ -55,6 +56,8 @@ const FIRST_SPEAKER_OPTIONS: { value: FirstSpeaker; label: string; description: 
     { value: 'user_first', label: '사용자', description: '사용자가 먼저 말하기' },
 ];
 
+
+
 export const TemplateEditor = ({
     template,
     onSave,
@@ -63,6 +66,13 @@ export const TemplateEditor = ({
 }: TemplateEditorProps) => {
     const { groupedOptions = [] } = useVoiceOptions();
     const isNew = !template;
+
+    // Fetch dynamic LLM models
+    const { data: llmModels = [] } = useQuery({
+        queryKey: ['llm-models'],
+        queryFn: getLLMModels,
+        staleTime: 5 * 60 * 1000,
+    });
 
     // Form state
     const [name, setName] = useState(template?.name || '');
@@ -80,6 +90,7 @@ Keep responses concise (1-3 sentences) and conversational.`
     const [sceneContext, setSceneContext] = useState(template?.scene_context || '');
     // Director Settings
     const [directorSystemPrompt, setDirectorSystemPrompt] = useState(template?.director_system_prompt || '');
+    const [directorLlmModel, setDirectorLlmModel] = useState(template?.director_llm_model || 'gemini-1.5-flash-8b');
     // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
@@ -167,23 +178,31 @@ Keep responses concise (1-3 sentences) and conversational.`
 
     // Handle save
     const handleSave = async () => {
-        const data: TemplateCreate | TemplateUpdate = {
-            name,
-            description: description || undefined,
-            mode,
-            system_prompt: systemPrompt,
-            topic: topic || undefined,
-            // My Turn additions
-            first_speaker: firstSpeaker,
-            scene_context: sceneContext || undefined,
-            director_system_prompt: directorSystemPrompt || undefined,
-            turn_sequence: turnSequence,
-            // difficulty and estimated_minutes are set in experiment page
-            is_active: isActive,
-            participants,
-        };
+        console.log("handleSave triggered!");
+        try {
+            const data: TemplateCreate | TemplateUpdate = {
+                name,
+                description: description || undefined,
+                mode,
+                system_prompt: systemPrompt,
+                topic: topic || undefined,
+                // My Turn additions
+                first_speaker: firstSpeaker,
+                scene_context: sceneContext || undefined,
+                director_system_prompt: directorSystemPrompt || undefined,
+                director_llm_model: directorLlmModel || undefined,
+                turn_sequence: turnSequence,
+                // difficulty and estimated_minutes are set in experiment page
+                is_active: isActive,
+                participants,
+            };
 
-        await onSave(data);
+            console.log("Payload to save:", data);
+            await onSave(data);
+            console.log("onSave completed successfully!");
+        } catch (error) {
+            console.error("Error inside handleSave:", error);
+        }
     };
 
     // --- Turn Sequence Handlers ---
@@ -389,26 +408,47 @@ Keep responses concise (1-3 sentences) and conversational.`
                                             </details>
                                         </div>
 
-                                        <Label htmlFor="director_system_prompt">Additional Instructions (Custom)</Label>
-                                        <Textarea
-                                            id="director_system_prompt"
-                                            value={directorSystemPrompt}
-                                            onChange={(e) => setDirectorSystemPrompt(e.target.value)}
-                                            placeholder="Enter specific rules (e.g., 'If user speaks Korean, assign to Sarah')..."
-                                            className="min-h-[200px] font-mono text-sm"
-                                        />
-                                        <div className="text-xs text-muted-foreground space-y-1">
-                                            <p>These instructions are <strong>appended</strong> to the Base Prompt.</p>
-                                            <div className="bg-muted p-2 rounded">
-                                                <strong>Injected Variables:</strong>
-                                                <br />
-                                                <code>{"{{participants}}"}</code> : Participants list & roles
-                                                <br />
-                                                <code>{"{{script}}"}</code> : Scenario Script (Turn Sequence)
-                                                <br />
-                                                <code>{"{{history}}"}</code> : Conversation History
-                                                <br />
-                                                <code>{"{{user_input}}"}</code> : User's latest input
+                                        <div className="space-y-2">
+                                            <Label htmlFor="director_llm_model">오케스트레이터 모델 (Director LLM)</Label>
+                                            <select
+                                                id="director_llm_model"
+                                                value={directorLlmModel}
+                                                onChange={(e) => setDirectorLlmModel(e.target.value)}
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                                            >
+                                                {llmModels.map((m) => (
+                                                    <option key={m.id} value={m.id}>
+                                                        {m.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <p className="text-xs text-muted-foreground">
+                                                대화 흐름을 제어하는 오케스트레이터 전용 LLM 모델입니다.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="director_system_prompt">Additional Instructions (Custom)</Label>
+                                            <Textarea
+                                                id="director_system_prompt"
+                                                value={directorSystemPrompt}
+                                                onChange={(e) => setDirectorSystemPrompt(e.target.value)}
+                                                placeholder="Enter specific rules (e.g., 'If user speaks Korean, assign to Sarah')..."
+                                                className="min-h-[200px] font-mono text-sm"
+                                            />
+                                            <div className="text-xs text-muted-foreground space-y-1">
+                                                <p>These instructions are <strong>appended</strong> to the Base Prompt.</p>
+                                                <div className="bg-muted p-2 rounded">
+                                                    <strong>Injected Variables:</strong>
+                                                    <br />
+                                                    <code>{"{{participants}}"}</code> : Participants list & roles
+                                                    <br />
+                                                    <code>{"{{script}}"}</code> : Scenario Script (Turn Sequence)
+                                                    <br />
+                                                    <code>{"{{history}}"}</code> : Conversation History
+                                                    <br />
+                                                    <code>{"{{user_input}}"}</code> : User's latest input
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

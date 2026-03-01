@@ -43,7 +43,7 @@ export const updatePipeline = async (
 };
 
 export const deletePipeline = async (id: string): Promise<{ message: string }> => {
-    return api.delete<{ message: string }>(`${AI_LAB_BASE}/pipelines/${id}`);
+    return (await api.delete(`${AI_LAB_BASE}/pipelines/${id}`)) as any;
 };
 
 // ============================================================================

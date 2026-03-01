@@ -16,8 +16,8 @@ export default function NewTemplatePage() {
     const router = useRouter();
     const createTemplateMutation = useCreateTemplate();
 
-    const handleSave = async (data: TemplateCreate) => {
-        await createTemplateMutation.mutateAsync(data);
+    const handleSave = async (data: TemplateCreate | any) => {
+        await createTemplateMutation.mutateAsync(data as TemplateCreate);
         router.push('/conversations/templates');
     };
 
