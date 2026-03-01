@@ -707,7 +707,8 @@ class SessionService:
                 e2e_latencies.append(turn.t3_audio_play_start - turn.t0_user_end)
             
             if turn.t0_user_end and turn.t1_asr_final:
-                asr_latencies.append(turn.t1_asr_final - turn.t0_user_end)
+                # max(0, ...) because streaming STT may finalize before stop (t1 < t0)
+                asr_latencies.append(max(0, turn.t1_asr_final - turn.t0_user_end))
             
             if turn.t1_asr_final and turn.t2_llm_final:
                 llm_latencies.append(turn.t2_llm_final - turn.t1_asr_final)

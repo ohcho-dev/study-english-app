@@ -34,6 +34,10 @@ interface RecordingBarProps {
     onTextSubmit?: (text: string) => void;
     onEndSession: () => void;
     enableTextMode?: boolean;
+    /** Streaming STT callbacks — when provided, recording data is also forwarded to streaming */
+    onStreamStart?: () => void;
+    onStreamData?: (data: Blob) => void;
+    onStreamStop?: () => void;
 }
 
 export const RecordingBar = ({
@@ -45,6 +49,9 @@ export const RecordingBar = ({
     onTextSubmit,
     onEndSession,
     enableTextMode = true,
+    onStreamStart,
+    onStreamData,
+    onStreamStop,
 }: RecordingBarProps) => {
     const [isTextMode, setIsTextMode] = useState(false);
     const [textValue, setTextValue] = useState('');
@@ -61,8 +68,13 @@ export const RecordingBar = ({
                 console.warn(`Audio too small (${result.blob.size} bytes), skipping send`);
                 return;
             }
+            // In streaming mode, send stop signal BEFORE processing recording blob
+            // (matches Run0 VoiceRecorder options.onStop pattern)
+            onStreamStop?.();
             onRecordingComplete(result.blob, result.t0UserEnd);
         },
+        onStart: onStreamStart,
+        onDataAvailable: onStreamData,
     });
 
     // Auto-recording: start recording when it becomes user's turn

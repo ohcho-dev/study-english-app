@@ -71,36 +71,53 @@ const TranscriptEntry = ({ message }: { message: ChatMessage }) => {
         }
     }, [message.id, message.text, showTranslation]);
 
-    const speakerColor = message.isUser
-        ? 'text-emerald-400'
-        : 'text-blue-400';
+    const isInterim = message.id === '__streaming_interim__';
+    const isStreamingFinal = message.id === '__streaming_final__';
+    const isStreamingMsg = isInterim || isStreamingFinal;
+
+    const speakerColor = isInterim
+        ? 'text-amber-400'
+        : message.isUser
+            ? 'text-emerald-400'
+            : 'text-blue-400';
 
     return (
-        <div className="group px-4 py-2 hover:bg-card/30 transition-colors rounded-lg">
+        <div className={cn(
+            "group px-4 py-2 hover:bg-card/30 transition-colors rounded-lg",
+        )}>
             {/* Main message row */}
             <div className="flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                     <span className={cn('text-xs font-semibold', speakerColor)}>
                         {message.speaker}:
                     </span>
-                    <span className="text-sm text-foreground/90 ml-1.5 leading-relaxed">
+                    <span className={cn(
+                        "text-sm ml-1.5 leading-relaxed transition-all duration-200",
+                        isInterim
+                            ? "text-foreground/50 italic"
+                            : isStreamingFinal
+                                ? "text-foreground/80"
+                                : "text-foreground/90"
+                    )}>
                         {message.text}
                     </span>
                 </div>
 
-                {/* Translation toggle */}
-                <button
-                    onClick={handleTranslate}
-                    className={cn(
-                        'flex-shrink-0 p-1 rounded-md transition-all mt-0.5',
-                        'text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50',
-                        'sm:opacity-0 sm:group-hover:opacity-100',
-                        showTranslation && 'text-secondary opacity-100 sm:opacity-100'
-                    )}
-                    aria-label="번역 보기"
-                >
-                    <Languages className="h-3.5 w-3.5" />
-                </button>
+                {/* Translation toggle (hide for streaming messages) */}
+                {!isStreamingMsg && (
+                    <button
+                        onClick={handleTranslate}
+                        className={cn(
+                            'flex-shrink-0 p-1 rounded-md transition-all mt-0.5',
+                            'text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50',
+                            'sm:opacity-0 sm:group-hover:opacity-100',
+                            showTranslation && 'text-secondary opacity-100 sm:opacity-100'
+                        )}
+                        aria-label="번역 보기"
+                    >
+                        <Languages className="h-3.5 w-3.5" />
+                    </button>
+                )}
             </div>
 
             {/* Translation row */}

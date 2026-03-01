@@ -225,6 +225,8 @@ class ConversationParticipant(Base):
     # Model selection (admin-saved defaults)
     llm_model = Column(String(100), nullable=True)  # e.g., "gemini-2.5-flash"
     stt_model = Column(String(100), nullable=True)  # e.g., "google-chirp"
+    stt_mode = Column(String(20), nullable=True, default="streaming")  # "sync" | "streaming"
+    stt_streaming_display = Column(String(20), nullable=True, default="immediate")  # "immediate" | "final"
     tts_model = Column(String(100), nullable=True)  # e.g., "gemini-tts"
     tts_provider = Column(String(50), nullable=True)  # e.g., "gemini", "google"
     

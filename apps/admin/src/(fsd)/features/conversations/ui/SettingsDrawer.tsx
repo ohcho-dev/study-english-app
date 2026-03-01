@@ -41,6 +41,8 @@ export interface ParticipantConfig {
     difficulty?: number;
     llm_model?: string;
     stt_model?: string;
+    stt_mode?: 'sync' | 'streaming';
+    stt_streaming_display?: 'immediate' | 'final';
     tts_provider?: string;
     tts_model?: string;
     voice_id?: string;
@@ -121,7 +123,9 @@ export const SettingsDrawer = ({
             return {
                 participant_id: p.id,
                 llm_model: pConfig.llm_model || 'gemini-2.5-flash',
-                stt_model: pConfig.stt_model || 'latest_long',
+                stt_model: pConfig.stt_model || 'chirp_3',
+                stt_mode: pConfig.stt_mode || 'streaming',
+                stt_streaming_display: pConfig.stt_streaming_display || 'immediate',
                 tts_model: pConfig.tts_model || '',
                 tts_provider: pConfig.tts_provider || 'google-cloud',
                 voice_id: pConfig.voice_id || p.voice_id || '',
@@ -310,6 +314,62 @@ export const SettingsDrawer = ({
                                                     </div>
                                                 )}
 
+                                                {/* STT Mode (user participant only) */}
+                                                {p.participant_type === 'user' && (
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            STT 처리 방식
+                                                        </Label>
+                                                        <Select
+                                                            value={pConfig.stt_mode || 'streaming'}
+                                                            onValueChange={(v) => handleChange(p.id, { stt_mode: v as 'sync' | 'streaming' })}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="STT 방식" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="streaming">
+                                                                    <span>📡 스트리밍</span>
+                                                                    <span className="text-[10px] text-muted-foreground ml-1.5">— 음성 인식 즉시 시작 (빠름)</span>
+                                                                </SelectItem>
+                                                                <SelectItem value="sync">
+                                                                    <span>⚡ 동기식</span>
+                                                                    <span className="text-[10px] text-muted-foreground ml-1.5">— 녹음 완료 후 일괄 처리</span>
+                                                                </SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
+
+                                                {/* STT Streaming Display Mode (only when streaming) */}
+                                                {p.participant_type === 'user' && (pConfig.stt_mode || 'streaming') === 'streaming' && (
+                                                    <div className="space-y-1 pl-3 border-l-2 border-primary/20">
+                                                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                                            인식 텍스트 표시 방식
+                                                        </Label>
+                                                        <Select
+                                                            value={pConfig.stt_streaming_display || 'immediate'}
+                                                            onValueChange={(v) => handleChange(p.id, { stt_streaming_display: v as 'immediate' | 'final' })}
+                                                            disabled={disabled}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="표시 방식" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="immediate">
+                                                                    <span>🔤 실시간 표시</span>
+                                                                    <span className="text-[10px] text-muted-foreground ml-1.5">— 인식 중 텍스트를 즉시 표시</span>
+                                                                </SelectItem>
+                                                                <SelectItem value="final">
+                                                                    <span>✅ 확정 후 표시</span>
+                                                                    <span className="text-[10px] text-muted-foreground ml-1.5">— 인식 완료된 최종 텍스트만 표시</span>
+                                                                </SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
+
                                                 {/* LLM Model */}
                                                 {p.participant_type !== 'user' && (
                                                     <div className="space-y-1">
@@ -438,7 +498,7 @@ export const SettingsDrawer = ({
                                                 {/* Summary */}
                                                 <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground bg-muted/30 rounded-md p-2 font-mono">
                                                     {p.participant_type === 'user' && (
-                                                        <span>STT: {pConfig.stt_model || 'latest_long'}</span>
+                                                        <span>STT: {pConfig.stt_model || 'chirp_3'} ({(pConfig.stt_mode || 'streaming') === 'streaming' ? '스트리밍' : '동기식'})</span>
                                                     )}
                                                     {p.participant_type !== 'user' && (
                                                         <span>LLM: {pConfig.llm_model || 'gemini-2.5-flash'}</span>

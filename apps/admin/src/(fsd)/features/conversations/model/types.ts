@@ -50,6 +50,8 @@ export interface Participant {
     // Model selection (admin-saved)
     llm_model: string | null;
     stt_model: string | null;
+    stt_mode: string | null;
+    stt_streaming_display: string | null;
     tts_model: string | null;
     tts_provider: string | null;
     created_at: string;
@@ -71,6 +73,8 @@ export interface ParticipantCreate {
     // Model selection (admin-saved defaults)
     llm_model?: string;
     stt_model?: string;
+    stt_mode?: string;
+    stt_streaming_display?: string;
     tts_model?: string;
     tts_provider?: string;
 }

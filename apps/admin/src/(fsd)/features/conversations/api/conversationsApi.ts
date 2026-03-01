@@ -391,6 +391,8 @@ export const saveParticipantModels = async (
         participant_id: string;
         llm_model?: string;
         stt_model?: string;
+        stt_mode?: string;
+        stt_streaming_display?: string;
         tts_model?: string;
         tts_provider?: string;
         voice_id?: string;

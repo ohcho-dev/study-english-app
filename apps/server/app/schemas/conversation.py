@@ -97,6 +97,8 @@ class ParticipantBase(BaseModel):
     # Model selection (admin-saved defaults)
     llm_model: str | None = Field(None, max_length=100, description="LLM model ID")
     stt_model: str | None = Field(None, max_length=100, description="STT model ID")
+    stt_mode: str | None = Field(None, max_length=20, description="STT mode: sync or streaming")
+    stt_streaming_display: str | None = Field(None, max_length=20, description="Streaming display: immediate or final")
     tts_model: str | None = Field(None, max_length=100, description="TTS model ID")
     tts_provider: str | None = Field(None, max_length=50, description="TTS provider")
 
@@ -120,6 +122,8 @@ class ParticipantUpdate(BaseModel):
     avatar_url: str | None = None
     llm_model: str | None = None
     stt_model: str | None = None
+    stt_mode: str | None = None
+    stt_streaming_display: str | None = None
     tts_model: str | None = None
     tts_provider: str | None = None
 
@@ -418,7 +422,8 @@ class TurnResponse(BaseModel):
         t3 = self.t3_audio_play_start
         
         if t0 and t1:
-            self.asr_latency_ms = round(t1 - t0, 1)
+            # max(0, ...) because streaming STT may complete BEFORE stop (t1 < t0)
+            self.asr_latency_ms = max(0, round(t1 - t0, 1))
         if t1 and t2:
             self.llm_latency_ms = round(t2 - t1, 1)
         if t2 and t2_5:

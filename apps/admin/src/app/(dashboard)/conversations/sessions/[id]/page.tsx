@@ -82,6 +82,16 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
         }
     }
 
+    // Determine STT mode from session variant (for dynamic labels)
+    const sttMode = (() => {
+        try {
+            if (!session?.variant) return 'sync';
+            const v = typeof session.variant === 'string' ? JSON.parse(session.variant) : session.variant;
+            return v?.pipeline_config?.stt_mode || 'sync';
+        } catch { return 'sync'; }
+    })();
+    const isStreamingSTT = sttMode === 'streaming';
+
     // Format timestamp
     const formatTime = (dateString: string) => {
         return new Date(dateString).toLocaleString('ko-KR');
@@ -413,7 +423,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             <div className="text-xl font-bold">
                                                 {formatDuration(metrics.asr_avg_ms)}
                                             </div>
-                                            <div className="text-xs text-muted-foreground">t0→t1</div>
+                                            <div className="text-xs text-muted-foreground">{isStreamingSTT ? 'stop→final' : 't0→t1'}</div>
                                         </div>
                                         <div>
                                             <div className="text-sm text-muted-foreground mb-1">
@@ -459,7 +469,7 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     <tr className="border-b text-muted-foreground">
                                                         <th className="text-left py-2 px-3">#</th>
                                                         <th className="text-left py-2 px-3">STT 모델</th>
-                                                        <th className="text-right py-2 px-3">STT (t0→t1)</th>
+                                                        <th className="text-right py-2 px-3">STT ({isStreamingSTT ? 'stop→final' : 't0→t1'})</th>
                                                         <th className="text-right py-2 px-3">LLM (t1→t2)</th>
                                                         <th className="text-right py-2 px-3">TTS (t2→t2.5)</th>
                                                         <th className="text-right py-2 px-3">Client (t2.5→t3)</th>

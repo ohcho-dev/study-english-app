@@ -213,6 +213,10 @@ async def save_participant_models(
                 participant.llm_model = entry["llm_model"]
             if "stt_model" in entry:
                 participant.stt_model = entry["stt_model"]
+            if "stt_mode" in entry:
+                participant.stt_mode = entry["stt_mode"]
+            if "stt_streaming_display" in entry:
+                participant.stt_streaming_display = entry["stt_streaming_display"]
             if "tts_model" in entry:
                 participant.tts_model = entry["tts_model"]
             if "tts_provider" in entry:

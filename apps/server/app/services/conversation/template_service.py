@@ -159,6 +159,8 @@ class TemplateService:
                     avatar_url=p.avatar_url,
                     llm_model=p.llm_model,
                     stt_model=p.stt_model,
+                    stt_mode=p.stt_mode,
+                    stt_streaming_display=p.stt_streaming_display,
                     tts_model=p.tts_model,
                     tts_provider=p.tts_provider,
                     created_at=p.created_at,
@@ -211,6 +213,8 @@ class TemplateService:
                 difficulty=p_data.difficulty,
                 llm_model=p_data.llm_model,
                 stt_model=p_data.stt_model,
+                stt_mode=p_data.stt_mode,
+                stt_streaming_display=p_data.stt_streaming_display,
                 tts_model=p_data.tts_model,
                 tts_provider=p_data.tts_provider,
                 greeting_message=p_data.greeting_message,
@@ -324,6 +328,8 @@ class TemplateService:
                     p.difficulty = p_data.difficulty if p_data.difficulty is not None else p.difficulty
                     p.llm_model = p_data.llm_model if p_data.llm_model is not None else p.llm_model
                     p.stt_model = p_data.stt_model if p_data.stt_model is not None else p.stt_model
+                    p.stt_mode = p_data.stt_mode if p_data.stt_mode is not None else p.stt_mode
+                    p.stt_streaming_display = p_data.stt_streaming_display if p_data.stt_streaming_display is not None else p.stt_streaming_display
                     p.tts_model = p_data.tts_model if p_data.tts_model is not None else p.tts_model
                     p.tts_provider = p_data.tts_provider if p_data.tts_provider is not None else p.tts_provider
                     p.greeting_message = p_data.greeting_message if p_data.greeting_message is not None else p.greeting_message
@@ -346,6 +352,8 @@ class TemplateService:
                         difficulty=p_data.difficulty,
                         llm_model=p_data.llm_model,
                         stt_model=p_data.stt_model,
+                        stt_mode=p_data.stt_mode,
+                        stt_streaming_display=p_data.stt_streaming_display,
                         tts_model=p_data.tts_model,
                         tts_provider=p_data.tts_provider,
                         greeting_message=p_data.greeting_message,

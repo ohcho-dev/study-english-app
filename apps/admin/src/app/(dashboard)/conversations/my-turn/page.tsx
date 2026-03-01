@@ -137,7 +137,9 @@ const MyTurnContent = () => {
                     difficulty: p.difficulty || 1,
                     voice_id: p.voice_id || undefined,
                     llm_model: p.llm_model || 'gemini-2.5-flash',
-                    stt_model: p.stt_model || 'latest_long',
+                    stt_model: p.stt_model || 'chirp_3',
+                    stt_mode: (p.stt_mode as 'sync' | 'streaming') || 'streaming',
+                    stt_streaming_display: (p.stt_streaming_display as 'immediate' | 'final') || 'immediate',
                     tts_provider: p.tts_provider || 'google-cloud',
                     tts_model: p.tts_model || undefined,
                 };
@@ -406,6 +408,7 @@ const MyTurnContent = () => {
                         onSessionEnd={handleSessionEnd}
                         isEnded={pageState === 'ended'}
                         userName={user?.username || 'User'}
+                        sessionConfig={sessionConfig}
                     />
                 </div>
             </div>

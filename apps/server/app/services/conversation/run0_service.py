@@ -395,13 +395,15 @@ IMPORTANT: Always respond in English only, regardless of what language the user 
         
         await self.session_service.calculate_metrics(session_id)
         
-        # STT: For streaming mode, measure the gap from recording stop to server
-        # processing start (t1_server_received - t0_user_end). This captures the
-        # pipeline overhead (React re-render + POST network) and makes
-        # E2E ≈ STT + LLM + TTS + Client. For sync mode, use timestamp diff.
+        # STT latency calculation:
+        # - Streaming mode: use client-reported stt_latency_ms (stop → final transcript)
+        #   In streaming, the final transcript may arrive BEFORE the stop button is
+        #   pressed, so server-side calculation would be meaningless/negative.
+        #   Client calculates: max(0, finalTimestamp - recordingStopTime)
+        # - Sync mode: t1_asr_final - t0_user_end (always positive, server-side STT)
         if stt_latency_ms is not None:
-            # Streaming mode: time from recording stop to server starting processing
-            asr_latency_ms = max(0, int(t1_server_received - t0_user_end))
+            # Streaming mode: use client's actual measurement
+            asr_latency_ms = int(stt_latency_ms)
         else:
             asr_latency_ms = max(0, int(t1_asr_final - t0_user_end))
         # LLM: server-side only (request received → LLM done), excludes HTTP transit
