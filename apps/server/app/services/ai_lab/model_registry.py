@@ -128,53 +128,6 @@ MODEL_REGISTRY: dict[str, ModelInfo] = {
         release_date="2025-02-25",
         deprecation_date="2026-06-01",
     ),
-
-    
-    # ========================================================================
-    # Gemini 1.5
-    # ========================================================================
-    "gemini-1.5-pro": ModelInfo(
-        id="gemini-1.5-pro",
-        name="Gemini 1.5 Pro",
-        provider="google",
-        input_price_per_1m=1.25,
-        output_price_per_1m=5.00,
-        supports_multimodal=True,
-        supports_audio_input=True,
-        supports_audio_output=False,
-        category="general",
-        description="대부분의 작업에 준수한 성능을 보여주는 구세대 Pro.",
-        use_cases=["일반 추론"],
-        max_context_tokens=2_000_000,
-    ),
-    "gemini-1.5-flash": ModelInfo(
-        id="gemini-1.5-flash",
-        name="Gemini 1.5 Flash",
-        provider="google",
-        input_price_per_1m=0.075,
-        output_price_per_1m=0.30,
-        supports_multimodal=True,
-        supports_audio_input=True,
-        supports_audio_output=False,
-        category="general",
-        description="기본적인 텍스트 및 멀티모달 처리를 저비용으로 해결.",
-        use_cases=["비용 절감", "빠른 테스트"],
-        max_context_tokens=1_000_000,
-    ),
-    "gemini-1.5-flash-8b": ModelInfo(
-        id="gemini-1.5-flash-8b",
-        name="Gemini 1.5 Flash-8B",
-        provider="google",
-        input_price_per_1m=0.0375,
-        output_price_per_1m=0.15,
-        supports_multimodal=True,
-        supports_audio_input=True,
-        supports_audio_output=False,
-        category="general",
-        description="매우 가벼운 8B 파라미터 기반 Flash 모델. 가장 저렴함.",
-        use_cases=["프론트엔드 기본", "단순 응답"],
-        max_context_tokens=1_000_000,
-    ),
     
     # ========================================================================
     # Gemini TTS (Text-to-Speech)
