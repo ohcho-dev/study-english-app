@@ -24,7 +24,7 @@ export interface RecordingResult {
 }
 
 export interface UseVoiceRecorderOptions {
-    /** Max recording duration in seconds (default: 60) */
+    /** Max recording duration in seconds (default: 90) */
     maxDuration?: number;
     /** Callback when recording starts */
     onStart?: () => void;
@@ -48,7 +48,7 @@ export interface UseVoiceRecorderOptions {
 
 export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     const {
-        maxDuration = 60,
+        maxDuration = 90,
         onStart,
         onStop,
         onDataAvailable,
@@ -359,6 +359,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
 
     return {
         ...state,
+        maxDuration,
         startRecording,
         stopRecording,
         pauseRecording,

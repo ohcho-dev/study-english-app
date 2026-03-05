@@ -31,7 +31,7 @@ export const sessionKeys = {
  */
 export const useSessions = (
     page = 1,
-    size = 20,
+    size = 30,
     templateId?: string,
     status?: string
 ) => {

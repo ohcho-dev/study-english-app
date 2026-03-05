@@ -48,7 +48,7 @@ export const useRunExperiment = () => {
  */
 export const useLogs = (
     page = 1,
-    size = 20,
+    size = 30,
     pipelineId?: string
 ) => {
     return useQuery<PaginatedResponse<ExperimentLogSummary>>({

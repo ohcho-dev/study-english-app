@@ -4,9 +4,9 @@
  * Session Detail Page - View conversation session details and metrics
  */
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, MessageSquare, BarChart3, Volume2 } from 'lucide-react';
+import { ArrowLeft, Clock, MessageSquare, BarChart3, Volume2, ChevronDown, ChevronRight, Zap } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
@@ -17,8 +17,10 @@ import {
     useSession,
     useSessionTurns,
     useSessionMetrics,
+    getPipelineLogs,
 } from '@/(fsd)/features/conversations';
 import type { Turn, SessionStatus } from '@/(fsd)/features/conversations';
+import type { PipelineLog } from '@/(fsd)/features/conversations';
 
 interface PageParams {
     id: string;
@@ -36,6 +38,21 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     const { id } = use(params);
     const router = useRouter();
     const [activeTab, setActiveTab] = useState('metrics');
+    const [pipelineLogs, setPipelineLogs] = useState<PipelineLog[]>([]);
+    const [pipelineLoading, setPipelineLoading] = useState(false);
+    const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
+    const [moduleFilter, setModuleFilter] = useState<string>('all');
+
+    // Fetch pipeline logs when pipeline tab is selected
+    useEffect(() => {
+        if (activeTab === 'pipeline' && id) {
+            setPipelineLoading(true);
+            getPipelineLogs(id, moduleFilter === 'all' ? undefined : moduleFilter)
+                .then((res) => setPipelineLogs(res.items || []))
+                .catch(() => setPipelineLogs([]))
+                .finally(() => setPipelineLoading(false));
+        }
+    }, [activeTab, id, moduleFilter]);
 
     const { data: session, isLoading: sessionLoading } = useSession(id);
     const { data: turnsData, isLoading: turnsLoading } = useSessionTurns(id);
@@ -203,6 +220,10 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                 <TabsList>
                     <TabsTrigger value="conversation">대화 내용</TabsTrigger>
                     <TabsTrigger value="metrics">메트릭</TabsTrigger>
+                    <TabsTrigger value="pipeline">
+                        <Zap className="h-3.5 w-3.5 mr-1" />
+                        Pipeline
+                    </TabsTrigger>
                 </TabsList>
 
                 {/* Conversation Tab */}
@@ -553,6 +574,193 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                     </div>
                                 </CardContent>
                             </Card>
+                        </>
+                    )}
+                </TabsContent>
+
+                {/* Pipeline Logs Tab */}
+                <TabsContent value="pipeline" className="space-y-4">
+                    {/* Module Filter */}
+                    <div className="flex gap-2">
+                        {['all', 'evaluator', 'planner', 'conductor'].map((mod) => (
+                            <Button
+                                key={mod}
+                                variant={moduleFilter === mod ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setModuleFilter(mod)}
+                            >
+                                {mod === 'all' ? '전체' : mod.charAt(0).toUpperCase() + mod.slice(1)}
+                            </Button>
+                        ))}
+                    </div>
+
+                    {pipelineLoading ? (
+                        <Card>
+                            <CardContent className="py-8 text-center animate-pulse">
+                                <div className="h-4 bg-muted rounded w-1/4 mx-auto" />
+                            </CardContent>
+                        </Card>
+                    ) : pipelineLogs.length === 0 ? (
+                        <Card>
+                            <CardContent className="py-8 text-center text-muted-foreground">
+                                <Zap className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p>파이프라인 로그가 없습니다</p>
+                                <p className="text-xs mt-1">이 세션은 basic 모드이거나 v0.2 히스토리가 없습니다</p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <>
+                            {/* Summary Bar */}
+                            <Card>
+                                <CardContent className="py-3">
+                                    <div className="flex items-center gap-4 text-sm">
+                                        <span className="text-muted-foreground">총 {pipelineLogs.length}건</span>
+                                        <span className="text-muted-foreground">|</span>
+                                        <span>Evaluator: <strong>{pipelineLogs.filter(l => l.module_name === 'evaluator').length}</strong></span>
+                                        <span>Planner: <strong>{pipelineLogs.filter(l => l.module_name === 'planner').length}</strong></span>
+                                        <span>Conductor: <strong>{pipelineLogs.filter(l => l.module_name === 'conductor').length}</strong></span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Group by trace_id */}
+                            {(() => {
+                                const grouped = new Map<string, PipelineLog[]>();
+                                pipelineLogs.forEach((log) => {
+                                    const arr = grouped.get(log.trace_id) || [];
+                                    arr.push(log);
+                                    grouped.set(log.trace_id, arr);
+                                });
+
+                                return Array.from(grouped.entries()).map(([traceId, logs]) => {
+                                    const isExpanded = expandedTraces.has(traceId);
+                                    const totalMs = logs.reduce((sum, l) => sum + (l.duration_ms || 0), 0);
+                                    const turnIdx = logs[0]?.turn_index;
+
+                                    return (
+                                        <Card key={traceId}>
+                                            <CardHeader
+                                                className="py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                onClick={() => {
+                                                    const next = new Set(expandedTraces);
+                                                    if (isExpanded) next.delete(traceId);
+                                                    else next.add(traceId);
+                                                    setExpandedTraces(next);
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    {isExpanded
+                                                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                                    <div className="flex-1">
+                                                        <span className="text-sm font-medium">Turn #{turnIdx}</span>
+                                                        <span className="text-xs text-muted-foreground ml-2 font-mono">{traceId.slice(0, 8)}...</span>
+                                                    </div>
+                                                    {/* Duration bar */}
+                                                    <div className="flex items-center gap-1">
+                                                        {logs.map((l) => {
+                                                            const color = l.module_name === 'evaluator'
+                                                                ? 'bg-teal-500'
+                                                                : l.module_name === 'planner'
+                                                                    ? 'bg-blue-500'
+                                                                    : 'bg-amber-500';
+                                                            const width = totalMs > 0
+                                                                ? Math.max(4, ((l.duration_ms || 0) / totalMs) * 120)
+                                                                : 40;
+                                                            return (
+                                                                <div
+                                                                    key={l.id}
+                                                                    className={`h-3 rounded-sm ${color}`}
+                                                                    style={{ width: `${width}px` }}
+                                                                    title={`${l.module_name}: ${l.duration_ms?.toFixed(0) || '?'}ms`}
+                                                                />
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <span className="text-xs font-mono text-muted-foreground">{totalMs.toFixed(0)}ms</span>
+                                                </div>
+                                            </CardHeader>
+                                            {isExpanded && (
+                                                <CardContent className="pt-0 space-y-3">
+                                                    {logs.map((log) => (
+                                                        <div key={log.id} className="border rounded-lg p-3">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <Badge
+                                                                    variant={log.module_name === 'evaluator' ? 'default' : 'secondary'}
+                                                                    className={`text-xs ${log.module_name === 'evaluator' ? 'bg-teal-500/20 text-teal-700 border-teal-300'
+                                                                        : log.module_name === 'planner' ? 'bg-blue-500/20 text-blue-700 border-blue-300'
+                                                                            : 'bg-amber-500/20 text-amber-700 border-amber-300'
+                                                                        }`}
+                                                                >
+                                                                    {log.module_name.charAt(0).toUpperCase() + log.module_name.slice(1)}
+                                                                </Badge>
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    {log.duration_ms ? `${log.duration_ms.toFixed(0)}ms` : '-'}
+                                                                </span>
+                                                                {log.model_name && (
+                                                                    <span className="text-xs font-mono text-muted-foreground">
+                                                                        {log.model_name}
+                                                                    </span>
+                                                                )}
+                                                                {log.error_message && (
+                                                                    <Badge variant="destructive" className="text-xs">Error</Badge>
+                                                                )}
+                                                            </div>
+                                                            {/* Evaluator summary */}
+                                                            {log.module_name === 'evaluator' && log.output_json && (() => {
+                                                                const out = log.output_json as Record<string, Record<string, string | number>>;
+                                                                return (
+                                                                    <div className="flex gap-3 mb-2 text-xs">
+                                                                        <span>Score: <strong>{out?.aggregate?.overall_score ?? '-'}</strong></span>
+                                                                        <span>Issue: <strong>{out?.diagnosis?.primary_issue ?? '-'}</strong></span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {/* Planner summary */}
+                                                            {log.module_name === 'planner' && log.output_json && (() => {
+                                                                const out = log.output_json as Record<string, Record<string, string | number>>;
+                                                                return (
+                                                                    <div className="flex gap-3 mb-2 text-xs">
+                                                                        <span>Path: <strong>{out?.decision?.path ?? '-'}</strong></span>
+                                                                        <span>Action: <strong>{out?.decision?.action_code ?? '-'}</strong></span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {/* Conductor summary */}
+                                                            {log.module_name === 'conductor' && log.output_json && (() => {
+                                                                const out = log.output_json as Record<string, unknown>;
+                                                                return (
+                                                                    <div className="flex gap-3 mb-2 text-xs">
+                                                                        <span>Scripts: <strong>{Array.isArray(out?.scripts) ? out.scripts.length : 0}</strong></span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {/* Collapsible JSON */}
+                                                            <details className="mt-2">
+                                                                <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">I/O JSON 보기</summary>
+                                                                <div className="mt-2 space-y-2">
+                                                                    <div>
+                                                                        <div className="text-xs font-medium text-muted-foreground mb-1">Input</div>
+                                                                        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-40">
+                                                                            {JSON.stringify(log.input_json, null, 2)}
+                                                                        </pre>
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="text-xs font-medium text-muted-foreground mb-1">Output</div>
+                                                                        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-40">
+                                                                            {JSON.stringify(log.output_json, null, 2)}
+                                                                        </pre>
+                                                                    </div>
+                                                                </div>
+                                                            </details>
+                                                        </div>
+                                                    ))}
+                                                </CardContent>
+                                            )}
+                                        </Card>
+                                    );
+                                });
+                            })()}
                         </>
                     )}
                 </TabsContent>

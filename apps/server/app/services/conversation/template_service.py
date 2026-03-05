@@ -144,6 +144,15 @@ class TemplateService:
             scene_context=template.scene_context,
             director_system_prompt=template.director_system_prompt,
             director_llm_model=template.director_llm_model,
+            # Narrative Sync v0.2
+            pipeline_mode=template.pipeline_mode,
+            evaluator_prompt=template.evaluator_prompt,
+            planner_prompt=template.planner_prompt,
+            conductor_prompt=template.conductor_prompt,
+            evaluator_llm_model=template.evaluator_llm_model,
+            planner_llm_model=template.planner_llm_model,
+            conductor_llm_model=template.conductor_llm_model,
+            level_definitions=template.level_definitions,
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -196,6 +205,15 @@ class TemplateService:
             scene_context=data.scene_context,
             director_system_prompt=data.director_system_prompt,
             director_llm_model=data.director_llm_model,
+            # Narrative Sync v0.2
+            pipeline_mode=data.pipeline_mode,
+            evaluator_prompt=data.evaluator_prompt,
+            planner_prompt=data.planner_prompt,
+            conductor_prompt=data.conductor_prompt,
+            evaluator_llm_model=data.evaluator_llm_model,
+            planner_llm_model=data.planner_llm_model,
+            conductor_llm_model=data.conductor_llm_model,
+            level_definitions=data.level_definitions,
         )
         self.db.add(template)
         await self.db.flush()
@@ -279,6 +297,23 @@ class TemplateService:
             template.director_system_prompt = data.director_system_prompt
         if data.director_llm_model is not None:
             template.director_llm_model = data.director_llm_model
+        # Narrative Sync v0.2 — use model_fields_set to distinguish "not sent" from "sent as null"
+        if data.pipeline_mode is not None:
+            template.pipeline_mode = data.pipeline_mode
+        if "evaluator_prompt" in data.model_fields_set:
+            template.evaluator_prompt = data.evaluator_prompt or None
+        if "planner_prompt" in data.model_fields_set:
+            template.planner_prompt = data.planner_prompt or None
+        if "conductor_prompt" in data.model_fields_set:
+            template.conductor_prompt = data.conductor_prompt or None
+        if data.evaluator_llm_model is not None:
+            template.evaluator_llm_model = data.evaluator_llm_model
+        if data.planner_llm_model is not None:
+            template.planner_llm_model = data.planner_llm_model
+        if data.conductor_llm_model is not None:
+            template.conductor_llm_model = data.conductor_llm_model
+        if "level_definitions" in data.model_fields_set:
+            template.level_definitions = data.level_definitions
             
         # Update participants if provided
         if data.participants is not None:
@@ -421,6 +456,15 @@ class TemplateService:
             scene_context=existing.scene_context,
             director_system_prompt=existing.director_system_prompt,
             director_llm_model=existing.director_llm_model,
+            # v0.2 Pipeline
+            pipeline_mode=getattr(existing, 'pipeline_mode', 'basic') or 'basic',
+            evaluator_prompt=getattr(existing, 'evaluator_prompt', None),
+            planner_prompt=getattr(existing, 'planner_prompt', None),
+            conductor_prompt=getattr(existing, 'conductor_prompt', None),
+            evaluator_llm_model=getattr(existing, 'evaluator_llm_model', None),
+            planner_llm_model=getattr(existing, 'planner_llm_model', None),
+            conductor_llm_model=getattr(existing, 'conductor_llm_model', None),
+            level_definitions=getattr(existing, 'level_definitions', None),
             participants=[
                 {
                     "participant_type": p.participant_type,

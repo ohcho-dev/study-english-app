@@ -27,7 +27,7 @@ export const templateKeys = {
 /**
  * Hook to fetch paginated templates
  */
-export const useTemplates = (page = 1, size = 20, activeOnly = true) => {
+export const useTemplates = (page = 1, size = 30, activeOnly = true) => {
     return useQuery({
         queryKey: templateKeys.list(page, size, activeOnly),
         queryFn: () => getTemplates(page, size, activeOnly),

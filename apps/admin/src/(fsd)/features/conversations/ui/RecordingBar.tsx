@@ -153,8 +153,8 @@ export const RecordingBar = ({
     // Status message
     const getStatusMessage = () => {
         if (isProcessing) return 'Processing...';
-        if (recorder.isPaused) return `⏸ Paused ${recorder.formattedDuration}`;
-        if (recorder.isRecording) return `Recording ${recorder.formattedDuration}`;
+        if (recorder.isPaused) return `⏸ Paused ${recorder.formattedDuration} / ${recorder.formatDuration(recorder.maxDuration)}`;
+        if (recorder.isRecording) return `Recording ${recorder.formattedDuration} / ${recorder.formatDuration(recorder.maxDuration)}`;
         if (isUserTurn) return 'Your Turn! 🎤';
         if (currentSpeakerName) return `${currentSpeakerName} is speaking...`;
         return 'Waiting...';

@@ -208,6 +208,18 @@ class TemplateBase(BaseModel):
         max_length=100,
         description="LLM model used for the Scenario Director",
     )
+    # Narrative Sync v0.2
+    pipeline_mode: str | None = Field(
+        default="basic",
+        description="Pipeline mode: basic (ScenarioDirector) or v0.2 (Evaluator→Planner→Conductor)",
+    )
+    evaluator_prompt: str | None = Field(None, description="Custom Evaluator prompt (v0.2)")
+    planner_prompt: str | None = Field(None, description="Custom Planner prompt (v0.2)")
+    conductor_prompt: str | None = Field(None, description="Custom Conductor prompt (v0.2)")
+    evaluator_llm_model: str | None = Field(None, max_length=50, description="LLM model for Evaluator (v0.2)")
+    planner_llm_model: str | None = Field(None, max_length=50, description="LLM model for Planner (v0.2)")
+    conductor_llm_model: str | None = Field(None, max_length=50, description="LLM model for Conductor (v0.2)")
+    level_definitions: list | None = Field(None, description="Custom level definitions for v0.2 [{level, name, description, instruction}, ...]")
 
 
 class TemplateCreate(TemplateBase):
@@ -235,6 +247,15 @@ class TemplateUpdate(BaseModel):
     scene_context: str | None = None
     director_system_prompt: str | None = None
     director_llm_model: str | None = None
+    # Narrative Sync v0.2
+    pipeline_mode: str | None = None
+    evaluator_prompt: str | None = None
+    planner_prompt: str | None = None
+    conductor_prompt: str | None = None
+    evaluator_llm_model: str | None = None
+    planner_llm_model: str | None = None
+    conductor_llm_model: str | None = None
+    level_definitions: list | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

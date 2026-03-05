@@ -501,6 +501,14 @@ class MyTurnService:
         "neutral": {"pitch": 0.0, "speaking_rate_adj": 0.0},
     }
 
+    async def _complete_turn_wrapper(self, session_id: UUID, script_index: int = None):
+        """Wrapper for complete_turn that creates a new DB session for background tasks."""
+        from app.core.database import AsyncSessionLocal
+        
+        async with AsyncSessionLocal() as db:
+            service = MyTurnService(db)
+            await service.complete_turn(session_id, script_index=script_index, return_to_user_after=False)
+
     async def process_ai_turn(self, session: ConversationSession, participant, instruction: Optional[str] = None, return_to_user_after: bool = False, user_emotion: Optional[str] = None):
         """Generates AI response and saves it as a new turn."""
         # Status Check
@@ -556,16 +564,18 @@ class MyTurnService:
         history = await self.get_chat_history(session.id, limit=20) # Increased context-limit
         system_prompt = session.template.system_prompt
         
-        # Adjust prompt based on difficulty
+        # Adjust prompt based on difficulty (basic mode only; v0.2 uses pipeline level system)
         difficulty_instruction = ""
-        if difficulty <= 1:
-            difficulty_instruction = "Use very simple vocabulary and short sentences (A1 level)."
-        elif difficulty == 2:
-            difficulty_instruction = "Use simple vocabulary and clear sentences (A2 level)."
-        elif difficulty == 3:
-            difficulty_instruction = "Use intermediate vocabulary (B1 level)."
-        elif difficulty >= 4:
-            difficulty_instruction = "Use advanced vocabulary and natural expressions (B2/C1 level)."
+        pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
+        if pipeline_mode != "v0.2":
+            if difficulty <= 1:
+                difficulty_instruction = "Use very simple vocabulary and short sentences (A1 level)."
+            elif difficulty == 2:
+                difficulty_instruction = "Use simple vocabulary and clear sentences (A2 level)."
+            elif difficulty == 3:
+                difficulty_instruction = "Use intermediate vocabulary (B1 level)."
+            elif difficulty >= 4:
+                difficulty_instruction = "Use advanced vocabulary and natural expressions (B2/C1 level)."
 
         # Build participants list
         participants_desc = "Participants in this conversation:\n"
@@ -607,6 +617,42 @@ class MyTurnService:
         if instruction:
             context += f"\n\n[DIRECTOR'S INSTRUCTION]: {instruction}\nFollow this instruction strictly."
         
+        # ── v0.2 PIPELINE RESULT INJECTION ──
+        pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
+        pipeline_result = session_config.get("_pipeline_result")
+        
+        if pipeline_mode == "v0.2" and pipeline_result:
+            participant_type = participant.participant_type.value if hasattr(participant.participant_type, 'value') else str(participant.participant_type)
+            
+            if participant_type == "moderator":
+                # Moderator uses feedback_text from Conductor
+                feedback = pipeline_result.get("feedback_text", "")
+                feedback_instruction = pipeline_result.get("feedback_instruction", "")
+                if feedback:
+                    context += f"\n\n[CONDUCTOR FEEDBACK]:\n{feedback}"
+                    corrections = pipeline_result.get("corrections", [])
+                    better_expr = pipeline_result.get("better_expressions", [])
+                    if corrections:
+                        context += f"\nCorrections: {', '.join(corrections)}"
+                    if better_expr:
+                        context += f"\nBetter expressions: {', '.join(better_expr)}"
+                    if feedback_instruction:
+                        context += f"\n{feedback_instruction}"
+            else:
+                # AI participants get script or level instruction from Conductor
+                level = pipeline_result.get("level", 1)
+                level_instr = pipeline_result.get("level_instruction", "")
+                speaker_scripts = pipeline_result.get("speaker_scripts", {})
+                
+                my_script = speaker_scripts.get(participant.name, {})
+                if my_script.get("text"):
+                    instruction = my_script.get("instruction", "")
+                    context += f'\n\n[CONDUCTOR SCRIPT]:\n"{my_script["text"]}"'
+                    if instruction:
+                        context += f"\n{instruction}"
+                elif level_instr:
+                    context += f"\n\n[LEVEL INSTRUCTION]: Level {level}. {level_instr}"
+        
         # Add Emotion Context (Phase 5)
         if user_emotion and user_emotion != "neutral":
             context += f"\n[USER EMOTION]: The user seems {user_emotion}. Adjust your tone and response accordingly — be empathetic and match the emotional context."
@@ -618,8 +664,8 @@ class MyTurnService:
         from app.core.config import settings
         
         # 2. Pre-LLM Status Check (in case context building took time)
-        session = await self.session_service.get_by_id(session.id) # Re-fetch status
-        if session.status != SessionStatus.ACTIVE:
+        refetched_session = await self.session_service.get_by_id(session.id) # Re-fetch status
+        if not refetched_session or refetched_session.status != SessionStatus.ACTIVE.value:
              logger.info(f"[process_ai_turn] Session ended before LLM call. Aborting.")
              return
 
@@ -646,45 +692,81 @@ class MyTurnService:
             genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
             model = genai.GenerativeModel(llm_model)
             
-            try:
-                # Build contextual generation prompt
-                last_speaker_hint = ""
-                if history:
-                    lines = history.strip().split("\n")
-                    if lines:
-                        last_line = lines[-1]
-                        if ":" in last_line:
-                            last_speaker_name = last_line.split(":")[0].strip()
-                            last_speaker_hint = f"The last person who spoke was '{last_speaker_name}'."
-                
-                generation_prompt = f"""{context}
-
-{last_speaker_hint}
-
-It is now YOUR turn to speak as {participant.name}.
-IMPORTANT RULES:
-- Respond to the LAST SPEAKER directly (whether it was a user or another AI participant).
-- If the last speaker was another AI, engage with THEIR comment naturally (agree, disagree, add to the topic, react).
-- If the last speaker was the USER, respond to the user directly.
-- Keep your response relatively short (1-3 sentences). This is a conversation, not a monologue.
-- Use the persona and vocabulary level defined above.
-- output ONLY the spoken text. No "Sarah:" prefix.
-"""
-                
-                # Check for "return_to_user_after" in variant (set by process_user_turn)
-                # If set, we might want to guide the AI to ask a question to the user?
-                # Actually, the Director's Instruction already covers this ("Ask clarification...").
-                
-                # Generate
-                
-                # Re-capture t1_llm_start right before actual generation for maximum accuracy
+            # Build contextual generation prompt
+            pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
+            
+            # --- Check if we can bypass LLM (if Conductor gave an exact script) ---
+            should_bypass_llm = False
+            pre_generated_text = ""
+            last_error = None
+            
+            if pipeline_mode == "v0.2" and pipeline_result:
+                speaker_scripts = pipeline_result.get("speaker_scripts", {})
+                my_script = speaker_scripts.get(participant.name, {})
+                if my_script.get("text"):
+                    should_bypass_llm = True
+                    pre_generated_text = my_script.get("text")
+            
+            if should_bypass_llm:
+                logger.info(f"[process_ai_turn] Bypassing LLM for {participant.name}. Using Conductor script directly.")
+                reply_text = pre_generated_text
                 t1_llm_start = time.time() * 1000
-                response = model.generate_content(generation_prompt)
-                reply_text = response.text.strip()
+                generation_prompt = "[LLM Bypassed - Used Conductor Script]\n" + pre_generated_text
+            else:
+                if pipeline_mode == "v0.2":
+                    # v0.2: System prompt from Admin controls all behavior.
+                    # Only add minimal output formatting instruction.
+                    generation_prompt = f"""{context}
+    
+    It is now YOUR turn to speak as {participant.name}.
+    Output ONLY the spoken text. No name prefix.
+    """
+                else:
+                    # basic mode: keep legacy behavior
+                    last_speaker_hint = ""
+                    if history:
+                        lines = history.strip().split("\n")
+                        if lines:
+                            last_line = lines[-1]
+                            if ":" in last_line:
+                                last_speaker_name = last_line.split(":")[0].strip()
+                                last_speaker_hint = f"The last person who spoke was '{last_speaker_name}'."
+                    
+                    generation_prompt = f"""{context}
+    
+    {last_speaker_hint}
+    
+    It is now YOUR turn to speak as {participant.name}.
+    IMPORTANT RULES:
+    - Respond to the LAST SPEAKER directly (whether it was a user or another AI participant).
+    - If the last speaker was another AI, engage with THEIR comment naturally (agree, disagree, add to the topic, react).
+    - If the last speaker was the USER, respond to the user directly.
+    - Keep your response relatively short (1-3 sentences). This is a conversation, not a monologue.
+    - Use the persona and vocabulary level defined above.
+    - output ONLY the spoken text. No "{participant.name}:" prefix.
+    """
                 
-            except Exception as e:
-                logger.error(f"GenAI Error: {e}")
-                reply_text = "I see." # Fallback
+                # Generate with retry (max 3 attempts)
+                MAX_RETRIES = 3
+                last_error = None
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        # Re-capture t1_llm_start right before actual generation for maximum accuracy
+                        t1_llm_start = time.time() * 1000
+                        response = model.generate_content(generation_prompt)
+                        reply_text = response.text.strip()
+                        last_error = None
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if attempt < MAX_RETRIES - 1:
+                            logger.warning(f"[process_ai_turn] LLM attempt {attempt + 1}/{MAX_RETRIES} failed for {participant.name}: {e}. Retrying...")
+                        await asyncio.sleep(1)  # Brief delay before retry
+                    else:
+                        logger.error(f"[process_ai_turn] LLM failed after {MAX_RETRIES} attempts for {participant.name}: {e}")
+            
+            if last_error:
+                raise Exception(f"AI turn LLM generation failed after {MAX_RETRIES} attempts: {last_error}")
         else:
             logger.warning("GOOGLE_AI_API_KEY not set. Using dummy response.")
             reply_text = "Hello! I am an AI participant."
@@ -912,8 +994,9 @@ IMPORTANT RULES:
         # Note: t2 and t2.5 will be updated when AI responds
         await self.session_service.calculate_metrics(session.id)
         
-        # 3. Scenario Director Evaluation
-        director = ScenarioDirector(session)
+        # 3. Pipeline Branching: v0.2 (Expert Pipeline) or basic (ScenarioDirector)
+        pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
+        
         history = await self.get_chat_history(session.id)
         
         # Get current script index
@@ -926,9 +1009,197 @@ IMPORTANT RULES:
             except: 
                 pass
         
-        # Target step is usually next step in sequence? 
-        # Actually ScenarioDirector evaluates if we *can* move to next step or stay.
-        # Let's pass the index we *want* to be at.
+        if pipeline_mode == "v0.2":
+            # ════════════════════════════════════════════════════════════
+            # v0.2 EXPERT PIPELINE: Evaluator → Planner → Conductor
+            # ════════════════════════════════════════════════════════════
+            import uuid as _uuid
+            from app.services.conversation.evaluator_service import EvaluatorService
+            from app.services.conversation.planner_service import PlannerService, SessionState
+            from app.services.conversation.conductor_service import ConductorService
+            from app.models.pipeline_log import PipelineLog
+
+            trace_id = str(_uuid.uuid4())
+            turn_id = str(session.current_turn_index)
+            
+            logger.info(f"[process_user_turn] v0.2 Pipeline: trace_id={trace_id}")
+            
+            # --- EVALUATOR ---
+            evaluator = EvaluatorService(
+                llm_model=getattr(session.template, 'evaluator_llm_model', None) or "gemini-2.0-flash",
+                custom_prompt=getattr(session.template, 'evaluator_prompt', None),
+            )
+            eval_output, eval_duration = await evaluator.evaluate(
+                transcript=transcript,
+                topic=session.template.topic,
+                target_level=session.template.difficulty,
+                scene_context=session.template.scene_context,
+                history_text=history,
+                trace_id=trace_id,
+                session_id=str(session.id),
+                turn_id=turn_id,
+            )
+            
+            # Log Evaluator
+            eval_log = PipelineLog(
+                trace_id=trace_id,
+                session_id=session.id,
+                turn_index=session.current_turn_index,
+                module_name="evaluator",
+                input_json={"transcript": transcript, "topic": session.template.topic},
+                output_json=eval_output.model_dump(),
+                duration_ms=eval_duration,
+                model_name=evaluator.llm_model,
+                prompt_used=evaluator.custom_prompt or "",
+            )
+            self.db.add(eval_log)
+            
+            logger.info(
+                f"[v0.2 Evaluator] overall_score={eval_output.aggregate.overall_score}, "
+                f"primary_issue={eval_output.diagnosis.primary_issue}, "
+                f"duration={eval_duration:.0f}ms"
+            )
+            
+            # --- PLANNER ---
+            planner = PlannerService(
+                llm_model=getattr(session.template, 'planner_llm_model', None) or "gemini-2.0-flash",
+                custom_prompt=getattr(session.template, 'planner_prompt', None),
+                level_definitions=getattr(session.template, 'level_definitions', None),
+            )
+            
+            session_state = SessionState.from_variant(variant)
+            
+            plan_output, plan_duration = await planner.decide(
+                eval_output=eval_output,
+                session_state=session_state,
+                participants=session.template.participants if session.template else None,
+                trace_id=trace_id,
+                turn_id=turn_id,
+            )
+            
+            # Update session state in variant
+            variant["_pipeline_state"] = session_state.to_dict()
+            
+            # Log Planner
+            plan_log = PipelineLog(
+                trace_id=trace_id,
+                session_id=session.id,
+                turn_index=session.current_turn_index,
+                module_name="planner",
+                input_json=eval_output.model_dump(),
+                output_json=plan_output.model_dump(),
+                duration_ms=plan_duration,
+                model_name=planner.llm_model,
+                prompt_used=planner.custom_prompt or "",
+            )
+            self.db.add(plan_log)
+            
+            logger.info(
+                f"[v0.2 Planner] path={plan_output.decision.path}, "
+                f"action={plan_output.decision.action_code}, "
+                f"speakers={plan_output.persona_plan.speakers}, "
+                f"duration={plan_duration:.0f}ms"
+            )
+            
+            # --- CONDUCTOR ---
+            conductor = ConductorService(
+                llm_model=getattr(session.template, 'conductor_llm_model', None) or "gemini-2.0-flash",
+                custom_prompt=getattr(session.template, 'conductor_prompt', None),
+                level_definitions=getattr(session.template, 'level_definitions', None),
+            )
+            conductor_output, conductor_duration = await conductor.generate_scripts(
+                planner_output=plan_output,
+                participants=session.template.participants if session.template else None,
+                scene_context=session.template.scene_context,
+                history_text=history,
+                user_transcript=transcript,
+                user_name=session.user_name,
+                system_prompt=session.template.system_prompt,
+                trace_id=trace_id,
+                turn_id=turn_id,
+            )
+            
+            # Log Conductor
+            cond_log = PipelineLog(
+                trace_id=trace_id,
+                session_id=session.id,
+                turn_index=session.current_turn_index,
+                module_name="conductor",
+                input_json=plan_output.model_dump(),
+                output_json=conductor_output.model_dump(),
+                duration_ms=conductor_duration,
+                model_name=conductor.llm_model,
+                prompt_used=conductor.custom_prompt or "",
+            )
+            self.db.add(cond_log)
+            
+            logger.info(
+                f"[v0.2 Conductor] scripts={len(conductor_output.scripts)}, "
+                f"feedback={len(conductor_output.feedback_text)} chars, "
+                f"duration={conductor_duration:.0f}ms"
+            )
+            
+            # Update Script Index based on Evaluator score
+            if eval_output.aggregate.overall_score >= 60:
+                if script_index is not None:
+                    script_index += 1
+                    variant["current_script_index"] = script_index
+            
+            # ── STORE PIPELINE RESULTS IN VARIANT ──
+            # These will be read by process_ai_turn for each participant
+            speaker_scripts = {}
+            for s in conductor_output.scripts:
+                speaker_scripts[s.speaker_name] = {
+                    "text": s.text,
+                    "instruction": s.instruction,
+                }
+            
+            variant["_pipeline_result"] = {
+                "feedback_text": conductor_output.feedback_text,
+                "feedback_instruction": conductor_output.feedback_instruction,
+                "level": plan_output.persona_plan.current_level,
+                "level_instruction": conductor_output.level_instruction,
+                "corrections": conductor_output.corrections,
+                "better_expressions": conductor_output.better_expressions,
+                "speaker_scripts": speaker_scripts,
+                "user_emotion": conductor_output.user_emotion,
+            }
+            
+            # Reset consecutive AI turn counter
+            variant["_consecutive_ai_turns"] = 0
+            session.variant = json.dumps(variant)
+            
+            # Commit pipeline logs + variant
+            await self.db.commit()
+            
+            # ── NORMAL TURN FLOW: use complete_turn for round-robin ──
+            # This will advance to the next speaker (moderator first) via TurnOrchestrator
+            if background_tasks:
+                background_tasks.add_task(
+                    self._complete_turn_wrapper,
+                    session_id,
+                    script_index,
+                )
+            else:
+                asyncio.create_task(
+                    self._complete_turn_wrapper(session_id, script_index)
+                )
+            
+            return {
+                "transcript": transcript,
+                "next_turn": session.current_turn_index,
+                "pipeline": "v0.2",
+                "trace_id": trace_id,
+                "level": plan_output.persona_plan.current_level,
+            }
+        
+        # ════════════════════════════════════════════════════════════
+        # BASIC MODE (existing ScenarioDirector — unchanged)
+        # ════════════════════════════════════════════════════════════
+        
+        director = ScenarioDirector(session)
+        
+        # Target step is usually next step in sequence
         target_step_index = (script_index if script_index is not None else -1) + 1
         
         director_output = await director.evaluate_turn(transcript, history, target_step_index)

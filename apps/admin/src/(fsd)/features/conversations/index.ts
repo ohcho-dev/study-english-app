@@ -98,7 +98,11 @@ export {
     logClientTimestamp,
     getTestPhrases,
     getAvailableVoices,
+    getPipelineLogs,
+    getTemplatePrompts,
+    updateTemplatePrompts,
 } from './api/conversationsApi';
+export type { PipelineLog, PipelineLogsResponse, TemplatePrompts } from './api/conversationsApi';
 
 // UI Components
 export { VoiceRecorder } from './ui/VoiceRecorder';

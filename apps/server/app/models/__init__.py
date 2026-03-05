@@ -33,6 +33,7 @@ from app.models.conversation import (
     SessionStatus,
     TurnType,
 )
+from app.models.pipeline_log import PipelineLog
 
 __all__ = [
     "Base",
@@ -73,6 +74,8 @@ __all__ = [
     "SessionMetrics",
     "SessionStatus",
     "TurnType",
+    # Pipeline models
+    "PipelineLog",
 ]
 
 

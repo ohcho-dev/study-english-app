@@ -160,6 +160,16 @@ class ConversationTemplate(Base):
     scene_context = Column(Text, nullable=True)  # Shared context for all AI participants
     turn_sequence = Column(JSONB, nullable=True)  # Custom scenario script
     
+    # Narrative Sync v0.2 Pipeline Settings
+    pipeline_mode = Column(String(20), nullable=True, default="basic", server_default="basic")  # "basic" or "v0.2"
+    evaluator_prompt = Column(Text, nullable=True)  # Custom Evaluator prompt
+    planner_prompt = Column(Text, nullable=True)  # Custom Planner prompt
+    conductor_prompt = Column(Text, nullable=True)  # Custom Conductor prompt
+    evaluator_llm_model = Column(String(50), nullable=True)  # LLM model for Evaluator
+    planner_llm_model = Column(String(50), nullable=True)  # LLM model for Planner (future)
+    conductor_llm_model = Column(String(50), nullable=True)  # LLM model for Conductor
+    level_definitions = Column(JSONB, nullable=True)  # Custom level definitions JSON [{level, name, description, instruction}, ...]
+    
     # Access Control
     is_public_to_tester = Column(Boolean, default=False, nullable=False)
     

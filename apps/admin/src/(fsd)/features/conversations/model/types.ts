@@ -107,6 +107,11 @@ export interface Template {
     director_llm_model?: string | null;
     turn_sequence: ScenarioStep[] | null;
     participants: Participant[];
+    // v0.2 Pipeline
+    evaluator_llm_model?: string | null;
+    planner_llm_model?: string | null;
+    conductor_llm_model?: string | null;
+    level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }> | null;
     created_at: string;
     updated_at: string;
 }
@@ -142,6 +147,15 @@ export interface TemplateCreate {
     turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
     director_llm_model?: string;
+    // v0.2 Pipeline
+    pipeline_mode?: string;
+    evaluator_prompt?: string;
+    planner_prompt?: string;
+    conductor_prompt?: string;
+    evaluator_llm_model?: string;
+    planner_llm_model?: string;
+    conductor_llm_model?: string;
+    level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
 }
 
 export interface TemplateUpdate {
@@ -162,6 +176,15 @@ export interface TemplateUpdate {
     turn_sequence?: ScenarioStep[];
     participants?: ParticipantCreate[];
     director_llm_model?: string;
+    // v0.2 Pipeline
+    pipeline_mode?: string;
+    evaluator_prompt?: string;
+    planner_prompt?: string;
+    conductor_prompt?: string;
+    evaluator_llm_model?: string;
+    planner_llm_model?: string;
+    conductor_llm_model?: string;
+    level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
 }
 
 // ============================================================================

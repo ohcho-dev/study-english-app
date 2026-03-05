@@ -49,7 +49,13 @@ export const api = {
     },
 
     post: async <T>(endpoint: string, data?: unknown, options?: FetchOptions): Promise<T> => {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const url = new URL(`${API_BASE_URL}${endpoint}`);
+        if (options?.params) {
+            Object.entries(options.params).forEach(([key, value]) => {
+                url.searchParams.append(key, value);
+            });
+        }
+        const response = await fetch(url.toString(), {
             ...options,
             method: 'POST',
             headers: {

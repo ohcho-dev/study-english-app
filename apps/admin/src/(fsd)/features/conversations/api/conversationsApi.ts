@@ -31,7 +31,7 @@ const CONVERSATIONS_BASE = '/api/v1/conversations';
 
 export const getTemplates = async (
     page = 1,
-    size = 20,
+    size = 30,
     activeOnly = true
 ): Promise<PaginatedResponse<TemplateListItem>> => {
     return api.get<PaginatedResponse<TemplateListItem>>(`${CONVERSATIONS_BASE}/templates`, {
@@ -77,7 +77,7 @@ export const duplicateTemplate = async (
 
 export const getSessions = async (
     page = 1,
-    size = 20,
+    size = 30,
     templateId?: string,
     status?: string
 ): Promise<PaginatedResponse<SessionListItem>> => {
@@ -345,6 +345,7 @@ export const getDirectorPromptSpec = async (): Promise<DirectorPromptSpec> => {
     return api.get<DirectorPromptSpec>(`${CONVERSATIONS_BASE}/director-prompt-spec`);
 };
 
+
 // ============================================================================
 // RUN0 Model Options API
 // ============================================================================
@@ -433,4 +434,97 @@ export const sendTextInput = async (
     }
 
     return response.json();
+};
+
+// ============================================================================
+// Narrative Sync v0.2 — Pipeline API
+// ============================================================================
+
+export interface PipelineLog {
+    id: string;
+    trace_id: string;
+    session_id: string;
+    turn_index: number;
+    module_name: 'evaluator' | 'planner' | 'conductor';
+    schema_version: string;
+    input_json: Record<string, unknown> | null;
+    output_json: Record<string, unknown> | null;
+    duration_ms: number | null;
+    model_name: string | null;
+    error_message: string | null;
+    created_at: string;
+}
+
+export interface PipelineLogsResponse {
+    items: PipelineLog[];
+    total: number;
+}
+
+export interface TemplatePrompts {
+    pipeline_mode: string;
+    basic_prompt: string | null;
+    evaluator_prompt: string | null;
+    planner_prompt: string | null;
+    conductor_prompt: string | null;
+    evaluator_llm_model: string | null;
+    planner_llm_model: string | null;
+    conductor_llm_model: string | null;
+    level_definitions: Array<{ level: number; name: string; description: string; instruction: string }> | null;
+}
+
+/** Get pipeline execution logs for a session */
+export const getPipelineLogs = async (
+    sessionId: string,
+    module?: string,
+    traceId?: string,
+): Promise<PipelineLogsResponse> => {
+    const params: Record<string, string> = {};
+    if (module) params.module = module;
+    if (traceId) params.trace_id = traceId;
+
+    return api.get<PipelineLogsResponse>(
+        `${CONVERSATIONS_BASE}/sessions/${sessionId}/pipeline-logs`,
+        { params },
+    );
+};
+
+/** Get all prompts for a template */
+export const getTemplatePrompts = async (
+    templateId: string,
+): Promise<TemplatePrompts> => {
+    return api.get<TemplatePrompts>(
+        `${CONVERSATIONS_BASE}/templates/${templateId}/prompts`,
+    );
+};
+
+/** Update prompts for a template */
+export const updateTemplatePrompts = async (
+    templateId: string,
+    data: Partial<TemplatePrompts>,
+): Promise<{ success: boolean; pipeline_mode: string }> => {
+    return api.put<{ success: boolean; pipeline_mode: string }>(
+        `${CONVERSATIONS_BASE}/templates/${templateId}/prompts`,
+        data,
+    );
+};
+
+export interface PromptHistoryItem {
+    module_name: string;
+    prompt_used: string;
+    model_name: string | null;
+    used_at: string | null;
+    session_id: string | null;
+}
+
+/** Get historical prompt versions for a template */
+export const getPromptHistory = async (
+    templateId: string,
+    module?: string,
+): Promise<{ items: PromptHistoryItem[]; total: number }> => {
+    const params: Record<string, string> = {};
+    if (module) params.module = module;
+    return api.get<{ items: PromptHistoryItem[]; total: number }>(
+        `${CONVERSATIONS_BASE}/templates/${templateId}/prompt-history`,
+        { params },
+    );
 };

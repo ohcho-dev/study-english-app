@@ -62,7 +62,7 @@ export const runExperiment = async (
 
 export const getExperimentLogs = async (
     page = 1,
-    size = 20,
+    size = 30,
     pipelineId?: string
 ): Promise<PaginatedResponse<ExperimentLogSummary>> => {
     const params: Record<string, string> = {

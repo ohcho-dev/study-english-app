@@ -175,6 +175,7 @@ async def get_director_prompt_spec():
     }
 
 
+
 @router.put("/templates/{template_id}/participant-models")
 async def save_participant_models(
     db: DbSession,
@@ -964,3 +965,191 @@ async def websocket_stt_stream(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
+
+
+# ============================================================================
+# Narrative Sync v0.2 — Pipeline Endpoints
+# ============================================================================
+
+
+@router.get("/sessions/{session_id}/pipeline-logs")
+async def get_pipeline_logs(
+    db: DbSession,
+    session_id: UUID,
+    module: str | None = Query(None, description="Filter by module: evaluator, planner, conductor"),
+    trace_id: str | None = Query(None, description="Filter by trace_id"),
+):
+    """Get pipeline execution logs for a session.
+
+    Returns Evaluator/Planner/Conductor execution records with
+    I/O JSON, duration, and model info.
+    """
+    from sqlalchemy import select
+    from app.models.pipeline_log import PipelineLog
+
+    stmt = select(PipelineLog).where(
+        PipelineLog.session_id == session_id
+    ).order_by(PipelineLog.created_at.asc())
+
+    if module:
+        stmt = stmt.where(PipelineLog.module_name == module)
+    if trace_id:
+        stmt = stmt.where(PipelineLog.trace_id == trace_id)
+
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": str(log.id),
+                "trace_id": log.trace_id,
+                "session_id": str(log.session_id),
+                "turn_index": log.turn_index,
+                "module_name": log.module_name,
+                "schema_version": log.schema_version,
+                "input_json": log.input_json,
+                "output_json": log.output_json,
+                "duration_ms": log.duration_ms,
+                "model_name": log.model_name,
+                "error_message": log.error_message,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+        "total": len(logs),
+    }
+
+
+@router.get("/templates/{template_id}/prompts")
+async def get_template_prompts(
+    db: DbSession,
+    template_id: UUID,
+):
+    """Get all prompts for a template (basic + v0.2 modules)."""
+    service = TemplateService(db)
+    template = await service.get_by_id(template_id)
+
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+
+    return {
+        "pipeline_mode": getattr(template, "pipeline_mode", "basic") or "basic",
+        "basic_prompt": template.director_system_prompt,
+        "evaluator_prompt": getattr(template, "evaluator_prompt", None),
+        "planner_prompt": getattr(template, "planner_prompt", None),
+        "conductor_prompt": getattr(template, "conductor_prompt", None),
+        "evaluator_llm_model": getattr(template, "evaluator_llm_model", None),
+        "planner_llm_model": getattr(template, "planner_llm_model", None),
+        "conductor_llm_model": getattr(template, "conductor_llm_model", None),
+        "level_definitions": getattr(template, "level_definitions", None),
+    }
+
+
+@router.put("/templates/{template_id}/prompts")
+async def update_template_prompts(
+    db: DbSession,
+    template_id: UUID,
+    data: dict,
+):
+    """Update prompts for a template.
+
+    Body: { pipeline_mode?, basic_prompt?, evaluator_prompt?, planner_prompt?, conductor_prompt?,
+            evaluator_llm_model?, planner_llm_model?, conductor_llm_model?, level_definitions? }
+    """
+    service = TemplateService(db)
+    template = await service.get_by_id(template_id)
+
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+
+    if "pipeline_mode" in data:
+        template.pipeline_mode = data["pipeline_mode"]
+    if "basic_prompt" in data:
+        template.director_system_prompt = data["basic_prompt"]
+    if "evaluator_prompt" in data:
+        template.evaluator_prompt = data["evaluator_prompt"]
+    if "planner_prompt" in data:
+        template.planner_prompt = data["planner_prompt"]
+    if "conductor_prompt" in data:
+        template.conductor_prompt = data["conductor_prompt"]
+    if "evaluator_llm_model" in data:
+        template.evaluator_llm_model = data["evaluator_llm_model"]
+    if "planner_llm_model" in data:
+        template.planner_llm_model = data["planner_llm_model"]
+    if "conductor_llm_model" in data:
+        template.conductor_llm_model = data["conductor_llm_model"]
+    if "level_definitions" in data:
+        template.level_definitions = data["level_definitions"]
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "pipeline_mode": template.pipeline_mode,
+    }
+
+
+@router.get("/pipeline/evaluator-prompt-spec")
+async def get_evaluator_prompt_spec():
+    """Get the default Evaluator base prompt for reference."""
+    from app.services.conversation.evaluator_service import EVALUATOR_BASE_PROMPT
+    return {"base_prompt": EVALUATOR_BASE_PROMPT}
+
+
+@router.get("/pipeline/conductor-prompt-spec")
+async def get_conductor_prompt_spec():
+    """Get the default Conductor base prompt for reference."""
+    from app.services.conversation.conductor_service import CONDUCTOR_BASE_PROMPT
+    return {"base_prompt": CONDUCTOR_BASE_PROMPT}
+
+
+@router.get("/templates/{template_id}/prompt-history")
+async def get_template_prompt_history(
+    db: DbSession,
+    template_id: UUID,
+    module: str | None = None,
+):
+    """Get historical prompt versions used in sessions of a template.
+
+    Returns distinct prompts per module, ordered by most recent usage.
+    Optional filter by module name (evaluator, planner, conductor).
+    """
+    from sqlalchemy import select, text
+    from app.models.pipeline_log import PipelineLog
+    from app.models.conversation import ConversationSession
+
+    query = text("""
+        SELECT DISTINCT ON (pl.module_name, md5(pl.prompt_used))
+            pl.module_name,
+            pl.prompt_used,
+            pl.model_name,
+            pl.created_at,
+            pl.session_id
+        FROM pipeline_logs pl
+        JOIN conversation_sessions cs ON pl.session_id = cs.id
+        WHERE cs.template_id = :template_id
+          AND pl.prompt_used IS NOT NULL
+          AND pl.prompt_used != ''
+          {module_filter}
+        ORDER BY pl.module_name, md5(pl.prompt_used), pl.created_at DESC
+    """.replace("{module_filter}", "AND pl.module_name = :module" if module else ""))
+
+    params = {"template_id": str(template_id)}
+    if module:
+        params["module"] = module
+
+    result = await db.execute(query, params)
+    rows = result.fetchall()
+
+    history = []
+    for row in rows:
+        history.append({
+            "module_name": row[0],
+            "prompt_used": row[1],
+            "model_name": row[2],
+            "used_at": row[3].isoformat() if row[3] else None,
+            "session_id": str(row[4]) if row[4] else None,
+        })
+
+    return {"items": history, "total": len(history)}
