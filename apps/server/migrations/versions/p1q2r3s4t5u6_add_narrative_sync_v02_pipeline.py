@@ -63,10 +63,30 @@ def upgrade() -> None:
         'conversation_templates',
         sa.Column('conductor_prompt', sa.Text(), nullable=True),
     )
+    op.add_column(
+        'conversation_templates',
+        sa.Column('evaluator_llm_model', sa.String(50), nullable=True),
+    )
+    op.add_column(
+        'conversation_templates',
+        sa.Column('planner_llm_model', sa.String(50), nullable=True),
+    )
+    op.add_column(
+        'conversation_templates',
+        sa.Column('conductor_llm_model', sa.String(50), nullable=True),
+    )
+    op.add_column(
+        'conversation_templates',
+        sa.Column('level_definitions', postgresql.JSONB(), nullable=True),
+    )
 
 
 def downgrade() -> None:
     """Remove pipeline tables and columns."""
+    op.drop_column('conversation_templates', 'level_definitions')
+    op.drop_column('conversation_templates', 'conductor_llm_model')
+    op.drop_column('conversation_templates', 'planner_llm_model')
+    op.drop_column('conversation_templates', 'evaluator_llm_model')
     op.drop_column('conversation_templates', 'conductor_prompt')
     op.drop_column('conversation_templates', 'planner_prompt')
     op.drop_column('conversation_templates', 'evaluator_prompt')
