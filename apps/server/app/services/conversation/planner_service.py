@@ -290,7 +290,7 @@ Return JSON with: new_level, path, reasons, focus_area, and custom_state (object
                     [{"role": "user", "parts": [{"text": base_prompt + "\n\n" + user_msg}]}],
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.1,
-                        max_output_tokens=500,
+                        max_output_tokens=1000,
                         response_mime_type="application/json",
                     ),
                 )
@@ -332,45 +332,28 @@ Return JSON with: new_level, path, reasons, focus_area, and custom_state (object
         current_level: int,
         session_state: SessionState,
     ) -> tuple[int, str, list[str]]:
-        """Rule-based fallback for level determination.
+        """Conservative rule-based fallback for level determination.
+
+        Used when LLM fails. Keeps changes minimal to avoid
+        aggressive level jumps without LLM intelligence.
 
         Returns:
             Tuple of (new_level, path, reasons).
         """
         reasons: list[str] = ["(rule-based fallback)"]
 
-        # --- Score < 40: Level DOWN by 1 ---
         if overall_score < 40:
             path = "LEVEL_DOWN"
             delta = -1
             reasons.append(f"Score {overall_score} < 40 → level down")
-            if primary_issue != "NONE":
-                reasons.append(f"Issue: {primary_issue}")
-
-        # --- 40 ≤ Score < 70: LEVEL HOLD ---
-        elif overall_score < 70:
-            path = "LEVEL_HOLD"
-            delta = 0
-            reasons.append(f"Score {overall_score}: 40-69 → level hold")
-
-        # --- 70 ≤ Score < 90: Level UP by 1 ---
-        elif overall_score < 90:
+        elif overall_score >= 90:
             path = "LEVEL_UP"
             delta = 1
-            reasons.append(f"Score {overall_score}: 70-89 → level up +1")
-
-        # --- Score ≥ 90: Level UP by 2 ---
+            reasons.append(f"Score {overall_score} >= 90 → level up +1")
         else:
-            path = "LEVEL_JUMP"
-            delta = 2
-            reasons.append(f"Score {overall_score} >= 90 → level up +2")
-
-        # Streak bonus
-        if delta > 0:
-            recent = session_state.recent_scores[-3:]
-            if len(recent) >= 3 and all(s >= 70 for s in recent):
-                delta = min(delta + 1, 3)
-                reasons.append("Streak bonus: 3+ good scores")
+            path = "LEVEL_HOLD"
+            delta = 0
+            reasons.append(f"Score {overall_score}: 40-89 → level hold")
 
         new_level = max(1, min(self.max_level, current_level + delta))
         reasons.append(f"Level: {current_level} → {new_level}")

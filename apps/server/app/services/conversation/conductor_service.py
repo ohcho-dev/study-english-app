@@ -139,6 +139,19 @@ class ConductorService:
         )
         return result, duration_ms
 
+    @staticmethod
+    def _normalize_string_list(items: list) -> list[str]:
+        """Convert a list of mixed str/dict items into a list of strings."""
+        result = []
+        for item in items:
+            if isinstance(item, str):
+                result.append(item)
+            elif isinstance(item, dict):
+                result.append(json.dumps(item, ensure_ascii=False))
+            else:
+                result.append(str(item))
+        return result
+
     def _build_participant_info(self, participants: Optional[list]) -> str:
         if not participants:
             return "No participants defined."
@@ -235,8 +248,8 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             feedback_text=data.get("feedback_text", ""),
             feedback_instruction=data.get("feedback_instruction", ""),
             level_instruction=level_instruction,
-            corrections=data.get("corrections", []),
-            better_expressions=data.get("better_expressions", []),
+            corrections=self._normalize_string_list(data.get("corrections", [])),
+            better_expressions=self._normalize_string_list(data.get("better_expressions", [])),
         )
 
     def _build_fallback(
@@ -262,18 +275,16 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             for p in ai_participants:
                 ptype = p.participant_type.value if hasattr(p.participant_type, 'value') else str(p.participant_type)
                 if ptype == "moderator":
-                    # Moderator gets a simple feedback
                     scripts.append(ConductorScript(
                         speaker_name=p.name,
-                        text=f"좋아요! 이번 라운드는 Level {level}입니다. {level_instruction}",
+                        text=f"좋아요! 계속 연습해 볼게요.",
                         instruction="moderator_feedback",
                     ))
                 else:
-                    # AI gets level instruction
                     scripts.append(ConductorScript(
                         speaker_name=p.name,
                         text="",
-                        instruction=f"Demonstrate A-B-C narrative at {level_instruction}",
+                        instruction=f"Continue at level {level}",
                     ))
 
         return ConductorOutput(
@@ -283,7 +294,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             scripts=scripts,
             return_to_user_after=False,
             user_emotion="neutral",
-            feedback_text=f"이번 라운드는 Level {level}입니다.",
+            feedback_text="계속 연습해 볼게요!",
             level_instruction=level_instruction,
             corrections=[],
             better_expressions=[],
