@@ -167,3 +167,6 @@ temp/
 .analyzer/
 stats.json
 bundle-stats.json
+.cross-review/
+
+.obsidian/

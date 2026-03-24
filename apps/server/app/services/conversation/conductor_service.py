@@ -64,6 +64,7 @@ class ConductorService:
         system_prompt: Optional[str] = None,
         trace_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        custom_state: Optional[dict] = None,
     ) -> tuple[ConductorOutput, float]:
         """Generate moderator feedback and AI scripts."""
         t_start = time.time()
@@ -88,6 +89,7 @@ class ConductorService:
             history_text=history_text,
             user_transcript=user_transcript,
             user_name=user_name,
+            custom_state=custom_state,
         )
 
         MAX_RETRIES = 3
@@ -163,15 +165,22 @@ class ConductorService:
         history_text: Optional[str],
         user_transcript: Optional[str],
         user_name: Optional[str],
+        custom_state: Optional[dict] = None,
     ) -> str:
         decision = planner_output.decision
-        
+
+        custom_state_str = ""
+        if custom_state:
+            custom_state_str = f"\n## Scenario State (from Planner)\n{json.dumps(custom_state, ensure_ascii=False)}"
+            custom_state_str += "\nUse this state to determine what to practice next. Generate scripts consistent with this state."
+
         return f"""## Current State
 - Path: {decision.path}
 - Action: {decision.action_code}
 - Reasons: {', '.join(decision.reason)}
 - Level: {level}
 - Level Instruction: {level_instruction}
+{custom_state_str}
 
 ## Participants
 {participant_info}
@@ -185,11 +194,7 @@ class ConductorService:
 ## Recent History
 {history_text or '(session just started)'}
 
-## Evaluator Diagnosis
-{', '.join(decision.reason)}
-
-Generate the moderator feedback in Korean and AI scripts in English at Level {level}.
-Remember: return_to_user_after MUST be false."""
+Generate scripts based on the current state. return_to_user_after MUST be false."""
 
     def _parse_response(
         self,

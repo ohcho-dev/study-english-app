@@ -45,6 +45,7 @@ class SessionState:
         consecutive_helpers: Count of consecutive low-score turns.
         turn_count: Total turns in session so far.
         current_level: Current difficulty level (1-10).
+        custom_state: Free-form dict for scenario-specific state managed by Planner LLM via prompts.
     """
 
     def __init__(
@@ -54,12 +55,14 @@ class SessionState:
         consecutive_helpers: int = 0,
         turn_count: int = 0,
         current_level: int = 1,
+        custom_state: Optional[dict] = None,
     ) -> None:
         self.recent_scores = recent_scores or []
         self.last_strategy = last_strategy
         self.consecutive_helpers = consecutive_helpers
         self.turn_count = turn_count
         self.current_level = max(1, min(10, current_level))
+        self.custom_state = custom_state or {}
 
     @classmethod
     def from_variant(cls, variant_data: dict) -> "SessionState":
@@ -71,6 +74,7 @@ class SessionState:
             consecutive_helpers=pipeline_state.get("consecutive_helpers", 0),
             turn_count=pipeline_state.get("turn_count", 0),
             current_level=pipeline_state.get("current_level", 1),
+            custom_state=pipeline_state.get("custom_state", {}),
         )
 
     def to_dict(self) -> dict:
@@ -81,6 +85,7 @@ class SessionState:
             "consecutive_helpers": self.consecutive_helpers,
             "turn_count": self.turn_count,
             "current_level": self.current_level,
+            "custom_state": self.custom_state,
         }
 
 
@@ -133,6 +138,7 @@ class PlannerService:
         participants: Optional[list] = None,
         trace_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        history_text: Optional[str] = None,
     ) -> tuple[PlannerOutput, float]:
         """Make a strategic decision based on evaluation results.
 
@@ -153,6 +159,7 @@ class PlannerService:
             eval_output=eval_output,
             session_state=session_state,
             prev_level=prev_level,
+            history_text=history_text,
         )
 
         # If LLM failed, fallback to rule-based
@@ -217,6 +224,7 @@ class PlannerService:
         eval_output: EvaluatorOutput,
         session_state: SessionState,
         prev_level: int,
+        history_text: Optional[str] = None,
     ) -> tuple[Optional[int], Optional[str], Optional[list[str]]]:
         """Use LLM for nuanced level decision.
 
@@ -242,6 +250,13 @@ class PlannerService:
         # Append dynamic level definitions
         base_prompt += f"\n\n## Available Levels\n{level_list}"
 
+        # Format custom_state for display
+        custom_state_str = ""
+        if session_state.custom_state:
+            custom_state_str = "\n## Scenario Custom State (from previous turn)\n"
+            custom_state_str += json.dumps(session_state.custom_state, ensure_ascii=False, indent=2)
+            custom_state_str += "\n\nYou MUST update and return custom_state in your JSON output to track scenario-specific progression."
+
         user_msg = f"""## Evaluator Results
 - Overall Score: {eval_output.aggregate.overall_score}/100
 - Slot A (Context): {eval_output.narrative_scores.get('slot_a', {}).score if hasattr(eval_output.narrative_scores.get('slot_a', {}), 'score') else 'N/A'}/10
@@ -253,13 +268,19 @@ class PlannerService:
 - Secondary Issues: {', '.join(eval_output.diagnosis.secondary_issues) or 'None'}
 - Recommended Action: {eval_output.diagnosis.recommended_action}
 
+## Recent Conversation History
+{history_text or '(session just started)'}
+
 ## Session State
 - Current Level: {prev_level} ({self.level_defs.get(prev_level, {}).get('name', 'Unknown')})
 - Recent Scores: {session_state.recent_scores[-5:] if session_state.recent_scores else 'First turn'}
 - Turn Count: {session_state.turn_count}
 - Last Strategy: {session_state.last_strategy or 'None'}
+{custom_state_str}
 
-Determine the optimal next level (1-{self.max_level}) and provide your reasoning."""
+Determine the optimal next level (1-{self.max_level}) and provide your reasoning.
+Use the conversation history to understand the current context — which verb/topic is being practiced, what the student has already done.
+Return JSON with: new_level, path, reasons, focus_area, and custom_state (object with any scenario-specific tracking data)."""
 
         MAX_RETRIES = 3
         last_error = None
@@ -275,6 +296,7 @@ Determine the optimal next level (1-{self.max_level}) and provide your reasoning
                 )
 
                 data = json.loads(response.text)
+                logger.warning(f"[Planner] RAW LLM response: {json.dumps(data, ensure_ascii=False)}")
                 new_level = max(1, min(self.max_level, int(data.get("new_level", prev_level))))
                 path = data.get("path", "LEVEL_HOLD")
                 reasons = data.get("reasons", [])
@@ -282,7 +304,14 @@ Determine the optimal next level (1-{self.max_level}) and provide your reasoning
                 if focus:
                     reasons.append(f"Focus: {focus}")
 
-                logger.info(f"[Planner] LLM decision: level {prev_level}→{new_level}, path={path}")
+                # Persist scenario-specific custom_state from LLM output
+                if isinstance(data.get("custom_state"), dict):
+                    session_state.custom_state = data["custom_state"]
+
+                logger.warning(
+                    f"[Planner] LLM decision: level {prev_level}→{new_level}, path={path}, "
+                    f"custom_state={session_state.custom_state}"
+                )
                 return new_level, path, reasons
 
             except Exception as e:

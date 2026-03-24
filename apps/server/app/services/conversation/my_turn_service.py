@@ -1068,17 +1068,20 @@ class MyTurnService:
             )
             
             session_state = SessionState.from_variant(variant)
-            
+            logger.warning(f"[v0.2 Pipeline] custom_state LOADED: {session_state.custom_state}")
+
             plan_output, plan_duration = await planner.decide(
                 eval_output=eval_output,
                 session_state=session_state,
                 participants=session.template.participants if session.template else None,
                 trace_id=trace_id,
                 turn_id=turn_id,
+                history_text=history,
             )
             
             # Update session state in variant
             variant["_pipeline_state"] = session_state.to_dict()
+            logger.warning(f"[v0.2 Pipeline] custom_state SAVED: {session_state.custom_state}")
             
             # Log Planner
             plan_log = PipelineLog(
@@ -1117,6 +1120,7 @@ class MyTurnService:
                 system_prompt=session.template.system_prompt,
                 trace_id=trace_id,
                 turn_id=turn_id,
+                custom_state=session_state.custom_state,
             )
             
             # Log Conductor
