@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Languages, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '../model/useMyTurn';
+import { FeedbackCard } from './FeedbackCard';
 
 interface TranscriptTimelineProps {
     messages: ChatMessage[];
@@ -22,7 +23,13 @@ interface TranscriptTimelineProps {
 /** Per-message translation cache */
 const translationCache = new Map<string, string>();
 
-const TranscriptEntry = ({ message }: { message: ChatMessage }) => {
+interface TranscriptEntryProps {
+    message: ChatMessage;
+    /** Feedback data from the preceding user message (shown below moderator messages) */
+    pendingFeedback?: { corrections?: string[]; betterExpressions?: string[] } | null;
+}
+
+const TranscriptEntry = ({ message, pendingFeedback }: TranscriptEntryProps) => {
     const [showTranslation, setShowTranslation] = useState(false);
     const [translation, setTranslation] = useState<string | null>(null);
     const [isTranslating, setIsTranslating] = useState(false);
@@ -135,6 +142,14 @@ const TranscriptEntry = ({ message }: { message: ChatMessage }) => {
                     )}
                 </div>
             )}
+
+            {/* Feedback card shown below moderator message (data from preceding user message) */}
+            {pendingFeedback && (
+                <FeedbackCard
+                    corrections={pendingFeedback.corrections}
+                    betterExpressions={pendingFeedback.betterExpressions}
+                />
+            )}
         </div>
     );
 };
@@ -175,9 +190,22 @@ export const TranscriptTimeline = ({
                 </div>
             ) : (
                 <div className="py-2 space-y-0.5">
-                    {messages.map((msg) => (
-                        <TranscriptEntry key={msg.id} message={msg} />
-                    ))}
+                    {messages.map((msg, idx) => {
+                        // Show feedback below the first AI message that follows a user message with feedback
+                        let pendingFeedback: { corrections?: string[]; betterExpressions?: string[] } | null = null;
+                        if (!msg.isUser && idx > 0) {
+                            const prev = messages[idx - 1];
+                            if (prev.isUser && (prev.corrections?.length || prev.betterExpressions?.length)) {
+                                pendingFeedback = {
+                                    corrections: prev.corrections,
+                                    betterExpressions: prev.betterExpressions,
+                                };
+                            }
+                        }
+                        return (
+                            <TranscriptEntry key={msg.id} message={msg} pendingFeedback={pendingFeedback} />
+                        );
+                    })}
 
                     {/* Typing indicator when AI is composing */}
                     {currentSpeaker && isProcessing && (

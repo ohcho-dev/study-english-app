@@ -1195,6 +1195,9 @@ class MyTurnService:
                 "pipeline": "v0.2",
                 "trace_id": trace_id,
                 "level": plan_output.persona_plan.current_level,
+                "corrections": conductor_output.corrections,
+                "better_expressions": conductor_output.better_expressions,
+                "feedback_text": conductor_output.feedback_text,
             }
         
         # ════════════════════════════════════════════════════════════

@@ -12,6 +12,10 @@ export interface ChatMessage {
     text: string;
     isUser: boolean;
     timestamp: number;
+    /** Grammar/expression corrections from v0.2 pipeline (user messages only) */
+    corrections?: string[];
+    /** Suggested better expressions from v0.2 pipeline (user messages only) */
+    betterExpressions?: string[];
 }
 
 export interface MyTurnState {
@@ -263,6 +267,8 @@ export const useMyTurn = (sessionId: string | null) => {
                 text: data.transcript,
                 isUser: true,
                 timestamp: Date.now(),
+                corrections: data.corrections?.length ? data.corrections : undefined,
+                betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
             };
 
             setState(prev => ({
@@ -303,6 +309,8 @@ export const useMyTurn = (sessionId: string | null) => {
                 text: text,
                 isUser: true,
                 timestamp: Date.now(),
+                corrections: data.corrections?.length ? data.corrections : undefined,
+                betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
             };
 
             setState(prev => ({
