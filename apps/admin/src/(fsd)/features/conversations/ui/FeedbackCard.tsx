@@ -17,14 +17,41 @@ interface FeedbackCardProps {
     betterExpressions?: string[];
 }
 
-/** Parse "wrong → right" pattern, fallback to full string */
-const parseArrow = (s: string): { before: string; after: string } | null => {
+/** Parse various formats into { before, after } for display.
+ *  Supports: "wrong → right", "wrong → right (Tier)", JSON object strings, plain text */
+const parseItem = (s: string): { before: string; after: string } | null => {
+    // Try JSON object format (LLM sometimes returns structured objects)
+    if (s.startsWith('{')) {
+        try {
+            const obj = JSON.parse(s);
+            // Correction: {"original": "...", "corrected": "..."}
+            if (obj.original && obj.corrected) {
+                return { before: obj.original, after: obj.corrected };
+            }
+            // Expression upgrade: {"original": "...", "upgraded": "...", "tier": "..."}
+            if (obj.original && obj.upgraded) {
+                const tier = obj.tier ? ` (${obj.tier})` : '';
+                return { before: obj.original, after: `${obj.upgraded}${tier}` };
+            }
+            // Response hint: {"hint": "...", "example": "...", "tier": "..."}
+            if (obj.hint && (obj.example || obj.example_response)) {
+                const example = obj.example || obj.example_response;
+                const tier = obj.tier ? ` (${obj.tier})` : '';
+                return { before: obj.hint, after: `${example}${tier}` };
+            }
+        } catch { /* not valid JSON, fall through */ }
+    }
+
+    // Arrow format: "wrong → right"
     const idx = s.indexOf('→');
-    if (idx === -1) return null;
-    return {
-        before: s.slice(0, idx).trim(),
-        after: s.slice(idx + 1).trim(),
-    };
+    if (idx !== -1) {
+        return {
+            before: s.slice(0, idx).trim(),
+            after: s.slice(idx + 1).trim(),
+        };
+    }
+
+    return null;
 };
 
 export const FeedbackCard = ({ corrections, betterExpressions }: FeedbackCardProps) => {
@@ -84,7 +111,7 @@ export const FeedbackCard = ({ corrections, betterExpressions }: FeedbackCardPro
                                 </div>
                                 <div className="space-y-0.5">
                                     {corrections.map((c, i) => {
-                                        const parsed = parseArrow(c);
+                                        const parsed = parseItem(c);
                                         return (
                                             <div key={i} className="text-xs leading-relaxed pl-4">
                                                 {parsed ? (
@@ -118,7 +145,7 @@ export const FeedbackCard = ({ corrections, betterExpressions }: FeedbackCardPro
                                 </div>
                                 <div className="space-y-0.5">
                                     {betterExpressions.map((b, i) => {
-                                        const parsed = parseArrow(b);
+                                        const parsed = parseItem(b);
                                         return (
                                             <div key={i} className="text-xs leading-relaxed pl-4">
                                                 {parsed ? (

@@ -166,6 +166,7 @@ Keep responses concise (1-3 sentences) and conversational.`
     const [directorLlmModel, setDirectorLlmModel] = useState(template?.director_llm_model || 'gemini-1.5-flash-8b');
     // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
+    const [allowUserTopic, setAllowUserTopic] = useState(template?.allow_user_topic ?? false);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
         template?.participants?.map((p) => ({
             id: p.id,
@@ -315,6 +316,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                 conductor_llm_model: conductorLlmModel || undefined,
                 level_definitions: parsedLevelDefs ?? null,
                 is_active: isActive,
+                allow_user_topic: allowUserTopic,
                 participants,
             };
 
@@ -489,6 +491,22 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 <label htmlFor="isActive" className="text-sm">
                                     활성화 (사용 가능)
                                 </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="allowUserTopic"
+                                    checked={allowUserTopic}
+                                    onChange={(e) => setAllowUserTopic(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <label htmlFor="allowUserTopic" className="text-sm">
+                                    사용자 주제 직접 설정 허용
+                                </label>
+                                <span className="text-[10px] text-muted-foreground">
+                                    세션 시작 시 사용자가 원하는 대화 주제를 직접 입력할 수 있습니다
+                                </span>
                             </div>
                         </CardContent>
                     </Card>

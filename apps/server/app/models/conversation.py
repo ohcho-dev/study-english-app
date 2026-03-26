@@ -169,7 +169,8 @@ class ConversationTemplate(Base):
     planner_llm_model = Column(String(50), nullable=True)  # LLM model for Planner (future)
     conductor_llm_model = Column(String(50), nullable=True)  # LLM model for Conductor
     level_definitions = Column(JSONB, nullable=True)  # Custom level definitions JSON [{level, name, description, instruction}, ...]
-    
+    allow_user_topic = Column(Boolean, nullable=False, default=False, server_default="false")  # Allow user to set custom topic per session
+
     # Access Control
     is_public_to_tester = Column(Boolean, default=False, nullable=False)
     

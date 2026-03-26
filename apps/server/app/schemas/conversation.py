@@ -220,6 +220,7 @@ class TemplateBase(BaseModel):
     planner_llm_model: str | None = Field(None, max_length=50, description="LLM model for Planner (v0.2)")
     conductor_llm_model: str | None = Field(None, max_length=50, description="LLM model for Conductor (v0.2)")
     level_definitions: list | None = Field(None, description="Custom level definitions for v0.2 [{level, name, description, instruction}, ...]")
+    allow_user_topic: bool = Field(default=False, description="Allow user to set custom topic per session")
 
 
 class TemplateCreate(TemplateBase):
@@ -256,6 +257,7 @@ class TemplateUpdate(BaseModel):
     planner_llm_model: str | None = None
     conductor_llm_model: str | None = None
     level_definitions: list | None = None
+    allow_user_topic: bool | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

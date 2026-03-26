@@ -112,6 +112,7 @@ export interface Template {
     planner_llm_model?: string | null;
     conductor_llm_model?: string | null;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }> | null;
+    allow_user_topic?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -156,6 +157,7 @@ export interface TemplateCreate {
     planner_llm_model?: string;
     conductor_llm_model?: string;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
+    allow_user_topic?: boolean;
 }
 
 export interface TemplateUpdate {
@@ -185,6 +187,7 @@ export interface TemplateUpdate {
     planner_llm_model?: string;
     conductor_llm_model?: string;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
+    allow_user_topic?: boolean;
 }
 
 // ============================================================================

@@ -1021,7 +1021,13 @@ class MyTurnService:
 
             trace_id = str(_uuid.uuid4())
             turn_id = str(session.current_turn_index)
-            
+
+            # Build effective scene_context: append user_topic from session variant if present
+            effective_scene_context = session.template.scene_context or ""
+            user_topic = variant.get("user_topic")
+            if user_topic:
+                effective_scene_context += f"\n\nUser's requested topic for this session: {user_topic}"
+
             logger.info(f"[process_user_turn] v0.2 Pipeline: trace_id={trace_id}")
             
             # --- EVALUATOR ---
@@ -1033,7 +1039,7 @@ class MyTurnService:
                 transcript=transcript,
                 topic=session.template.topic,
                 target_level=session.template.difficulty,
-                scene_context=session.template.scene_context,
+                scene_context=effective_scene_context,
                 history_text=history,
                 trace_id=trace_id,
                 session_id=str(session.id),
@@ -1113,7 +1119,7 @@ class MyTurnService:
             conductor_output, conductor_duration = await conductor.generate_scripts(
                 planner_output=plan_output,
                 participants=session.template.participants if session.template else None,
-                scene_context=session.template.scene_context,
+                scene_context=effective_scene_context,
                 history_text=history,
                 user_transcript=transcript,
                 user_name=session.user_name,

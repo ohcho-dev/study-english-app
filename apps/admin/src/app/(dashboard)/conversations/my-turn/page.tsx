@@ -124,6 +124,7 @@ const MyTurnContent = () => {
     const [sessionConfig, setSessionConfig] = useState<SessionConfig>({ participants: {} });
     const [isCreating, setIsCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [userTopic, setUserTopic] = useState('');
 
     const { data: template, isLoading: isTemplateLoading } = useTemplate(selectedTemplateId);
 
@@ -168,7 +169,11 @@ const MyTurnContent = () => {
         setError(null);
 
         try {
-            const variantConfig = JSON.stringify(sessionConfig);
+            const variantData = {
+                ...sessionConfig,
+                ...(userTopic.trim() ? { user_topic: userTopic.trim() } : {}),
+            };
+            const variantConfig = JSON.stringify(variantData);
             const session = await createSession({
                 template_id: selectedTemplateId,
                 device_type: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'pc',
@@ -313,6 +318,31 @@ const MyTurnContent = () => {
                                     <p className="text-sm text-muted-foreground leading-relaxed">
                                         {template.scene_context}
                                     </p>
+                                </div>
+                            )}
+
+                            {/* User Topic Input */}
+                            {template.allow_user_topic && (
+                                <div className="bg-card/50 rounded-2xl border border-border/30 p-5">
+                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                        💬 대화 주제 설정
+                                    </h3>
+                                    <p className="text-xs text-muted-foreground mb-3">
+                                        어떤 주제로 대화를 연습하고 싶은지 입력해주세요
+                                    </p>
+                                    <input
+                                        type="text"
+                                        value={userTopic}
+                                        onChange={(e) => setUserTopic(e.target.value)}
+                                        placeholder="예: Q3 마케팅 예산 협상, 신규 프로젝트 킥오프 미팅"
+                                        className={cn(
+                                            'w-full px-3 py-2.5 rounded-xl text-sm',
+                                            'bg-background border border-border/50',
+                                            'placeholder:text-muted-foreground/50',
+                                            'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50',
+                                            'transition-colors',
+                                        )}
+                                    />
                                 </div>
                             )}
 

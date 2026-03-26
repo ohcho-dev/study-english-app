@@ -153,6 +153,7 @@ class TemplateService:
             planner_llm_model=template.planner_llm_model,
             conductor_llm_model=template.conductor_llm_model,
             level_definitions=template.level_definitions,
+            allow_user_topic=template.allow_user_topic,
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -214,6 +215,7 @@ class TemplateService:
             planner_llm_model=data.planner_llm_model,
             conductor_llm_model=data.conductor_llm_model,
             level_definitions=data.level_definitions,
+            allow_user_topic=data.allow_user_topic,
         )
         self.db.add(template)
         await self.db.flush()
@@ -314,7 +316,9 @@ class TemplateService:
             template.conductor_llm_model = data.conductor_llm_model
         if "level_definitions" in data.model_fields_set:
             template.level_definitions = data.level_definitions
-            
+        if data.allow_user_topic is not None:
+            template.allow_user_topic = data.allow_user_topic
+
         # Update participants if provided
         if data.participants is not None:
             # Group existing participants by ID and Name to gracefully handle any potential duplicates
@@ -465,6 +469,7 @@ class TemplateService:
             planner_llm_model=getattr(existing, 'planner_llm_model', None),
             conductor_llm_model=getattr(existing, 'conductor_llm_model', None),
             level_definitions=getattr(existing, 'level_definitions', None),
+            allow_user_topic=getattr(existing, 'allow_user_topic', False),
             participants=[
                 {
                     "participant_type": p.participant_type,
