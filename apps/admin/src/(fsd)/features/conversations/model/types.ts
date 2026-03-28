@@ -114,6 +114,7 @@ export interface Template {
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }> | null;
     allow_user_topic?: boolean;
     feedback_card_type?: string;
+    energy_flow_enabled?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -162,6 +163,7 @@ export interface TemplateCreate {
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
     allow_user_topic?: boolean;
     feedback_card_type?: string;
+    energy_flow_enabled?: boolean;
 }
 
 export interface TemplateUpdate {
@@ -193,6 +195,7 @@ export interface TemplateUpdate {
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
     allow_user_topic?: boolean;
     feedback_card_type?: string;
+    energy_flow_enabled?: boolean;
 }
 
 // ============================================================================

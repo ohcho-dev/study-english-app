@@ -222,6 +222,7 @@ class TemplateBase(BaseModel):
     level_definitions: list | None = Field(None, description="Custom level definitions for v0.2 [{level, name, description, instruction}, ...]")
     allow_user_topic: bool = Field(default=False, description="Allow user to set custom topic per session")
     feedback_card_type: str = Field(default="default", description="Feedback card UI type: default or detailed")
+    energy_flow_enabled: bool = Field(default=False, description="Enable Energy Flow analysis UI for this template")
 
 
 class TemplateCreate(TemplateBase):
@@ -260,6 +261,7 @@ class TemplateUpdate(BaseModel):
     level_definitions: list | None = None
     allow_user_topic: bool | None = None
     feedback_card_type: str | None = None
+    energy_flow_enabled: bool | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

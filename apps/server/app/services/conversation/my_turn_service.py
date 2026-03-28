@@ -695,12 +695,19 @@ class MyTurnService:
             # Build contextual generation prompt
             pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
             
-            # --- Check if we can bypass LLM (if Conductor gave an exact script) ---
+            # --- Check if we can bypass LLM ---
             should_bypass_llm = False
             pre_generated_text = ""
             last_error = None
             
-            if pipeline_mode == "v0.2" and pipeline_result:
+            # 1st priority: Use greeting_message for initial turns (no pipeline result = opening turn)
+            if not pipeline_result and hasattr(participant, 'greeting_message') and participant.greeting_message:
+                should_bypass_llm = True
+                pre_generated_text = participant.greeting_message
+                logger.info(f"[process_ai_turn] Using greeting_message for {participant.name}: {pre_generated_text[:50]}...")
+            
+            # 2nd priority: Use Conductor script from pipeline
+            elif pipeline_mode == "v0.2" and pipeline_result:
                 speaker_scripts = pipeline_result.get("speaker_scripts", {})
                 my_script = speaker_scripts.get(participant.name, {})
                 if my_script.get("text"):
@@ -1171,6 +1178,7 @@ class MyTurnService:
                 "level_instruction": conductor_output.level_instruction,
                 "corrections": conductor_output.corrections,
                 "better_expressions": conductor_output.better_expressions,
+                "energy_flow": conductor_output.energy_flow,
                 "speaker_scripts": speaker_scripts,
                 "user_emotion": conductor_output.user_emotion,
             }

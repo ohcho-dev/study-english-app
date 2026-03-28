@@ -171,6 +171,7 @@ class ConversationTemplate(Base):
     level_definitions = Column(JSONB, nullable=True)  # Custom level definitions JSON [{level, name, description, instruction}, ...]
     allow_user_topic = Column(Boolean, nullable=False, default=False, server_default="false")  # Allow user to set custom topic per session
     feedback_card_type = Column(String(30), nullable=False, default="default", server_default="default")  # "default" or "detailed"
+    energy_flow_enabled = Column(Boolean, nullable=False, default=False, server_default="false")  # Enable Energy Flow analysis UI
 
     # Access Control
     is_public_to_tester = Column(Boolean, default=False, nullable=False)

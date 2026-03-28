@@ -151,6 +151,25 @@ class PlannerOutput(BaseModel):
 # ============================================================================
 
 
+class EnergyFlowComparison(BaseModel):
+    """A single row in the energy flow comparison table."""
+
+    korean: str = Field(description="Korean situation/expression")
+    english: str = Field(description="English expression with control verb")
+    direction: str = Field(description="Energy direction description in Korean")
+
+
+class EnergyFlowOutput(BaseModel):
+    """Energy flow visualization data for a control verb."""
+
+    verb: str = Field(description="Control verb (e.g., HAVE, GET, PUT)")
+    core_energy: str = Field(description="Core energy description in Korean")
+    comparisons: list[EnergyFlowComparison] = Field(
+        default_factory=list,
+        description="Comparison rows showing different energy directions",
+    )
+
+
 class ConductorScript(BaseModel):
     """Generated script for a single persona."""
 
@@ -174,6 +193,7 @@ class ConductorOutput(BaseModel):
     level_instruction: str = Field(default="", description="Level instruction for AI participants")
     corrections: list[str] = Field(default_factory=list, description="Grammar/expression corrections")
     better_expressions: list[str] = Field(default_factory=list, description="Suggested better expressions")
+    energy_flow: dict | None = Field(default=None, description="Energy flow comparison data for UI visualization")
 
 
 # ============================================================================

@@ -57,7 +57,7 @@ export const ConversationStage = ({
         isProcessing,
         endSession,
         chatHistory,
-    } = useMyTurn(sessionId);
+    } = useMyTurn(sessionId, { energyFlowEnabled: template.energy_flow_enabled });
 
     const streamingSTT = useStreamingSTT();
 

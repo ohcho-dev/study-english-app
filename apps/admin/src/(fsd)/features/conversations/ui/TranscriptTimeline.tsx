@@ -15,6 +15,7 @@ import type { ChatMessage } from '../model/useMyTurn';
 import type { FeedbackCardType } from '../model/types';
 import { FeedbackCard } from './FeedbackCard';
 import { DetailedFeedbackCard } from './DetailedFeedbackCard';
+import { EnergyFlowCard } from './EnergyFlowCard';
 
 interface TranscriptTimelineProps {
     messages: ChatMessage[];
@@ -145,6 +146,14 @@ const TranscriptEntry = ({ message, pendingFeedback, feedbackCardType }: Transcr
                         </p>
                     )}
                 </div>
+            )}
+
+            {/* Energy flow card shown below user messages (parallel API, appears first) */}
+            {message.isUser && (message.energyFlowLoading || message.energyFlow) && (
+                <EnergyFlowCard
+                    data={message.energyFlow!}
+                    isLoading={message.energyFlowLoading}
+                />
             )}
 
             {/* Feedback card shown below moderator message (data from preceding user message) */}

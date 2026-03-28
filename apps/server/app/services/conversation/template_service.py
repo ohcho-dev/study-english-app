@@ -155,6 +155,7 @@ class TemplateService:
             level_definitions=template.level_definitions,
             allow_user_topic=template.allow_user_topic,
             feedback_card_type=template.feedback_card_type,
+            energy_flow_enabled=getattr(template, 'energy_flow_enabled', False),
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -218,6 +219,7 @@ class TemplateService:
             level_definitions=data.level_definitions,
             allow_user_topic=data.allow_user_topic,
             feedback_card_type=data.feedback_card_type,
+            energy_flow_enabled=data.energy_flow_enabled,
         )
         self.db.add(template)
         await self.db.flush()
@@ -322,6 +324,8 @@ class TemplateService:
             template.allow_user_topic = data.allow_user_topic
         if data.feedback_card_type is not None:
             template.feedback_card_type = data.feedback_card_type
+        if data.energy_flow_enabled is not None:
+            template.energy_flow_enabled = data.energy_flow_enabled
 
         # Update participants if provided
         if data.participants is not None:
@@ -475,6 +479,7 @@ class TemplateService:
             level_definitions=getattr(existing, 'level_definitions', None),
             allow_user_topic=getattr(existing, 'allow_user_topic', False),
             feedback_card_type=getattr(existing, 'feedback_card_type', 'default'),
+            energy_flow_enabled=getattr(existing, 'energy_flow_enabled', False),
             participants=[
                 {
                     "participant_type": p.participant_type,

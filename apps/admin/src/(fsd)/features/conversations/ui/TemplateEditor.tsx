@@ -168,6 +168,7 @@ Keep responses concise (1-3 sentences) and conversational.`
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [allowUserTopic, setAllowUserTopic] = useState(template?.allow_user_topic ?? false);
     const [feedbackCardType, setFeedbackCardType] = useState(template?.feedback_card_type || 'default');
+    const [energyFlowEnabled, setEnergyFlowEnabled] = useState(template?.energy_flow_enabled ?? false);
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
         template?.participants?.map((p) => ({
             id: p.id,
@@ -319,6 +320,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                 is_active: isActive,
                 allow_user_topic: allowUserTopic,
                 feedback_card_type: feedbackCardType,
+                energy_flow_enabled: energyFlowEnabled,
                 participants,
             };
 
@@ -582,6 +584,22 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 </label>
                                 <span className="text-[10px] text-muted-foreground">
                                     세션 시작 시 사용자가 원하는 대화 주제를 직접 입력할 수 있습니다
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="energyFlowEnabled"
+                                    checked={energyFlowEnabled}
+                                    onChange={(e) => setEnergyFlowEnabled(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <label htmlFor="energyFlowEnabled" className="text-sm">
+                                    에너지 흐름 분석 활성화
+                                </label>
+                                <span className="text-[10px] text-muted-foreground">
+                                    사용자 발화 후 동사 에너지 방향 비교 테이블을 병렬로 생성합니다
                                 </span>
                             </div>
                         </CardContent>

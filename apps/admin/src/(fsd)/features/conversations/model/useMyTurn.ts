@@ -16,6 +16,14 @@ export interface ChatMessage {
     corrections?: string[];
     /** Suggested better expressions from v0.2 pipeline (user messages only) */
     betterExpressions?: string[];
+    /** Energy flow comparison data from parallel API (user messages only) */
+    energyFlow?: {
+        verb: string;
+        core_energy: string;
+        comparisons: { korean: string; english: string; direction: string }[];
+    } | null;
+    /** Whether energy flow is still loading */
+    energyFlowLoading?: boolean;
 }
 
 export interface MyTurnState {
@@ -31,7 +39,13 @@ export interface MyTurnState {
     chatHistory: ChatMessage[];
 }
 
-export const useMyTurn = (sessionId: string | null) => {
+export interface UseMyTurnOptions {
+    /** Whether to enable parallel Energy Flow API calls */
+    energyFlowEnabled?: boolean;
+}
+
+export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = {}) => {
+    const { energyFlowEnabled = false } = options;
     const [state, setState] = useState<MyTurnState>({
         isConnected: false,
         isSessionActive: false,
@@ -224,6 +238,79 @@ export const useMyTurn = (sessionId: string | null) => {
         }
     }, [sessionId, disconnect]);
 
+    /**
+     * Fetch energy flow data in parallel (non-blocking).
+     * Uses a ref to access the latest chatHistory, avoiding React stale closure issues.
+     * Finds the last Ryan message and fires the /energy-flow API.
+     */
+    const chatHistoryRef = useRef<ChatMessage[]>([]);
+    chatHistoryRef.current = state.chatHistory;
+
+    const fetchEnergyFlow = useCallback(async (userMsgId: string, studentText: string) => {
+        if (!sessionId) return;
+
+        try {
+            // Use ref to get latest chatHistory (avoids stale closure)
+            const history = chatHistoryRef.current;
+            const lastAiMsg = [...history].reverse().find(m => !m.isUser);
+            if (!lastAiMsg) {
+                console.warn('[EnergyFlow] No Ryan message found in history, clearing loading state');
+                setState(prev => ({
+                    ...prev,
+                    chatHistory: prev.chatHistory.map(msg =>
+                        msg.id === userMsgId ? { ...msg, energyFlowLoading: false } : msg
+                    ),
+                }));
+                return;
+            }
+
+            console.log('[EnergyFlow] Fetching for AI:', lastAiMsg.text.slice(0, 50), '...');
+
+            const formData = new FormData();
+            formData.append('ryan_utterance', lastAiMsg.text);
+            formData.append('student_response', studentText);
+            formData.append('level', '1');
+
+            const res = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/energy-flow`,
+                { method: 'POST', body: formData }
+            );
+
+            if (res.ok) {
+                const data = await res.json();
+                console.log('[EnergyFlow] Success:', data.energy_flow?.verb);
+                setState(prev => ({
+                    ...prev,
+                    chatHistory: prev.chatHistory.map(msg =>
+                        msg.id === userMsgId
+                            ? { ...msg, energyFlow: data.energy_flow, energyFlowLoading: false }
+                            : msg
+                    ),
+                }));
+            } else {
+                console.error('[EnergyFlow] API error:', res.status);
+                setState(prev => ({
+                    ...prev,
+                    chatHistory: prev.chatHistory.map(msg =>
+                        msg.id === userMsgId
+                            ? { ...msg, energyFlowLoading: false }
+                            : msg
+                    ),
+                }));
+            }
+        } catch (err) {
+            console.error('[EnergyFlow] Fetch error:', err);
+            setState(prev => ({
+                ...prev,
+                chatHistory: prev.chatHistory.map(msg =>
+                    msg.id === userMsgId
+                        ? { ...msg, energyFlowLoading: false }
+                        : msg
+                ),
+            }));
+        }
+    }, [sessionId]);
+
     const sendAudio = useCallback(async (audioBlob: Blob, t0UserEnd?: number) => {
         if (!sessionId) return;
 
@@ -275,8 +362,13 @@ export const useMyTurn = (sessionId: string | null) => {
                 ...prev,
                 transcript: data.transcript,
                 isProcessing: false,
-                chatHistory: [...prev.chatHistory, userMsg]
+                chatHistory: [...prev.chatHistory, { ...userMsg, energyFlowLoading: energyFlowEnabled ? true : undefined }]
             }));
+
+            // Fire energy flow API in parallel (non-blocking) — only if enabled
+            if (energyFlowEnabled) {
+                fetchEnergyFlow(userMsg.id, data.transcript);
+            }
 
         } catch (err) {
             console.error(err);
@@ -317,8 +409,13 @@ export const useMyTurn = (sessionId: string | null) => {
                 ...prev,
                 transcript: text,
                 isProcessing: false,
-                chatHistory: [...prev.chatHistory, userMsg]
+                chatHistory: [...prev.chatHistory, { ...userMsg, energyFlowLoading: energyFlowEnabled ? true : undefined }]
             }));
+
+            // Fire energy flow API in parallel (non-blocking) — only if enabled
+            if (energyFlowEnabled) {
+                fetchEnergyFlow(userMsg.id, text);
+            }
 
         } catch (err) {
             console.error(err);

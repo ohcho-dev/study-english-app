@@ -250,6 +250,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             level_instruction=level_instruction,
             corrections=self._normalize_string_list(data.get("corrections", [])),
             better_expressions=self._normalize_string_list(data.get("better_expressions", [])),
+            energy_flow=data.get("energy_flow"),
         )
 
     def _build_fallback(

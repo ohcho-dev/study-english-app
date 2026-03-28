@@ -266,6 +266,43 @@ async def process_text_input(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.post("/sessions/{session_id}/energy-flow")
+async def generate_energy_flow(
+    db: DbSession,
+    session_id: UUID,
+    ryan_utterance: str = Form(..., description="Ryan's EMF Shift Korean utterance"),
+    student_response: str = Form(..., description="Student's English response"),
+    control_verb: str = Form("", description="Control verb hint (optional)"),
+    level: int = Form(1, description="Current difficulty level"),
+):
+    """Generate energy flow comparison table for a control verb.
+
+    This endpoint is called in PARALLEL with the main pipeline,
+    providing fast energy flow visualization while the student waits
+    for the full pipeline response (evaluator → planner → conductor).
+    """
+    from app.services.conversation.energy_flow_service import EnergyFlowService
+
+    service = EnergyFlowService()
+    result, duration_ms = await service.generate(
+        ryan_utterance=ryan_utterance,
+        student_response=student_response,
+        control_verb=control_verb,
+        level=level,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate energy flow data",
+        )
+
+    return {
+        "energy_flow": result,
+        "duration_ms": duration_ms,
+    }
+
+
 # ============================================================================
 # Session Endpoints
 # ============================================================================
