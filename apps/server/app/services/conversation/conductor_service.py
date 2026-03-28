@@ -104,7 +104,7 @@ class ConductorService:
                     ],
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.7,
-                        max_output_tokens=3000,
+                        max_output_tokens=4096,
                         response_mime_type="application/json",
                     ),
                 )
@@ -220,10 +220,16 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
         turn_id: Optional[str],
     ) -> ConductorOutput:
         """Parse LLM JSON response into ConductorOutput."""
+        logger.info(f"[Conductor] Raw LLM response (first 500 chars): {raw_text[:500]}")
+        
+        # Sanitize: remove trailing commas before } or ] (common LLM JSON error)
+        import re
+        sanitized = re.sub(r',\s*([}\]])', r'\1', raw_text)
+        
         try:
-            data = json.loads(raw_text)
-        except json.JSONDecodeError:
-            logger.warning("[Conductor] Failed to parse JSON, using fallback")
+            data = json.loads(sanitized)
+        except json.JSONDecodeError as e:
+            logger.error(f"[Conductor] JSON parse FAILED: {e}. Raw text (first 1000): {raw_text[:1000]}")
             return self._build_fallback(
                 planner_output, participants, level, level_instruction, trace_id, turn_id
             )
