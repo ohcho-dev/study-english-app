@@ -154,7 +154,7 @@ export const FeedbackCard = ({ corrections, betterExpressions }: FeedbackCardPro
                                                             {parsed.before}
                                                         </span>
                                                         <span className="text-muted-foreground/50 mx-1.5">→</span>
-                                                        <span className="text-amber-300 font-medium">
+                                                        <span className="text-amber-300 font-medium whitespace-pre-line">
                                                             {parsed.after}
                                                         </span>
                                                     </>

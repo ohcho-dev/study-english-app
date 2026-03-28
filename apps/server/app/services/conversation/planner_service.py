@@ -139,6 +139,7 @@ class PlannerService:
         trace_id: Optional[str] = None,
         turn_id: Optional[str] = None,
         history_text: Optional[str] = None,
+        scene_context: Optional[str] = None,
     ) -> tuple[PlannerOutput, float]:
         """Make a strategic decision based on evaluation results.
 
@@ -160,6 +161,7 @@ class PlannerService:
             session_state=session_state,
             prev_level=prev_level,
             history_text=history_text,
+            scene_context=scene_context,
         )
 
         # If LLM failed, fallback to rule-based
@@ -225,6 +227,7 @@ class PlannerService:
         session_state: SessionState,
         prev_level: int,
         history_text: Optional[str] = None,
+        scene_context: Optional[str] = None,
     ) -> tuple[Optional[int], Optional[str], Optional[list[str]]]:
         """Use LLM for nuanced level decision.
 

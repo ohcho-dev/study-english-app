@@ -104,7 +104,7 @@ class ConductorService:
                     ],
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.7,
-                        max_output_tokens=2000,
+                        max_output_tokens=3000,
                         response_mime_type="application/json",
                     ),
                 )
