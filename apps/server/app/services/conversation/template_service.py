@@ -154,6 +154,7 @@ class TemplateService:
             conductor_llm_model=template.conductor_llm_model,
             level_definitions=template.level_definitions,
             allow_user_topic=template.allow_user_topic,
+            feedback_card_type=template.feedback_card_type,
             participants=[
                 ParticipantResponse(
                     id=p.id,
@@ -216,6 +217,7 @@ class TemplateService:
             conductor_llm_model=data.conductor_llm_model,
             level_definitions=data.level_definitions,
             allow_user_topic=data.allow_user_topic,
+            feedback_card_type=data.feedback_card_type,
         )
         self.db.add(template)
         await self.db.flush()
@@ -318,6 +320,8 @@ class TemplateService:
             template.level_definitions = data.level_definitions
         if data.allow_user_topic is not None:
             template.allow_user_topic = data.allow_user_topic
+        if data.feedback_card_type is not None:
+            template.feedback_card_type = data.feedback_card_type
 
         # Update participants if provided
         if data.participants is not None:
@@ -470,6 +474,7 @@ class TemplateService:
             conductor_llm_model=getattr(existing, 'conductor_llm_model', None),
             level_definitions=getattr(existing, 'level_definitions', None),
             allow_user_topic=getattr(existing, 'allow_user_topic', False),
+            feedback_card_type=getattr(existing, 'feedback_card_type', 'default'),
             participants=[
                 {
                     "participant_type": p.participant_type,

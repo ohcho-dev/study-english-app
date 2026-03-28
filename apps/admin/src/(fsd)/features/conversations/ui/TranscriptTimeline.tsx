@@ -12,12 +12,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Languages, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '../model/useMyTurn';
+import type { FeedbackCardType } from '../model/types';
 import { FeedbackCard } from './FeedbackCard';
+import { DetailedFeedbackCard } from './DetailedFeedbackCard';
 
 interface TranscriptTimelineProps {
     messages: ChatMessage[];
     currentSpeaker?: { name: string } | null;
     isProcessing?: boolean;
+    feedbackCardType?: FeedbackCardType;
 }
 
 /** Per-message translation cache */
@@ -27,9 +30,10 @@ interface TranscriptEntryProps {
     message: ChatMessage;
     /** Feedback data from the preceding user message (shown below moderator messages) */
     pendingFeedback?: { corrections?: string[]; betterExpressions?: string[] } | null;
+    feedbackCardType?: FeedbackCardType;
 }
 
-const TranscriptEntry = ({ message, pendingFeedback }: TranscriptEntryProps) => {
+const TranscriptEntry = ({ message, pendingFeedback, feedbackCardType }: TranscriptEntryProps) => {
     const [showTranslation, setShowTranslation] = useState(false);
     const [translation, setTranslation] = useState<string | null>(null);
     const [isTranslating, setIsTranslating] = useState(false);
@@ -145,10 +149,17 @@ const TranscriptEntry = ({ message, pendingFeedback }: TranscriptEntryProps) => 
 
             {/* Feedback card shown below moderator message (data from preceding user message) */}
             {pendingFeedback && (
-                <FeedbackCard
-                    corrections={pendingFeedback.corrections}
-                    betterExpressions={pendingFeedback.betterExpressions}
-                />
+                feedbackCardType === 'detailed' ? (
+                    <DetailedFeedbackCard
+                        corrections={pendingFeedback.corrections}
+                        betterExpressions={pendingFeedback.betterExpressions}
+                    />
+                ) : (
+                    <FeedbackCard
+                        corrections={pendingFeedback.corrections}
+                        betterExpressions={pendingFeedback.betterExpressions}
+                    />
+                )
             )}
         </div>
     );
@@ -174,6 +185,7 @@ export const TranscriptTimeline = ({
     messages,
     currentSpeaker,
     isProcessing,
+    feedbackCardType,
 }: TranscriptTimelineProps) => {
     const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -203,7 +215,7 @@ export const TranscriptTimeline = ({
                             }
                         }
                         return (
-                            <TranscriptEntry key={msg.id} message={msg} pendingFeedback={pendingFeedback} />
+                            <TranscriptEntry key={msg.id} message={msg} pendingFeedback={pendingFeedback} feedbackCardType={feedbackCardType} />
                         );
                     })}
 

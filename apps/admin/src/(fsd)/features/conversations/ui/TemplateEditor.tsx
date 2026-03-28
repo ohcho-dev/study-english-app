@@ -167,6 +167,7 @@ Keep responses concise (1-3 sentences) and conversational.`
     // Note: difficulty and estimated_minutes are set in experiment page
     const [isActive, setIsActive] = useState(template?.is_active ?? true);
     const [allowUserTopic, setAllowUserTopic] = useState(template?.allow_user_topic ?? false);
+    const [feedbackCardType, setFeedbackCardType] = useState(template?.feedback_card_type || 'default');
     const [participants, setParticipants] = useState<ParticipantCreate[]>(
         template?.participants?.map((p) => ({
             id: p.id,
@@ -317,6 +318,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                 level_definitions: parsedLevelDefs ?? null,
                 is_active: isActive,
                 allow_user_topic: allowUserTopic,
+                feedback_card_type: feedbackCardType,
                 participants,
             };
 
@@ -458,6 +460,80 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 <p className="text-xs text-muted-foreground mt-1">
                                     세션 시작 시 누가 먼저 말할지 결정합니다.
                                 </p>
+                            </div>
+
+                            {/* Feedback Card Type */}
+                            <div>
+                                <label className="text-sm font-medium block mb-1.5">
+                                    피드백 카드 타입
+                                </label>
+                                <select
+                                    value={feedbackCardType}
+                                    onChange={(e) => setFeedbackCardType(e.target.value)}
+                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                                >
+                                    <option value="default">Default (기본)</option>
+                                    <option value="detailed">Detailed (구조화)</option>
+                                </select>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    {feedbackCardType === 'detailed'
+                                        ? 'Point, 자연스러운 한국어 등 구조화된 피드백 표시'
+                                        : '교정 + 추천 표현을 단순 리스트로 표시'}
+                                </p>
+                                {/* Preview */}
+                                <div className="mt-2 rounded-md border border-border/40 bg-card/40 p-2.5 text-xs space-y-1.5">
+                                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">미리보기</div>
+                                    {feedbackCardType === 'detailed' ? (
+                                        <div className="space-y-2">
+                                            <div>
+                                                <span className="text-rose-400/80 text-[10px] font-semibold">교정</span>
+                                                <div className="pl-3 text-foreground/70">
+                                                    <span className="line-through text-rose-400/70">I have go</span>
+                                                    <span className="text-muted-foreground/50 mx-1">→</span>
+                                                    <span className="text-emerald-400">I have to go</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span className="text-violet-400/80 text-[10px] font-semibold">POINT</span>
+                                                <div className="ml-3 rounded bg-violet-500/5 border border-violet-500/10 p-2 space-y-1">
+                                                    <div className="text-foreground/70">영어에서 의무는 have로 표현합니다</div>
+                                                    <div className="rounded bg-background/50 border border-border/30 px-2 py-1 space-y-0.5">
+                                                        <div className="text-muted-foreground/60">나는 가야 해</div>
+                                                        <div><span className="font-mono text-[10px] text-sky-400/80 w-12 inline-block">Strip</span> <span className="text-foreground/50">나, 가다, 의무</span></div>
+                                                        <div><span className="font-mono text-[10px] text-amber-400/80 w-12 inline-block">Shift</span> <span className="text-foreground/50">나 가지다 가다</span></div>
+                                                        <div><span className="font-mono text-[10px] text-emerald-400/80 w-12 inline-block">Capture</span> <span className="text-emerald-400 font-medium">I have to go</span></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span className="text-teal-400/80 text-[10px] font-semibold">이런 뜻이에요</span>
+                                                <div className="pl-3 space-y-0.5">
+                                                    <div><span className="text-muted-foreground/50">-</span> <span className="text-teal-300/90">나는 가야 해</span></div>
+                                                    <div><span className="text-muted-foreground/50">-</span> <span className="text-teal-300/90">가야 되는데</span></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            <div>
+                                                <span className="text-rose-400/80 text-[10px] font-semibold">교정</span>
+                                                <div className="pl-3 text-foreground/70">
+                                                    <span className="line-through text-rose-400/70">I have go</span>
+                                                    <span className="text-muted-foreground/50 mx-1">→</span>
+                                                    <span className="text-emerald-400">I have to go</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span className="text-amber-400/80 text-[10px] font-semibold">추천 표현</span>
+                                                <div className="pl-3">
+                                                    <span className="text-muted-foreground/70">hint text</span>
+                                                    <span className="text-muted-foreground/50 mx-1">→</span>
+                                                    <span className="text-amber-300">example text</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Pipeline Mode Selector */}

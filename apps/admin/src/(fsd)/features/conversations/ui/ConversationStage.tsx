@@ -316,6 +316,7 @@ export const ConversationStage = ({
                     messages={displayMessages}
                     currentSpeaker={currentSpeaker}
                     isProcessing={isAiThinking}
+                    feedbackCardType={(template.feedback_card_type as 'default' | 'detailed') || 'default'}
                 />
             )}
 

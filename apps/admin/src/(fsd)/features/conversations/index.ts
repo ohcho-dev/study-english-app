@@ -4,6 +4,7 @@ export type {
     ParticipantType,
     SessionStatus,
     TurnType,
+    FeedbackCardType,
     VoiceSettings,
     VoiceInfo,
     Participant,

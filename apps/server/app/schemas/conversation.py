@@ -221,6 +221,7 @@ class TemplateBase(BaseModel):
     conductor_llm_model: str | None = Field(None, max_length=50, description="LLM model for Conductor (v0.2)")
     level_definitions: list | None = Field(None, description="Custom level definitions for v0.2 [{level, name, description, instruction}, ...]")
     allow_user_topic: bool = Field(default=False, description="Allow user to set custom topic per session")
+    feedback_card_type: str = Field(default="default", description="Feedback card UI type: default or detailed")
 
 
 class TemplateCreate(TemplateBase):
@@ -258,6 +259,7 @@ class TemplateUpdate(BaseModel):
     conductor_llm_model: str | None = None
     level_definitions: list | None = None
     allow_user_topic: bool | None = None
+    feedback_card_type: str | None = None
     participants: list[ParticipantCreate] | None = Field(
         None,
         description="If provided, replaces all existing participants",

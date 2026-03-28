@@ -113,9 +113,12 @@ export interface Template {
     conductor_llm_model?: string | null;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }> | null;
     allow_user_topic?: boolean;
+    feedback_card_type?: string;
     created_at: string;
     updated_at: string;
 }
+
+export type FeedbackCardType = 'default' | 'detailed';
 
 export interface TemplateListItem {
     id: string;
@@ -158,6 +161,7 @@ export interface TemplateCreate {
     conductor_llm_model?: string;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
     allow_user_topic?: boolean;
+    feedback_card_type?: string;
 }
 
 export interface TemplateUpdate {
@@ -188,6 +192,7 @@ export interface TemplateUpdate {
     conductor_llm_model?: string;
     level_definitions?: Array<{ level: number; name: string; description: string; instruction: string }>;
     allow_user_topic?: boolean;
+    feedback_card_type?: string;
 }
 
 // ============================================================================
