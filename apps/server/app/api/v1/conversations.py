@@ -37,6 +37,7 @@ from app.schemas.conversation import (
     TemplateUpdate,
     TurnResponse,
 )
+from app.schemas.observation import SessionObservationResponse
 from app.services.conversation.run0_service import Run0Service
 from app.services.conversation.session_service import SessionService
 from app.services.conversation.my_turn_service import MyTurnService
@@ -245,6 +246,8 @@ async def process_text_input(
     text: str = Form(..., description="User's text input"),
     t0_user_end: float = Form(0.0, description="Client timestamp when recording stopped"),
     t1_server_final: float = Form(0.0, description="Server timestamp when STT is_final received"),
+    t_recording_start: float = Form(0.0, description="Client timestamp when recording started (ms)"),
+    t_first_speech: float = Form(0.0, description="Client timestamp when first speech detected via VAD (ms)"),
 ):
     """Process user text input for My Turn session (skips STT).
     
@@ -261,6 +264,8 @@ async def process_text_input(
             t0_user_end=t0_user_end,
             text_input=text,
             t1_server_final=t1_server_final,
+            t_recording_start=t_recording_start,
+            t_first_speech=t_first_speech,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -468,13 +473,15 @@ async def process_my_turn_audio(
     background_tasks: BackgroundTasks,
     audio_file: UploadFile = File(..., description="Audio file"),
     t0_user_end: float = Form(0.0, description="Client timestamp when user stopped speaking"),
+    t_recording_start: float = Form(0.0, description="Client timestamp when recording started (ms)"),
+    t_first_speech: float = Form(0.0, description="Client timestamp when first speech was detected via VAD (ms)"),
 ):
     """Process user audio for My Turn session."""
     service = MyTurnService(db)
-    
+
     # Read audio
     audio_data = await audio_file.read()
-    
+
     # Determine format
     content_type = audio_file.content_type or ""
     audio_format = "webm"
@@ -482,9 +489,17 @@ async def process_my_turn_audio(
         audio_format = "wav"
     elif "mp3" in content_type or audio_file.filename.endswith(".mp3"):
         audio_format = "mp3"
-        
+
     try:
-        return await service.process_user_turn(session_id, audio_data, audio_format, background_tasks, t0_user_end)
+        return await service.process_user_turn(
+            session_id,
+            audio_data,
+            audio_format,
+            background_tasks,
+            t0_user_end,
+            t_recording_start=t_recording_start,
+            t_first_speech=t_first_speech,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -1190,3 +1205,738 @@ async def get_template_prompt_history(
         })
 
     return {"items": history, "total": len(history)}
+
+
+# ============================================================================
+# Session Observation Endpoints
+# ============================================================================
+
+
+@router.get(
+    "/sessions/{session_id}/observation",
+    response_model=SessionObservationResponse,
+)
+async def get_session_observation(
+    session_id: UUID,
+    db: DbSession,
+) -> dict:
+    """세션 관찰 데이터 조회."""
+    from app.services.conversation.observation_service import ObservationService
+
+    service = ObservationService(db)
+    obs = await service.get_observation(session_id)
+    if not obs:
+        raise HTTPException(
+            status_code=404,
+            detail="Observation not found. Session may not be completed yet.",
+        )
+    return _build_observation_response(obs)
+
+
+@router.post(
+    "/sessions/{session_id}/observation/generate",
+    response_model=SessionObservationResponse,
+)
+async def generate_session_observation(
+    session_id: UUID,
+    db: DbSession,
+) -> dict:
+    """관찰 데이터 수동 생성/재생성 (Layer 1+2)."""
+    from app.services.conversation.observation_service import ObservationService
+
+    service = ObservationService(db)
+    try:
+        obs = await service.generate_observation(session_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return _build_observation_response(obs)
+
+
+def _build_observation_response(obs: object) -> dict:
+    """SessionObservation ORM 인스턴스 → API 응답 dict 변환."""
+    from app.schemas.observation import ObservationLayer1, ObservationLayer2, ObservationLayer3
+
+    has_layer3 = obs.learning_behavior_summary is not None
+    return {
+        "id": obs.id,
+        "session_id": obs.session_id,
+        "account_id": obs.account_id,
+        "layer1": ObservationLayer1(
+            session_duration_sec=obs.session_duration_sec,
+            total_user_turns=obs.total_user_turns or 0,
+            total_ai_turns=obs.total_ai_turns or 0,
+            avg_user_utterance_length=obs.avg_user_utterance_length,
+            max_user_utterance_length=obs.max_user_utterance_length,
+            min_user_utterance_length=obs.min_user_utterance_length,
+            utterance_length_trend=obs.utterance_length_trend,
+            avg_user_response_interval_sec=obs.avg_user_response_interval_sec,
+            short_reply_count=obs.short_reply_count or 0,
+            silence_timeout_count=obs.silence_timeout_count or 0,
+            first_user_response_time_sec=obs.first_user_response_time_sec,
+            completion_status=obs.completion_status,
+            word_count_per_turn=obs.word_count_per_turn,
+            long_latency_turn_count=obs.long_latency_turn_count or 0,
+            long_latency_turn_ratio=obs.long_latency_turn_ratio,
+            long_gap_count=obs.long_gap_count or 0,
+            followup_after_short_answer=obs.followup_after_short_answer or 0,
+        ),
+        "layer2": ObservationLayer2(
+            avg_overall_score=obs.avg_overall_score,
+            score_trend=obs.score_trend,
+            level_progression=obs.level_progression,
+            max_level_reached=obs.max_level_reached,
+            level_up_count=obs.level_up_count or 0,
+            level_down_count=obs.level_down_count or 0,
+            primary_issues=obs.primary_issues,
+            correction_count=obs.correction_count or 0,
+            fluency_wpm_trend=obs.fluency_wpm_trend,
+            template_specific_data=obs.template_specific_data,
+        ),
+        "layer3": ObservationLayer3(
+            learning_behavior_summary=obs.learning_behavior_summary,
+            engagement_level=obs.engagement_level,
+            key_learning_points=obs.key_learning_points,
+            struggle_points=obs.struggle_points,
+            communication_style=obs.communication_style,
+            topic_maintenance_score=obs.topic_maintenance_score,
+            question_back_count=obs.question_back_count,
+            natural_conversation_score=obs.natural_conversation_score,
+            improvement_suggestions=obs.improvement_suggestions,
+            elaboration_adequacy=obs.elaboration_adequacy,
+            explicit_clarification_analysis=obs.explicit_clarification_analysis,
+            response_start_quality=obs.response_start_quality,
+            response_start_quality_detail=obs.response_start_quality_detail,
+            flow_maintenance=obs.flow_maintenance,
+            flow_maintenance_detail=obs.flow_maintenance_detail,
+            coping_attempt=obs.coping_attempt,
+            clarification_success=obs.clarification_success,
+            avoidance_vs_response=obs.avoidance_vs_response,
+        ),
+        "generated_at": obs.generated_at,
+        "reporting_llm_model": obs.reporting_llm_model,
+        "reporting_llm_duration_ms": obs.reporting_llm_duration_ms,
+        "has_layer3": has_layer3,
+    }
+
+
+# ============================================================================
+# Layer 3: Reporting LLM 수동 트리거
+# ============================================================================
+
+
+@router.post(
+    "/sessions/{session_id}/observation/analyze",
+    response_model=SessionObservationResponse,
+)
+async def analyze_session_observation(
+    session_id: UUID,
+    db: DbSession,
+) -> dict:
+    """Layer 3 AI 분석 실행 (수동 트리거).
+
+    Layer 1+2가 먼저 생성되어 있어야 합니다.
+    없으면 자동으로 Layer 1+2를 먼저 생성한 후 분석합니다.
+    """
+    from app.services.conversation.observation_service import ObservationService
+    from app.services.conversation.reporting_llm_service import ReportingLLMService
+
+    # Layer 1+2가 존재하는지 확인 — 없으면 자동 생성
+    obs_service = ObservationService(db)
+    obs = await obs_service.get_observation(session_id)
+    if not obs:
+        try:
+            obs = await obs_service.generate_observation(session_id)
+            await db.commit()
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    # Layer 3 분석 실행
+    reporting_service = ReportingLLMService(db)
+    try:
+        await reporting_service.analyze_session(session_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Layer 3 analysis failed for {session_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI analysis failed: {str(e)}",
+        )
+
+    # 업데이트된 관찰 데이터 반환
+    obs = await obs_service.get_observation(session_id)
+    return _build_observation_response(obs)
+
+
+# ============================================================================
+# Reporting LLM 프롬프트 관리
+# ============================================================================
+
+
+@router.get("/reporting-prompt")
+async def get_active_reporting_prompt(db: DbSession) -> dict:
+    """현재 활성 Reporting LLM 프롬프트 조회."""
+    from sqlalchemy import select as _select
+    from app.models.reporting_prompt_setting import ReportingPromptSetting
+    from app.services.conversation.reporting_llm_service import DEFAULT_SYSTEM_PROMPT
+
+    result = await db.execute(
+        _select(ReportingPromptSetting)
+        .where(ReportingPromptSetting.is_active.is_(True))
+        .order_by(ReportingPromptSetting.updated_at.desc())
+        .limit(1)
+    )
+    prompt = result.scalar_one_or_none()
+
+    if not prompt:
+        # DB 프롬프트 없음 — is_default=True, system_prompt=null
+        # UI는 null을 보고 /reporting-prompt/default를 호출해서 비교 표시.
+        # 실제 프롬프트 텍스트는 /reporting-prompt/default에서만 제공.
+        return {
+            "id": None,
+            "name": "기본 프롬프트 (코드 내장)",
+            "system_prompt": None,
+            "llm_model": "gemini-3.1-pro",
+            "temperature": "0.3",
+            "is_active": True,
+            "is_default": True,
+        }
+    return {
+        "id": str(prompt.id),
+        "name": prompt.name,
+        "system_prompt": prompt.system_prompt,
+        "llm_model": prompt.llm_model,
+        "temperature": prompt.temperature,
+        "is_active": prompt.is_active,
+        "is_default": False,
+        "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
+        "updated_at": prompt.updated_at.isoformat() if prompt.updated_at else None,
+    }
+
+
+@router.put("/reporting-prompt")
+async def update_reporting_prompt(db: DbSession, body: dict) -> dict:
+    """Reporting LLM 프롬프트 업데이트 (새 버전 생성).
+
+    기존 활성 프롬프트를 비활성화하고 새 프롬프트를 활성 상태로 생성합니다.
+    """
+    from sqlalchemy import select as _select
+    from app.models.reporting_prompt_setting import ReportingPromptSetting
+
+    system_prompt = body.get("system_prompt", "")
+    if not system_prompt or not system_prompt.strip():
+        raise HTTPException(status_code=400, detail="system_prompt is required")
+
+    # 기존 활성 프롬프트 비활성화
+    existing = await db.execute(
+        _select(ReportingPromptSetting)
+        .where(ReportingPromptSetting.is_active.is_(True))
+    )
+    for row in existing.scalars().all():
+        row.is_active = False
+
+    # 새 프롬프트 생성
+    new_prompt = ReportingPromptSetting(
+        name=body.get("name", "사용자 정의 프롬프트"),
+        system_prompt=system_prompt.strip(),
+        llm_model=body.get("llm_model", "gemini-2.5-pro"),
+        temperature=str(body.get("temperature", "0.3")),
+        is_active=True,
+    )
+    db.add(new_prompt)
+    await db.commit()
+    await db.refresh(new_prompt)
+
+    return {
+        "id": str(new_prompt.id),
+        "name": new_prompt.name,
+        "llm_model": new_prompt.llm_model,
+        "is_active": True,
+        "message": "프롬프트가 업데이트되었습니다",
+    }
+
+
+@router.get("/reporting-prompt/history")
+async def get_reporting_prompt_history(db: DbSession) -> dict:
+    """Reporting LLM 프롬프트 버전 이력 조회."""
+    from sqlalchemy import select as _select
+    from app.models.reporting_prompt_setting import ReportingPromptSetting
+
+    result = await db.execute(
+        _select(ReportingPromptSetting)
+        .order_by(ReportingPromptSetting.created_at.desc())
+        .limit(20)
+    )
+    prompts = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "llm_model": p.llm_model,
+                "temperature": p.temperature,
+                "is_active": p.is_active,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in prompts
+        ],
+        "total": len(prompts),
+    }
+
+
+@router.get("/reporting-prompt/default")
+async def get_default_reporting_prompt() -> dict:
+    """코드 내장 기본 프롬프트 텍스트를 반환. Admin UI에서 리셋 시 사용."""
+    from app.services.conversation.reporting_llm_service import DEFAULT_SYSTEM_PROMPT
+
+    return {
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "llm_model": "gemini-3.1-pro",
+        "temperature": "0.3",
+    }
+
+
+# ============================================================================
+# Excel Export
+# ============================================================================
+
+
+@router.get("/sessions/{session_id}/export/observation-excel")
+async def export_observation_excel(
+    session_id: UUID,
+    db: DbSession,
+):
+    """관찰 데이터를 Excel로 내보내기 (다중 시트).
+
+    시트 구성:
+    - 개요: Layer 1+2 전체 메트릭
+    - 턴별 상세: 대화 + Pipeline 데이터
+    - AI 분석 보고서: Layer 3 (있는 경우)
+    """
+    import io
+
+    import openpyxl
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import select
+
+    from app.models.conversation import ConversationTurn
+    from app.models.pipeline_log import PipelineLog
+    from app.services.conversation.observation_service import ObservationService
+
+    obs_service = ObservationService(db)
+    obs = await obs_service.get_observation(session_id)
+    if not obs:
+        raise HTTPException(status_code=404, detail="Observation not found. Generate it first.")
+
+    # 턴 데이터 조회
+    turns_result = await db.execute(
+        select(ConversationTurn)
+        .where(ConversationTurn.session_id == session_id)
+        .order_by(ConversationTurn.turn_index)
+    )
+    turns = list(turns_result.scalars().all())
+
+    # Pipeline 로그 조회
+    pipeline_result = await db.execute(
+        select(PipelineLog)
+        .where(PipelineLog.session_id == session_id)
+        .order_by(PipelineLog.turn_index)
+    )
+    pipeline_logs = list(pipeline_result.scalars().all())
+
+    # Excel 생성
+    wb = openpyxl.Workbook()
+
+    ws_overview = wb.active
+    ws_overview.title = "개요"
+    _write_overview_sheet(ws_overview, obs)
+
+    ws_turns = wb.create_sheet("턴별 상세")
+    _write_turns_sheet(ws_turns, turns, pipeline_logs)
+
+    if obs.learning_behavior_summary:
+        ws_analysis = wb.create_sheet("AI 분석 보고서")
+        _write_analysis_sheet(ws_analysis, obs)
+
+    # Pipeline 상세 시트 (v0.2 세션에만 의미 있음)
+    if pipeline_logs:
+        ws_pipeline = wb.create_sheet("Pipeline 상세")
+        _write_pipeline_detail_sheet(ws_pipeline, turns, pipeline_logs)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    date_str = obs.generated_at.strftime("%Y%m%d") if obs.generated_at else "unknown"
+    filename = f"observation_{str(session_id)[:8]}_{date_str}.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _write_overview_sheet(ws, obs) -> None:
+    """개요 시트 — Layer 1+2 전체 메트릭."""
+    from openpyxl.styles import Font
+
+    ws.append(["=== Layer 1: Rule-Based 메트릭 ==="])
+    ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+
+    metrics_l1 = [
+        ("세션 시간 (초)", obs.session_duration_sec),
+        ("총 사용자 턴", obs.total_user_turns),
+        ("총 AI 턴", obs.total_ai_turns),
+        ("평균 발화 길이 (단어)", obs.avg_user_utterance_length),
+        ("최대 발화 길이", obs.max_user_utterance_length),
+        ("최소 발화 길이", obs.min_user_utterance_length),
+        ("발화 길이 추이", obs.utterance_length_trend),
+        ("평균 응답 간격 (초)", obs.avg_user_response_interval_sec),
+        ("짧은 답변 수 (≤3단어)", obs.short_reply_count),
+        ("침묵 타임아웃 수", obs.silence_timeout_count),
+        ("첫 응답 시간 (초)", obs.first_user_response_time_sec),
+        ("완료 상태", obs.completion_status),
+        ("높은 레이턴시 턴 수", obs.long_latency_turn_count),
+        ("높은 레이턴시 비율", obs.long_latency_turn_ratio),
+        ("긴 간격 수 (>5초)", obs.long_gap_count),
+        ("짧은 답변 후 개선 횟수", obs.followup_after_short_answer),
+    ]
+    for label, value in metrics_l1:
+        ws.append([label, value])
+
+    ws.append([])
+    ws.append(["=== Layer 2: Pipeline 집계 ==="])
+    ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+
+    metrics_l2 = [
+        ("평균 Overall Score", obs.avg_overall_score),
+        ("점수 추이", obs.score_trend),
+        ("최고 도달 레벨", obs.max_level_reached),
+        ("레벨 업 횟수", obs.level_up_count),
+        ("레벨 다운 횟수", obs.level_down_count),
+        ("교정 횟수", obs.correction_count),
+        ("핵심 이슈 TOP 3", ", ".join(obs.primary_issues) if obs.primary_issues else None),
+    ]
+    for label, value in metrics_l2:
+        ws.append([label, value])
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 25
+
+
+def _write_turns_sheet(ws, turns, pipeline_logs) -> None:
+    """턴별 상세 시트."""
+    import openpyxl.utils
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    headers = [
+        "턴#", "유형", "화자", "발화 내용", "단어 수", "응답 간격(초)",
+        "E2E(ms)", "Evaluator 점수", "주요 이슈", "레벨", "Path",
+        "교정", "더 나은 표현",
+    ]
+    ws.append(headers)
+    fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    font = Font(bold=True, color="FFFFFF")
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = fill
+        cell.font = font
+        cell.alignment = Alignment(horizontal="center")
+
+    eval_by_turn: dict = {}
+    plan_by_turn: dict = {}
+    cond_by_turn: dict = {}
+    for log in pipeline_logs:
+        if not log.output_json:
+            continue
+        if log.module_name == "evaluator":
+            eval_by_turn[log.turn_index] = log.output_json
+        elif log.module_name == "planner":
+            plan_by_turn[log.turn_index] = log.output_json
+        elif log.module_name == "conductor":
+            cond_by_turn[log.turn_index] = log.output_json
+
+    for t in turns:
+        word_count = len(t.content_text.split()) if t.content_text else 0
+        response_interval = None
+        if t.t_first_speech and t.t_recording_start and t.t_first_speech >= t.t_recording_start:
+            response_interval = round((t.t_first_speech - t.t_recording_start) / 1000.0, 2)
+
+        e2e_ms = None
+        if t.t0_user_end and t.t3_audio_play_start:
+            e2e_ms = round(t.t3_audio_play_start - t.t0_user_end, 0)
+
+        eval_data = eval_by_turn.get(t.turn_index, {})
+        plan_data = plan_by_turn.get(t.turn_index, {})
+        cond_data = cond_by_turn.get(t.turn_index, {})
+
+        eval_score = eval_data.get("aggregate", {}).get("overall_score") if isinstance(eval_data, dict) else None
+        primary_issue = eval_data.get("diagnosis", {}).get("primary_issue") if isinstance(eval_data, dict) else None
+        level = plan_data.get("persona_plan", {}).get("current_level") if isinstance(plan_data, dict) else None
+        path = plan_data.get("decision", {}).get("path") if isinstance(plan_data, dict) else None
+        corrections = ", ".join(cond_data.get("corrections", [])) if isinstance(cond_data, dict) else None
+        better_expr = ", ".join(cond_data.get("better_expressions", [])) if isinstance(cond_data, dict) else None
+
+        turn_type_str = t.turn_type.value if hasattr(t.turn_type, "value") else str(t.turn_type)
+
+        ws.append([
+            t.turn_index,
+            turn_type_str,
+            t.speaker_name or "",
+            t.content_text or "",
+            word_count if turn_type_str == "user" else None,
+            response_interval,
+            e2e_ms,
+            eval_score,
+            primary_issue,
+            level,
+            path,
+            corrections,
+            better_expr,
+        ])
+
+    widths = [6, 10, 12, 50, 8, 12, 10, 10, 12, 18, 8, 14, 30, 30]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+
+def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
+    """Pipeline 상세 시트 — turn-by-turn Evaluator/Planner/Conductor 전체 데이터."""
+    import json
+    import openpyxl.utils
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    # ── 헤더 ──
+    headers = [
+        # 기본
+        "턴#", "유형", "발화 내용", "단어 수", "WPM",
+        # Evaluator
+        "종합 점수", "개념 추출(A)", "핵심 동사(B)", "확장(C)",
+        "모방 점수", "복잡도", "slot_avg",
+        "주요 이슈", "보조 이슈", "권장 액션",
+        # Planner
+        "레벨(전)", "레벨(후)", "Path", "이유",
+        "연속 고점 횟수",
+        # Conductor
+        "교정 표현", "더 나은 표현", "피드백",
+        # 타이밍
+        "t_recording_start", "t_first_speech", "t0_user_end", "E2E(ms)",
+    ]
+    ws.append(headers)
+
+    # 헤더 스타일
+    fill_eval = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    fill_plan = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+    fill_cond = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+    fill_time = PatternFill(start_color="9E480E", end_color="9E480E", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    col_ranges = {
+        "base": range(1, 6),        # A–E (기본)
+        "eval": range(6, 16),       # F–O (Evaluator)
+        "plan": range(16, 21),      # P–T (Planner)
+        "cond": range(21, 24),      # U–W (Conductor)
+        "time": range(24, 28),      # X–AA (타이밍)
+    }
+    fills = {
+        "base": PatternFill(start_color="2F3E46", end_color="2F3E46", fill_type="solid"),
+        "eval": fill_eval, "plan": fill_plan, "cond": fill_cond, "time": fill_time,
+    }
+    for group, cols in col_ranges.items():
+        for col in cols:
+            cell = ws.cell(row=1, column=col)
+            cell.fill = fills[group]
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+    # ── Pipeline 인덱싱 ──
+    eval_by_turn: dict = {}
+    plan_by_turn: dict = {}
+    cond_by_turn: dict = {}
+    for log in pipeline_logs:
+        if not log.output_json:
+            continue
+        if log.module_name == "evaluator":
+            eval_by_turn[log.turn_index] = log.output_json
+        elif log.module_name == "planner":
+            plan_by_turn[log.turn_index] = log.output_json
+        elif log.module_name == "conductor":
+            cond_by_turn[log.turn_index] = log.output_json
+
+    # ── 이전 레벨 추적 (level before) ──
+    prev_level_map: dict[int, int] = {}
+    sorted_ti = sorted(plan_by_turn.keys())
+    running_level = 1
+    for ti in sorted_ti:
+        prev_level_map[ti] = running_level
+        pd = plan_by_turn[ti]
+        if isinstance(pd, dict):
+            new_lv = pd.get("persona_plan", {}).get("current_level") or running_level
+            running_level = new_lv
+
+    # ── 행 작성 ──
+    for t in turns:
+        turn_type_str = t.turn_type.value if hasattr(t.turn_type, "value") else str(t.turn_type)
+        word_count = len(t.content_text.split()) if t.content_text else 0
+
+        e2e_ms = None
+        if t.t0_user_end and t.t3_audio_play_start:
+            e2e_ms = round(t.t3_audio_play_start - t.t0_user_end, 0)
+
+        ed = eval_by_turn.get(t.turn_index, {}) if isinstance(eval_by_turn.get(t.turn_index), dict) else {}
+        pd = plan_by_turn.get(t.turn_index, {}) if isinstance(plan_by_turn.get(t.turn_index), dict) else {}
+        cd = cond_by_turn.get(t.turn_index, {}) if isinstance(cond_by_turn.get(t.turn_index), dict) else {}
+
+        # Evaluator
+        agg = ed.get("aggregate", {})
+        ns = ed.get("narrative_scores", {})
+        fl = ed.get("fluency", {})
+        diag = ed.get("diagnosis", {})
+
+        slot_a = ns.get("slot_a", {}).get("score") if isinstance(ns.get("slot_a"), dict) else None
+        slot_b = ns.get("slot_b", {}).get("score") if isinstance(ns.get("slot_b"), dict) else None
+        slot_c = ns.get("slot_c", {}).get("score") if isinstance(ns.get("slot_c"), dict) else None
+        wpm = fl.get("words_per_minute") if isinstance(fl, dict) else None
+        secondary = ", ".join(diag.get("secondary_issues", [])) if isinstance(diag, dict) else None
+
+        # Planner
+        dec = pd.get("decision", {})
+        pp = pd.get("persona_plan", {})
+        level_before = prev_level_map.get(t.turn_index)
+        level_after = pp.get("current_level") if isinstance(pp, dict) else None
+        path = dec.get("path") if isinstance(dec, dict) else None
+        reasons_raw = dec.get("reason", []) if isinstance(dec, dict) else []
+        reasons_str = " | ".join(str(r) for r in reasons_raw) if reasons_raw else None
+
+        # consecutive_high_scores: reason 텍스트에서 추출 or 0
+        consec = None
+        for r in (reasons_raw or []):
+            if "streak=" in str(r):
+                try:
+                    consec = int(str(r).split("streak=")[1].split()[0])
+                except Exception:
+                    pass
+
+        # Conductor
+        corr = ", ".join(cd.get("corrections", [])) if isinstance(cd, dict) else None
+        better = ", ".join(cd.get("better_expressions", [])) if isinstance(cd, dict) else None
+        feedback = cd.get("feedback_text", "")[:200] if isinstance(cd, dict) else None
+
+        row = [
+            t.turn_index, turn_type_str, t.content_text or "", word_count,
+            wpm,
+            # Evaluator
+            agg.get("overall_score") if isinstance(agg, dict) else None,
+            slot_a, slot_b, slot_c,
+            agg.get("imitation_score") if isinstance(agg, dict) else None,
+            agg.get("complexity_score") if isinstance(agg, dict) else None,
+            agg.get("slot_avg") if isinstance(agg, dict) else None,
+            diag.get("primary_issue") if isinstance(diag, dict) else None,
+            secondary,
+            diag.get("recommended_action") if isinstance(diag, dict) else None,
+            # Planner
+            level_before, level_after, path, reasons_str, consec,
+            # Conductor
+            corr, better, feedback,
+            # Timing
+            t.t_recording_start, t.t_first_speech, t.t0_user_end, e2e_ms,
+        ]
+        ws.append(row)
+
+        # 행 배경 (user 턴 강조)
+        if turn_type_str == "user":
+            row_fill = PatternFill(start_color="EBF3FB", end_color="EBF3FB", fill_type="solid")
+            for col in range(1, len(headers) + 1):
+                ws.cell(row=ws.max_row, column=col).fill = row_fill
+
+    # 컬럼 폭
+    widths2 = [
+        6, 8, 45, 8, 8,          # base
+        10, 8, 8, 8, 8, 8, 8,    # eval scores
+        18, 20, 16,              # eval diagnosis
+        8, 8, 14, 50, 8,         # planner
+        25, 25, 40,              # conductor
+        16, 16, 16, 10,          # timing
+    ]
+    for i, w in enumerate(widths2, 1):
+        if i <= len(headers):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    # 행 래핑
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=False, vertical="top")
+
+
+
+def _write_analysis_sheet(ws, obs) -> None:
+    """AI 분석 보고서 시트 (Layer 3)."""
+    from openpyxl.styles import Font
+
+    bold = Font(bold=True, size=11)
+
+    sections = [
+        ("학습 행동 요약", obs.learning_behavior_summary),
+        ("참여도", obs.engagement_level),
+        ("대화 스타일", obs.communication_style),
+        ("주제 유지율", obs.topic_maintenance_score),
+        ("자연스러움 점수", obs.natural_conversation_score),
+        ("되묻기 횟수", obs.question_back_count),
+        ("반응 시작 품질", obs.response_start_quality),
+        ("흐름 유지", obs.flow_maintenance),
+    ]
+    for label, value in sections:
+        ws.append([label, str(value) if value is not None else "-"])
+        ws.cell(row=ws.max_row, column=1).font = bold
+
+    ws.append([])
+
+    if obs.key_learning_points:
+        ws.append(["=== 핵심 학습 포인트 ==="])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        for point in obs.key_learning_points:
+            ws.append(["•", point])
+
+    ws.append([])
+
+    if obs.struggle_points:
+        ws.append(["=== 어려움 포인트 ==="])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        for point in obs.struggle_points:
+            ws.append(["•", point])
+
+    ws.append([])
+
+    if obs.improvement_suggestions:
+        ws.append(["=== 개선 제안 ==="])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        for sug in obs.improvement_suggestions:
+            ws.append(["•", sug])
+
+    ws.append([])
+
+    if obs.elaboration_adequacy and isinstance(obs.elaboration_adequacy, dict):
+        ws.append(["=== 상세도 적정성 분석 ==="])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        ws.append(["전체 점수", obs.elaboration_adequacy.get("overall_score")])
+        ws.append(["추이", obs.elaboration_adequacy.get("trend")])
+        ws.append([])
+        if obs.elaboration_adequacy.get("evaluated_turns"):
+            ws.append(["턴#", "질문 유형", "가중치", "단어 수", "점수", "판정", "피드백"])
+            for et in obs.elaboration_adequacy["evaluated_turns"]:
+                if isinstance(et, dict):
+                    ws.append([
+                        et.get("turn_index"),
+                        et.get("question_type"),
+                        et.get("question_weight"),
+                        et.get("word_count"),
+                        et.get("elaboration_score"),
+                        et.get("judgment"),
+                        et.get("feedback"),
+                    ])
+
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 60

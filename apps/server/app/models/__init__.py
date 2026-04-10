@@ -34,6 +34,8 @@ from app.models.conversation import (
     TurnType,
 )
 from app.models.pipeline_log import PipelineLog
+from app.models.session_observation import SessionObservation
+from app.models.reporting_prompt_setting import ReportingPromptSetting
 
 __all__ = [
     "Base",
@@ -76,6 +78,10 @@ __all__ = [
     "TurnType",
     # Pipeline models
     "PipelineLog",
+    # Session Observation
+    "SessionObservation",
+    # Reporting LLM
+    "ReportingPromptSetting",
 ]
 
 

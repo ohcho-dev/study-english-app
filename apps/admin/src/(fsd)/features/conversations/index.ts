@@ -125,3 +125,50 @@ export { SettingsDrawer } from './ui/SettingsDrawer';
 // Legacy (kept for backward compatibility, will be removed)
 export { MyTurnRunner } from './ui/MyTurnRunner';
 export { SessionSettings } from './ui/SessionSettings';
+export { ReportingPromptModal } from './ui/ReportingPromptModal';
+
+// ============================================================================
+// Session Observation
+// ============================================================================
+
+export type {
+    SessionObservation,
+    ObservationLayer1,
+    ObservationLayer2,
+    ObservationLayer3,
+    ElaborationTurn,
+} from './model/types';
+
+export {
+    useSessionObservation,
+    useGenerateObservation,
+    useAnalyzeObservation,
+} from './model/useSessions';
+
+export {
+    getSessionObservation,
+    generateSessionObservation,
+    analyzeSessionObservation,
+    exportObservationExcel,
+} from './api/conversationsApi';
+
+// ============================================================================
+// Reporting LLM Prompt
+// ============================================================================
+
+export type {
+    ReportingPromptSetting,
+    ReportingPromptHistoryItem,
+} from './model/types';
+
+export {
+    useReportingPrompt,
+    useUpdateReportingPrompt,
+} from './model/useSessions';
+
+export {
+    getReportingPrompt,
+    updateReportingPrompt,
+    getDefaultReportingPrompt,
+    getReportingPromptHistory,
+} from './api/conversationsApi';

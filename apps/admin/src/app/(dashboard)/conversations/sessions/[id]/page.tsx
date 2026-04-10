@@ -6,7 +6,7 @@
 
 import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, MessageSquare, BarChart3, Volume2, ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { ArrowLeft, Clock, MessageSquare, BarChart3, Eye, ChevronDown, ChevronRight, Zap } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
@@ -21,6 +21,7 @@ import {
 } from '@/(fsd)/features/conversations';
 import type { Turn, SessionStatus } from '@/(fsd)/features/conversations';
 import type { PipelineLog } from '@/(fsd)/features/conversations';
+import { ObservationDashboard } from '@/(fsd)/features/conversations/ui/ObservationDashboard';
 
 interface PageParams {
     id: string;
@@ -223,6 +224,10 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                     <TabsTrigger value="pipeline">
                         <Zap className="h-3.5 w-3.5 mr-1" />
                         Pipeline
+                    </TabsTrigger>
+                    <TabsTrigger value="observation">
+                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        관찰 대시보드
                     </TabsTrigger>
                 </TabsList>
 
@@ -763,6 +768,11 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                             })()}
                         </>
                     )}
+                </TabsContent>
+
+                {/* Observation Dashboard Tab */}
+                <TabsContent value="observation" className="space-y-4">
+                    <ObservationDashboard sessionId={id} />
                 </TabsContent>
             </Tabs>
         </div>

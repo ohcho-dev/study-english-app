@@ -43,9 +43,10 @@ class SessionState:
         recent_scores: List of recent overall_scores (last N turns).
         last_strategy: Last action_code used.
         consecutive_helpers: Count of consecutive low-score turns.
+        consecutive_high_scores: Turns in a row with score >= 75 (LEVEL_UP condition).
         turn_count: Total turns in session so far.
         current_level: Current difficulty level (1-10).
-        custom_state: Free-form dict for scenario-specific state managed by Planner LLM via prompts.
+        custom_state: Free-form dict for scenario-specific state managed by Planner LLM.
     """
 
     def __init__(
@@ -53,6 +54,7 @@ class SessionState:
         recent_scores: Optional[list[int]] = None,
         last_strategy: Optional[str] = None,
         consecutive_helpers: int = 0,
+        consecutive_high_scores: int = 0,
         turn_count: int = 0,
         current_level: int = 1,
         custom_state: Optional[dict] = None,
@@ -60,6 +62,7 @@ class SessionState:
         self.recent_scores = recent_scores or []
         self.last_strategy = last_strategy
         self.consecutive_helpers = consecutive_helpers
+        self.consecutive_high_scores = consecutive_high_scores
         self.turn_count = turn_count
         self.current_level = max(1, min(10, current_level))
         self.custom_state = custom_state or {}
@@ -72,6 +75,7 @@ class SessionState:
             recent_scores=pipeline_state.get("recent_scores", []),
             last_strategy=pipeline_state.get("last_strategy"),
             consecutive_helpers=pipeline_state.get("consecutive_helpers", 0),
+            consecutive_high_scores=pipeline_state.get("consecutive_high_scores", 0),
             turn_count=pipeline_state.get("turn_count", 0),
             current_level=pipeline_state.get("current_level", 1),
             custom_state=pipeline_state.get("custom_state", {}),
@@ -80,9 +84,10 @@ class SessionState:
     def to_dict(self) -> dict:
         """Serialize state for storage in session variant."""
         return {
-            "recent_scores": self.recent_scores[-10:],  # Keep last 10
+            "recent_scores": self.recent_scores[-10:],
             "last_strategy": self.last_strategy,
             "consecutive_helpers": self.consecutive_helpers,
+            "consecutive_high_scores": self.consecutive_high_scores,
             "turn_count": self.turn_count,
             "current_level": self.current_level,
             "custom_state": self.custom_state,
@@ -174,6 +179,53 @@ class PlannerService:
                 session_state=session_state,
             )
 
+        # ── Code-level consecutive score tracking ──
+        # consecutive_high_scores: score >= 75 consecutively (LEVEL_UP gate)
+        HIGH_SCORE_THRESHOLD = 75
+        if overall_score >= HIGH_SCORE_THRESHOLD:
+            session_state.consecutive_high_scores += 1
+        else:
+            session_state.consecutive_high_scores = 0
+
+        can_level_up = session_state.consecutive_high_scores >= 2
+        can_level_down = overall_score < 40
+
+        if path == "LEVEL_UP" and not can_level_up:
+            # LLM requested UP but consecutive condition not met
+            logger.info(
+                f"[Planner] Overriding LEVEL_UP -> LEVEL_HOLD "
+                f"(consecutive_high={session_state.consecutive_high_scores} < 2)"
+            )
+            path = "LEVEL_HOLD"
+            new_level = prev_level
+            reasons = list(reasons or [])
+            reasons.append(
+                f"LEVEL_UP blocked: need 2 consecutive >=75 scores, "
+                f"current streak={session_state.consecutive_high_scores}"
+            )
+        elif can_level_up and path == "LEVEL_HOLD" and new_level == prev_level:
+            # LLM chose HOLD but 2-turn streak achieved -> promote to UP
+            logger.info(
+                f"[Planner] Overriding LEVEL_HOLD -> LEVEL_UP "
+                f"(consecutive_high={session_state.consecutive_high_scores} >= 2)"
+            )
+            path = "LEVEL_UP"
+            new_level = min(self.max_level, prev_level + 1)
+            reasons = list(reasons or [])
+            reasons.append(
+                f"LEVEL_UP confirmed: {session_state.consecutive_high_scores} consecutive >=75 scores"
+            )
+        elif can_level_down and path not in ("LEVEL_DOWN",):
+            logger.info(
+                f"[Planner] Override -> LEVEL_DOWN (score={overall_score} < 40)"
+            )
+            path = "LEVEL_DOWN"
+            new_level = max(1, prev_level - 1)
+
+        # Reset high-score streak after leveling up (prevent multi-jumps)
+        if path == "LEVEL_UP":
+            session_state.consecutive_high_scores = 0
+
         action_code = "LEVEL_ADJUST"
 
         # ===== Build Constraints =====
@@ -216,10 +268,12 @@ class PlannerService:
 
         duration_ms = (time.time() - t_start) * 1000
         logger.info(
-            f"[Planner] Level: {prev_level} → {new_level}, path={path}, "
-            f"score={overall_score}, duration={duration_ms:.1f}ms"
+            f"[Planner] Level: {prev_level} -> {new_level}, path={path}, "
+            f"score={overall_score}, consecutive_high={session_state.consecutive_high_scores}, "
+            f"duration={duration_ms:.1f}ms"
         )
         return output, duration_ms
+
 
     async def _llm_decide(
         self,

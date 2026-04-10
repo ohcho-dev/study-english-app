@@ -414,6 +414,9 @@ class TurnResponse(BaseModel):
     t2_llm_final: float | None
     t2_5_tts_ready: float | None
     t3_audio_play_start: float | None
+    # Recording-start / VAD timing (Phase 1 추가 — 응답 간격 분석용)
+    t_recording_start: float | None = None
+    t_first_speech: float | None = None
     
     # Computed latencies (ms)
     asr_latency_ms: float | None = None

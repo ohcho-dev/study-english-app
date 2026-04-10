@@ -309,7 +309,15 @@ class ConversationSession(Base):
     
     # Run0 additions
     experiment_type = Column(String(20), nullable=True)  # "run0" or None (My Turn)
-    
+
+    # Session Observation: account link
+    account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -317,7 +325,7 @@ class ConversationSession(Base):
         onupdate=datetime.utcnow,
         nullable=False,
     )
-    
+
     # Relationships
     template = relationship("ConversationTemplate", back_populates="sessions")
     turns = relationship(
@@ -329,6 +337,13 @@ class ConversationSession(Base):
     metrics = relationship(
         "SessionMetrics",
         back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    account = relationship("Account")
+    observation = relationship(
+        "SessionObservation",
+        back_populates="session",
+        uselist=False,
         cascade="all, delete-orphan",
     )
 
@@ -394,7 +409,11 @@ class ConversationTurn(Base):
     reference_text = Column(Text, nullable=True)  # Ground truth text for WER comparison
     wer = Column(Float, nullable=True)  # Word Error Rate (0.0~1.0+)
     cer = Column(Float, nullable=True)  # Character Error Rate (0.0~1.0+)
-    
+
+    # Session Observation: client-side timing (ms, Unix epoch)
+    t_recording_start = Column(Float, nullable=True)  # 자동 녹음 시작 시점 (마이크 on)
+    t_first_speech = Column(Float, nullable=True)  # VAD 첫 발화 감지 시점 (실제 말 시작)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships

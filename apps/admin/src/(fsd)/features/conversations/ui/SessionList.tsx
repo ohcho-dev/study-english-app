@@ -13,6 +13,7 @@ import { Input } from '@/shared/ui/input';
 import { Badge } from '@/shared/ui/badge';
 import { Checkbox } from '@/shared/ui/checkbox';
 import { exportSessions } from '../api/conversationsApi';
+import { ReportingPromptModal } from './ReportingPromptModal';
 
 import type { SessionListItem, SessionStatus } from '../model/types';
 
@@ -130,16 +131,19 @@ export const SessionList = ({
                         대화 세션 기록과 메트릭을 확인합니다
                     </p>
                 </div>
-                {selectedSessions.size > 0 && (
-                    <Button
-                        onClick={handleExport}
-                        disabled={isExporting}
-                        className="gap-2"
-                    >
-                        {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {selectedSessions.size}개 항목 다운로드
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    <ReportingPromptModal />
+                    {selectedSessions.size > 0 && (
+                        <Button
+                            onClick={handleExport}
+                            disabled={isExporting}
+                            className="gap-2"
+                        >
+                            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            {selectedSessions.size}개 항목 다운로드
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Filters */}

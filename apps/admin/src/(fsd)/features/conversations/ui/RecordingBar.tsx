@@ -31,7 +31,7 @@ interface RecordingBarProps {
     isSessionActive: boolean;
     currentSpeakerName?: string;
     onRecordingComplete: (blob: Blob, t0UserEnd: number) => void;
-    onTextSubmit?: (text: string) => void;
+    onTextSubmit?: (text: string, t0UserEnd?: number, t1ServerFinal?: number, tRecordingStart?: number, tFirstSpeech?: number) => void;
     onEndSession: () => void;
     enableTextMode?: boolean;
     /** Streaming STT callbacks — when provided, recording data is also forwarded to streaming */
@@ -57,6 +57,9 @@ export const RecordingBar = ({
     const [textValue, setTextValue] = useState('');
     const [autoRecord, setAutoRecord] = useState(false);
     const prevIsUserTurnRef = useRef(false);
+    // Timing refs for text input mode
+    const textFocusTimeRef = useRef<number | null>(null);   // t_recording_start: input 포커스 시점
+    const textFirstKeyTimeRef = useRef<number | null>(null); // t_first_speech: 첫 키 입력 시점
     // Silence detection: track when silence started
     const silenceStartRef = useRef<number | null>(null);
     const lastDebugLogRef = useRef<number>(0);
@@ -139,11 +142,24 @@ export const RecordingBar = ({
 
     const handleTextSubmit = () => {
         if (!textValue.trim() || !onTextSubmit) return;
-        onTextSubmit(textValue.trim());
+        const t0 = Date.now();
+        onTextSubmit(
+            textValue.trim(),
+            t0,                                // t0_user_end: 제출 시점
+            undefined,                         // t1_server_final: 해당 없음
+            textFocusTimeRef.current ?? undefined,    // t_recording_start: input 포커스 시점
+            textFirstKeyTimeRef.current ?? undefined, // t_first_speech: 첫 키 입력 시점
+        );
         setTextValue('');
+        textFocusTimeRef.current = null;
+        textFirstKeyTimeRef.current = null;
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // 첫 키 입력 시점 기록 (t_first_speech 대용)
+        if (!textFirstKeyTimeRef.current && e.key !== 'Enter') {
+            textFirstKeyTimeRef.current = Date.now();
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleTextSubmit();
@@ -201,6 +217,12 @@ export const RecordingBar = ({
                                 value={textValue}
                                 onChange={(e) => setTextValue(e.target.value)}
                                 onKeyDown={handleKeyDown}
+                                onFocus={() => {
+                                    // t_recording_start: input에 포커스된 시점
+                                    if (!textFocusTimeRef.current) {
+                                        textFocusTimeRef.current = Date.now();
+                                    }
+                                }}
                                 placeholder="Type your response..."
                                 disabled={!isUserTurn || isProcessing}
                                 className={cn(

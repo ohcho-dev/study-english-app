@@ -11,6 +11,11 @@ import {
     getSessions,
     getSessionMetrics,
     getSessionTurns,
+    getSessionObservation,
+    generateSessionObservation,
+    analyzeSessionObservation,
+    getReportingPrompt,
+    updateReportingPrompt,
 } from '../api/conversationsApi';
 import type { SessionCreate } from './types';
 
@@ -107,6 +112,70 @@ export const useEndSession = () => {
         onSuccess: (_, { id }) => {
             queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
             queryClient.invalidateQueries({ queryKey: sessionKeys.detail(id) });
+        },
+    });
+};
+
+// ============================================================================
+// Session Observation hooks
+// ============================================================================
+
+/** 세션 관찰 데이터 조회 (Layer 1+2+3) */
+export const useSessionObservation = (sessionId: string | undefined) => {
+    return useQuery({
+        queryKey: ['session-observation', sessionId!],
+        queryFn: () => getSessionObservation(sessionId!),
+        enabled: !!sessionId,
+        retry: false, // 404는 정상 (아직 생성 안 됨)
+    });
+};
+
+/** 관찰 데이터 수동 생성/재생성 (Layer 1+2) */
+export const useGenerateObservation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (sessionId: string) => generateSessionObservation(sessionId),
+        onSuccess: (_, sessionId) => {
+            queryClient.invalidateQueries({ queryKey: ['session-observation', sessionId] });
+        },
+    });
+};
+
+/** AI 분석 실행 (Layer 3) — 수동 트리거 */
+export const useAnalyzeObservation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (sessionId: string) => analyzeSessionObservation(sessionId),
+        onSuccess: (_, sessionId) => {
+            queryClient.invalidateQueries({ queryKey: ['session-observation', sessionId] });
+        },
+    });
+};
+
+// ============================================================================
+// Reporting LLM Prompt hooks
+// ============================================================================
+
+/** Reporting LLM 프롬프트 조회 */
+export const useReportingPrompt = () => {
+    return useQuery({
+        queryKey: ['reporting-prompt'],
+        queryFn: () => getReportingPrompt(),
+    });
+};
+
+/** Reporting LLM 프롬프트 업데이트 */
+export const useUpdateReportingPrompt = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: {
+            name?: string;
+            system_prompt: string;
+            llm_model?: string;
+            temperature?: string;
+        }) => updateReportingPrompt(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['reporting-prompt'] });
         },
     });
 };

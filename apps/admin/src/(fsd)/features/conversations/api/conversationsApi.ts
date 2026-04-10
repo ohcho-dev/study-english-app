@@ -7,6 +7,8 @@ import { api } from '@/shared/lib';
 import type {
     GreetingResponse,
     PaginatedResponse,
+    ReportingPromptHistoryItem,
+    ReportingPromptSetting,
     Run0LogRequest,
     Run0LogResponse,
     Run0VoiceResponse,
@@ -14,6 +16,7 @@ import type {
     SessionCreate,
     SessionListItem,
     SessionMetrics,
+    SessionObservation,
     Template,
     TemplateCreate,
     TemplateListItem,
@@ -527,4 +530,98 @@ export const getPromptHistory = async (
         `${CONVERSATIONS_BASE}/templates/${templateId}/prompt-history`,
         { params },
     );
+};
+
+// ============================================================================
+// Session Observation API
+// ============================================================================
+
+/** Get session observation data (Layer 1+2+3) */
+export const getSessionObservation = async (
+    sessionId: string,
+): Promise<SessionObservation> => {
+    return api.get<SessionObservation>(
+        `${CONVERSATIONS_BASE}/sessions/${sessionId}/observation`,
+    );
+};
+
+/** Generate/regenerate observation data (Layer 1+2) */
+export const generateSessionObservation = async (
+    sessionId: string,
+): Promise<SessionObservation> => {
+    return api.post<SessionObservation>(
+        `${CONVERSATIONS_BASE}/sessions/${sessionId}/observation/generate`,
+        null,
+    );
+};
+
+/** Run AI analysis (Layer 3) — manual trigger */
+export const analyzeSessionObservation = async (
+    sessionId: string,
+): Promise<SessionObservation> => {
+    return api.post<SessionObservation>(
+        `${CONVERSATIONS_BASE}/sessions/${sessionId}/observation/analyze`,
+        null,
+    );
+};
+
+/** Download observation Excel export */
+export const exportObservationExcel = async (sessionId: string): Promise<void> => {
+    const response = await fetch(
+        `${API_BASE_URL}${CONVERSATIONS_BASE}/sessions/${sessionId}/export/observation-excel`,
+        {
+            method: 'GET',
+            headers: { 'ngrok-skip-browser-warning': 'true' },
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `observation_${sessionId.slice(0, 8)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+};
+
+// ============================================================================
+// Reporting LLM Prompt API
+// ============================================================================
+
+/** Get active reporting LLM prompt setting */
+export const getReportingPrompt = async (): Promise<ReportingPromptSetting> => {
+    return api.get<ReportingPromptSetting>(`${CONVERSATIONS_BASE}/reporting-prompt`);
+};
+
+/** Update reporting LLM prompt (creates new version) */
+export const updateReportingPrompt = async (
+    data: { name?: string; system_prompt: string; llm_model?: string; temperature?: string },
+): Promise<{ id: string; name: string; message: string }> => {
+    return api.put<{ id: string; name: string; message: string }>(
+        `${CONVERSATIONS_BASE}/reporting-prompt`,
+        data,
+    );
+};
+
+/** Get default (code-embedded) reporting prompt text */
+export const getDefaultReportingPrompt = async (): Promise<{
+    system_prompt: string;
+    llm_model: string;
+    temperature: string;
+}> => {
+    return api.get(`${CONVERSATIONS_BASE}/reporting-prompt/default`);
+};
+
+/** Get reporting prompt version history */
+export const getReportingPromptHistory = async (): Promise<{
+    items: ReportingPromptHistoryItem[];
+    total: number;
+}> => {
+    return api.get(`${CONVERSATIONS_BASE}/reporting-prompt/history`);
 };

@@ -59,6 +59,7 @@ class EvaluatorService:
         trace_id: Optional[str] = None,
         session_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        measured_wpm: Optional[float] = None,
     ) -> tuple[EvaluatorOutput, float]:
         """Evaluate user transcript and return structured scores.
 
@@ -66,12 +67,14 @@ class EvaluatorService:
             transcript: User's transcribed speech.
             topic: Conversation topic.
             target_level: Target difficulty level (1-10).
-            active_pattern: Current narrative pattern (e.g., "ABC").
+            active_pattern: Current narrative pattern.
             scene_context: Scene description.
             history_text: Recent conversation history.
             trace_id: Pipeline trace ID.
             session_id: Session ID.
             turn_id: Turn ID.
+            measured_wpm: Server-computed WPM from actual timestamps.
+                          When provided, overrides LLM-estimated WPM.
 
         Returns:
             Tuple of (EvaluatorOutput, duration_ms).
@@ -179,10 +182,14 @@ class EvaluatorService:
                 output = self._parse_llm_response(
                     result, _trace_id, session_id, turn_id
                 )
+                # 실측 WPM이 있으면 LLM 추정값 대신 사용
+                if measured_wpm is not None:
+                    output.fluency.words_per_minute = measured_wpm
                 duration_ms = (time.time() - t_start) * 1000
                 logger.info(
                     f"[Evaluator] Success (attempt {attempt + 1}): "
                     f"overall_score={output.aggregate.overall_score}, "
+                    f"wpm={output.fluency.words_per_minute}(measured={measured_wpm}), "
                     f"duration={duration_ms:.0f}ms"
                 )
                 return output, duration_ms
@@ -320,6 +327,8 @@ class EvaluatorService:
             primary_issue = "NONE"
             recommended = "DENSITY_UP" if word_count > 25 else "CONTINUE"
 
+        # 실측 WPM 우선 사용, 없으면 단어수×6 추정 (fallback 임시값)
+        fallback_wpm = measured_wpm if measured_wpm is not None else (word_count * 6 if word_count > 0 else 0)
         output = EvaluatorOutput(
             trace_id=trace_id,
             session_id=session_id or "",
@@ -339,7 +348,7 @@ class EvaluatorService:
             ),
             detected=DetectedElements(),
             fluency=FluencyMetrics(
-                words_per_minute=word_count * 6 if word_count > 0 else 0,
+                words_per_minute=fallback_wpm,
             ),
             diagnosis=Diagnosis(
                 primary_issue=primary_issue,
@@ -348,6 +357,6 @@ class EvaluatorService:
         )
         duration_ms = (time.time() - t_start) * 1000
         logger.info(
-            f"[Evaluator] Fallback: overall_score={overall}, duration={duration_ms:.0f}ms"
+            f"[Evaluator] Fallback: overall_score={overall}, wpm={fallback_wpm}, duration={duration_ms:.0f}ms"
         )
         return output, duration_ms

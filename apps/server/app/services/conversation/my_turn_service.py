@@ -17,6 +17,7 @@ from app.services.conversation.session_service import SessionService
 from app.services.conversation.turn_orchestrator import TurnOrchestrator
 from app.services.conversation.signaling import manager
 from app.services.conversation.scenario_director import ScenarioDirector
+from app.services.conversation.observation_service import ObservationService
 from fastapi import BackgroundTasks
 import json
 from sqlalchemy import select, update
@@ -122,7 +123,17 @@ async def monitor_user_timeout(session_id: UUID, turn_index: int, timeout_second
                 session.status = SessionStatus.COMPLETED
                 session.error_message = "Session timed out (5 minutes due to inactivity)"
                 await db.commit()
-                
+
+                # 관찰 데이터 자동 생성
+                try:
+                    obs_service = ObservationService(db)
+                    await obs_service.generate_observation(session.id)
+                    await db.commit()
+                except Exception as obs_err:
+                    logger.error(
+                        f"[monitor_user_timeout] Observation failed for {session_id}: {obs_err}"
+                    )
+
                 # Notify client
                 await manager.send_message(str(session.id), {
                     "type": "error",
@@ -478,6 +489,20 @@ class MyTurnService:
             logger.info(f"[MyTurnService] Session {session_id} completed (no next turn).")
             session.status = SessionStatus.COMPLETED
             await self.db.commit()
+
+            # 관찰 데이터 자동 생성
+            try:
+                obs_service = ObservationService(self.db)
+                await obs_service.generate_observation(session.id)
+                await self.db.commit()
+                logger.info(
+                    f"[MyTurnService] Observation generated for session {session_id}"
+                )
+            except Exception as obs_err:
+                logger.error(
+                    f"[MyTurnService] Observation generation failed for {session_id}: {obs_err}"
+                )
+
             await manager.send_message(str(session.id), {"type": "session_completed"})
 
     async def get_chat_history(self, session_id: UUID, limit: int = 10) -> str:
@@ -924,7 +949,18 @@ class MyTurnService:
         # NOTE: We do NOT advance orchestrator here. We wait for 'turn_complete' signal from client.
         # This ensures the AI text is fully spoken before the next turn is calculated.
 
-    async def process_user_turn(self, session_id: UUID, audio_data: bytes = None, audio_format: str = None, background_tasks: BackgroundTasks = None, t0_user_end: float = 0.0, text_input: str = None, t1_server_final: float = 0.0):
+    async def process_user_turn(
+        self,
+        session_id: UUID,
+        audio_data: bytes = None,
+        audio_format: str = None,
+        background_tasks: BackgroundTasks = None,
+        t0_user_end: float = 0.0,
+        text_input: str = None,
+        t1_server_final: float = 0.0,
+        t_recording_start: float = 0.0,
+        t_first_speech: float = 0.0,
+    ) -> dict:
         """Processes user audio or text input."""
         session = await self.session_service.get_by_id_with_template(session_id)
         if not session:
@@ -995,6 +1031,8 @@ class MyTurnService:
             t0_user_end=t0_user_end,
             t1_asr_final=t1_asr_final,
             t1_5_llm_start=t1_5_llm_start,
+            t_recording_start=t_recording_start if t_recording_start > 0 else None,
+            t_first_speech=t_first_speech if t_first_speech > 0 else None,
         )
         
         # Calculate intermediate metrics (ASR latency)
@@ -1036,7 +1074,30 @@ class MyTurnService:
                 effective_scene_context += f"\n\nUser's requested topic for this session: {user_topic}"
 
             logger.info(f"[process_user_turn] v0.2 Pipeline: trace_id={trace_id}")
-            
+
+            # ── 실측 WPM 계산 (LLM 추정 대체) ──
+            # 단어 수 / 실제 발화 시간(분) 으로 계산.
+            # 텍스트 입력: t_first_speech(첫 키 입력) ~ t0_user_end(제출)
+            # 오디오 입력: audio_duration_ms 사용
+            measured_wpm: float | None = None
+            word_count_now = len(transcript.strip().split()) if transcript and transcript.strip() else 0
+            if word_count_now > 0:
+                # 텍스트 모드: t_first_speech ~ t0_user_end
+                if t_first_speech and t_first_speech > 0 and t0_user_end and t0_user_end > 0:
+                    speaking_ms = max(0, t0_user_end - t_first_speech)
+                    if speaking_ms > 500:  # 0.5초 이상일 때만 유효
+                        measured_wpm = round(word_count_now / (speaking_ms / 60000), 1)
+                # 오디오 모드: audio_duration_ms
+                elif not text_input:
+                    audio_dur = stt_result.get("duration_ms")
+                    if audio_dur and audio_dur > 500:
+                        measured_wpm = round(word_count_now / (audio_dur / 60000), 1)
+
+            logger.info(
+                f"[WPM] measured={measured_wpm}, word_count={word_count_now}, "
+                f"t_first_speech={t_first_speech}, t0_user_end={t0_user_end}"
+            )
+
             # --- EVALUATOR ---
             evaluator = EvaluatorService(
                 llm_model=getattr(session.template, 'evaluator_llm_model', None) or "gemini-2.0-flash",
@@ -1051,6 +1112,7 @@ class MyTurnService:
                 trace_id=trace_id,
                 session_id=str(session.id),
                 turn_id=turn_id,
+                measured_wpm=measured_wpm,  # 실측값 주입
             )
             
             # Log Evaluator

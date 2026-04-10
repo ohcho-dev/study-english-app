@@ -385,3 +385,140 @@ export interface PaginatedResponse<T> {
     size: number;
     pages: number;
 }
+
+// ============================================================================
+// Session Observation
+// ============================================================================
+
+export interface ObservationLayer1 {
+    session_duration_sec: number | null;
+    total_user_turns: number;
+    total_ai_turns: number;
+    avg_user_utterance_length: number | null;
+    max_user_utterance_length: number | null;
+    min_user_utterance_length: number | null;
+    utterance_length_trend: string | null;
+    avg_user_response_interval_sec: number | null;
+    short_reply_count: number;
+    silence_timeout_count: number;
+    first_user_response_time_sec: number | null;
+    completion_status: string | null;
+    word_count_per_turn: number[] | null;
+    long_latency_turn_count: number;
+    long_latency_turn_ratio: number | null;
+    long_gap_count: number;
+    followup_after_short_answer: number;
+}
+
+export interface ObservationLayer2 {
+    avg_overall_score: number | null;
+    score_trend: string | null;
+    level_progression: number[] | null;
+    max_level_reached: number | null;
+    level_up_count: number;
+    level_down_count: number;
+    primary_issues: string[] | null;
+    correction_count: number;
+    fluency_wpm_trend: number[] | null;
+    template_specific_data: Record<string, unknown> | null;
+}
+
+export interface ElaborationTurn {
+    turn_index: number;
+    question_weight: number;
+    question_type: string;
+    word_count: number;
+    elaboration_score: number;
+    judgment: string;
+    feedback: string;
+}
+
+export interface ObservationLayer3 {
+    learning_behavior_summary: string | null;
+    engagement_level: string | null;
+    key_learning_points: string[] | null;
+    struggle_points: string[] | null;
+    communication_style: string | null;
+    topic_maintenance_score: number | null;
+    question_back_count: number | null;
+    natural_conversation_score: number | null;
+    improvement_suggestions: string[] | null;
+    elaboration_adequacy: {
+        overall_score: number;
+        trend: string;
+        avg_utterance_length_feedback: string;
+        evaluated_turns: ElaborationTurn[];
+    } | null;
+    explicit_clarification_analysis: {
+        count: number;
+        details: Array<{
+            turn_index: number;
+            expression: string;
+            stt_original: string;
+            type: string;
+        }>;
+    } | null;
+    response_start_quality: string | null;
+    response_start_quality_detail: Array<Record<string, unknown>> | null;
+    flow_maintenance: string | null;
+    flow_maintenance_detail: Array<Record<string, unknown>> | null;
+    coping_attempt: {
+        count: number;
+        examples: Array<{
+            turn_index: number;
+            strategy: string;
+            text: string;
+        }>;
+    } | null;
+    clarification_success: {
+        no_clarification: boolean;
+        total: number;
+        successful: number;
+        failed: number;
+        details: Array<Record<string, unknown>>;
+    } | null;
+    avoidance_vs_response: {
+        avoidance_count: number;
+        response_count: number;
+        ratio: number;
+        pattern: string;
+    } | null;
+}
+
+export interface SessionObservation {
+    id: string;
+    session_id: string;
+    account_id: string | null;
+    layer1: ObservationLayer1;
+    layer2: ObservationLayer2;
+    layer3: ObservationLayer3;
+    generated_at: string;
+    reporting_llm_model: string | null;
+    reporting_llm_duration_ms: number | null;
+    has_layer3: boolean;
+}
+
+// ============================================================================
+// Reporting LLM Prompt Setting
+// ============================================================================
+
+export interface ReportingPromptSetting {
+    id: string | null;
+    name: string;
+    system_prompt: string | null;
+    llm_model: string;
+    temperature: string;
+    is_active: boolean;
+    is_default: boolean;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export interface ReportingPromptHistoryItem {
+    id: string;
+    name: string;
+    llm_model: string;
+    temperature: string;
+    is_active: boolean;
+    created_at: string | null;
+}

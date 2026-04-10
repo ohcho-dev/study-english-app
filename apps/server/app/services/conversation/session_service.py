@@ -393,6 +393,8 @@ class SessionService:
         reference_text: str | None = None,
         wer: float | None = None,
         cer: float | None = None,
+        t_recording_start: float | None = None,
+        t_first_speech: float | None = None,
     ) -> TurnResponse:
         """Add a turn to a session.
         
@@ -453,6 +455,8 @@ class SessionService:
             reference_text=reference_text,
             wer=wer,
             cer=cer,
+            t_recording_start=t_recording_start if t_recording_start and t_recording_start > 0 else None,
+            t_first_speech=t_first_speech if t_first_speech and t_first_speech > 0 else None,
         )
         self.db.add(turn)
         
