@@ -241,7 +241,7 @@ export const MyTurnRunner = ({ template, sessionId, onStatusChange, onSessionEnd
                         {/* Voice Recorder */}
                         <div className="relative">
                             <VoiceRecorder
-                                onRecordingComplete={(blob, t0UserEnd) => sendAudio(blob, t0UserEnd)}
+                                onRecordingComplete={(blob, t0UserEnd, _dur, tRecStart, tFirstSp) => sendAudio(blob, t0UserEnd, tRecStart, tFirstSp)}
                                 disabled={!isUserTurn || isProcessing}
                                 size="sm"
                                 showAudioLevel={false}

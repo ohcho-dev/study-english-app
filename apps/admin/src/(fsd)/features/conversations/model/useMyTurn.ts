@@ -311,7 +311,12 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
         }
     }, [sessionId]);
 
-    const sendAudio = useCallback(async (audioBlob: Blob, t0UserEnd?: number) => {
+    const sendAudio = useCallback(async (
+        audioBlob: Blob,
+        t0UserEnd?: number,
+        tRecordingStart?: number,
+        tFirstSpeech?: number,
+    ) => {
         if (!sessionId) return;
 
         setState(prev => ({ ...prev, isProcessing: true }));
@@ -321,6 +326,8 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
             formData.append('audio_file', audioBlob, 'input.webm');
             // metrics: t0 (user end) — 녹음 종료 시점 사용
             formData.append('t0_user_end', (t0UserEnd || Date.now()).toString());
+            if (tRecordingStart) formData.append('t_recording_start', tRecordingStart.toString());
+            if (tFirstSpeech) formData.append('t_first_speech', tFirstSpeech.toString());
 
             let res: Response;
             try {
@@ -384,10 +391,10 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
         try {
             const formData = new FormData();
             formData.append('text', text);
-            if (t0UserEnd) formData.append('t0_user_end', t0UserEnd.toString());
-            if (t1ServerFinal) formData.append('t1_server_final', t1ServerFinal.toString());
-            if (tRecordingStart) formData.append('t_recording_start', tRecordingStart.toString());
-            if (tFirstSpeech) formData.append('t_first_speech', tFirstSpeech.toString());
+            if (t0UserEnd !== undefined) formData.append('t0_user_end', t0UserEnd.toString());
+            if (t1ServerFinal !== undefined) formData.append('t1_server_final', t1ServerFinal.toString());
+            if (tRecordingStart !== undefined) formData.append('t_recording_start', tRecordingStart.toString());
+            if (tFirstSpeech !== undefined) formData.append('t_first_speech', tFirstSpeech.toString());
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/sessions/${sessionId}/text`, {
                 method: 'POST',

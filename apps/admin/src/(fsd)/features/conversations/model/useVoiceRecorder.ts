@@ -21,6 +21,10 @@ export interface RecordingResult {
     t0UserEnd: number;
     /** How recording ended: 'vad' (silence timeout) or 'button' (manual) */
     speechEndMethod: 'vad' | 'button';
+    /** Timestamp when recording started (ms since epoch) */
+    tRecordingStart: number;
+    /** Timestamp when voice was first detected (ms since epoch), null if never spoken */
+    tFirstSpeech: number | null;
 }
 
 export interface UseVoiceRecorderOptions {
@@ -85,6 +89,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     // VAD tracking
     const silenceSinceRef = useRef<number | null>(null);
     const hasSpokenRef = useRef<boolean>(false);
+    const firstSpeechTimeRef = useRef<number | null>(null);
     // Ref to performStop so updateAudioLevel can call it without circular dep
     const performStopRef = useRef<() => void>(() => { });
     // Track if VAD triggered the stop
@@ -131,7 +136,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         const speaking = normalizedLevel > vadSilenceThreshold;
         if (enableVAD && isRecordingRef.current && !isPausedRef.current) {
             if (speaking) {
-                hasSpokenRef.current = true;
+                // hasSpokenRef + firstSpeechTimeRef set by general block below
                 silenceSinceRef.current = null;
             } else if (hasSpokenRef.current) {
                 // Silence detected after speech
@@ -149,6 +154,12 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                     }
                 }
             }
+        }
+
+        // Track first speech timestamp (works regardless of enableVAD)
+        if (speaking && !hasSpokenRef.current) {
+            hasSpokenRef.current = true;
+            firstSpeechTimeRef.current = Date.now();
         }
 
         setState((prev) => ({ ...prev, audioLevel: normalizedLevel, isSpeaking: speaking }));
@@ -261,7 +272,14 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                     audioContextRef.current = null;
                 }
 
-                onStopRef.current?.({ blob, duration, t0UserEnd, speechEndMethod: vadStoppedRef.current ? 'vad' : 'button' });
+                onStopRef.current?.({
+                    blob,
+                    duration,
+                    t0UserEnd,
+                    speechEndMethod: vadStoppedRef.current ? 'vad' : 'button',
+                    tRecordingStart: startTimeRef.current,
+                    tFirstSpeech: firstSpeechTimeRef.current,
+                });
             };
 
             mediaRecorder.onerror = () => {
@@ -277,6 +295,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             // Reset VAD state
             silenceSinceRef.current = null;
             hasSpokenRef.current = false;
+            firstSpeechTimeRef.current = null;
             vadStoppedRef.current = false;
             mediaRecorder.start(100); // Collect data every 100ms
 

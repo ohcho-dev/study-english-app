@@ -202,15 +202,15 @@ export const ConversationStage = ({
         onSessionEnd?.();
     };
 
-    const handleRecordingComplete = useCallback((blob: Blob, t0UserEnd: number) => {
+    const handleRecordingComplete = useCallback((blob: Blob, t0UserEnd: number, tRecordingStart?: number, tFirstSpeech?: number) => {
         if (isStreamingMode) {
             // Streaming mode: record stop time and wait for transcript
             // (sendStop is already called by RecordingBar's internal onStreamStop)
             console.log('[ConversationStage] Recording stopped (streaming mode), waiting for transcript...');
             setRecordingStopTime(t0UserEnd);
         } else {
-            // Sync mode: send audio blob directly
-            sendAudio(blob, t0UserEnd);
+            // Sync mode: send audio blob directly with timing data
+            sendAudio(blob, t0UserEnd, tRecordingStart, tFirstSpeech);
         }
     }, [isStreamingMode, sendAudio]);
 

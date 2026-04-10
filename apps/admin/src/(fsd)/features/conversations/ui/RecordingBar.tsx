@@ -30,7 +30,7 @@ interface RecordingBarProps {
     isProcessing: boolean;
     isSessionActive: boolean;
     currentSpeakerName?: string;
-    onRecordingComplete: (blob: Blob, t0UserEnd: number) => void;
+    onRecordingComplete: (blob: Blob, t0UserEnd: number, tRecordingStart?: number, tFirstSpeech?: number) => void;
     onTextSubmit?: (text: string, t0UserEnd?: number, t1ServerFinal?: number, tRecordingStart?: number, tFirstSpeech?: number) => void;
     onEndSession: () => void;
     enableTextMode?: boolean;
@@ -55,7 +55,7 @@ export const RecordingBar = ({
 }: RecordingBarProps) => {
     const [isTextMode, setIsTextMode] = useState(false);
     const [textValue, setTextValue] = useState('');
-    const [autoRecord, setAutoRecord] = useState(false);
+    const [autoRecord, setAutoRecord] = useState(true);
     const prevIsUserTurnRef = useRef(false);
     // Timing refs for text input mode
     const textFocusTimeRef = useRef<number | null>(null);   // t_recording_start: input 포커스 시점
@@ -63,6 +63,16 @@ export const RecordingBar = ({
     // Silence detection: track when silence started
     const silenceStartRef = useRef<number | null>(null);
     const lastDebugLogRef = useRef<number>(0);
+
+    // isUserTurn이 true로 전환되면 텍스트 모드 타이밍 자동 시작
+    useEffect(() => {
+        if (isUserTurn && isTextMode) {
+            // 사용자 턴 시작 = t_recording_start
+            if (!textFocusTimeRef.current) {
+                textFocusTimeRef.current = Date.now();
+            }
+        }
+    }, [isUserTurn, isTextMode]);
 
     const recorder = useVoiceRecorder({
         onStop: (result) => {
@@ -74,7 +84,7 @@ export const RecordingBar = ({
             // In streaming mode, send stop signal BEFORE processing recording blob
             // (matches Run0 VoiceRecorder options.onStop pattern)
             onStreamStop?.();
-            onRecordingComplete(result.blob, result.t0UserEnd);
+            onRecordingComplete(result.blob, result.t0UserEnd, result.tRecordingStart, result.tFirstSpeech ?? undefined);
         },
         onStart: onStreamStart,
         onDataAvailable: onStreamData,
@@ -143,14 +153,19 @@ export const RecordingBar = ({
     const handleTextSubmit = () => {
         if (!textValue.trim() || !onTextSubmit) return;
         const t0 = Date.now();
+        // fallback: 포커스 시점이 없으면 제출 2초 전으로 추정
+        const recStart = textFocusTimeRef.current ?? (t0 - 2000);
+        // fallback: 첫 키 없으면 포커스 직후로 추정
+        const firstKey = textFirstKeyTimeRef.current ?? (recStart + 100);
         onTextSubmit(
             textValue.trim(),
-            t0,                                // t0_user_end: 제출 시점
-            undefined,                         // t1_server_final: 해당 없음
-            textFocusTimeRef.current ?? undefined,    // t_recording_start: input 포커스 시점
-            textFirstKeyTimeRef.current ?? undefined, // t_first_speech: 첫 키 입력 시점
+            t0,              // t0_user_end: 제출 시점
+            undefined,       // t1_server_final: 해당 없음
+            recStart,        // t_recording_start
+            firstKey,        // t_first_speech
         );
         setTextValue('');
+        // 다음 턴을 위해 리셋
         textFocusTimeRef.current = null;
         textFirstKeyTimeRef.current = null;
     };
@@ -215,12 +230,18 @@ export const RecordingBar = ({
                             <input
                                 type="text"
                                 value={textValue}
-                                onChange={(e) => setTextValue(e.target.value)}
-                                onKeyDown={handleKeyDown}
                                 onFocus={() => {
                                     // t_recording_start: input에 포커스된 시점
                                     if (!textFocusTimeRef.current) {
                                         textFocusTimeRef.current = Date.now();
+                                    }
+                                }}
+                                onKeyDown={handleKeyDown}
+                                onChange={(e) => {
+                                    setTextValue(e.target.value);
+                                    // 첫 키 입력 시점 캡쳐 (한글 IME 등 onKeyDown 누락 대비)
+                                    if (!textFirstKeyTimeRef.current && e.target.value.length > 0) {
+                                        textFirstKeyTimeRef.current = Date.now();
                                     }
                                 }}
                                 placeholder="Type your response..."

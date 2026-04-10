@@ -15,7 +15,7 @@ import { useVoiceRecorder, type UseVoiceRecorderOptions } from '../model/useVoic
 
 interface VoiceRecorderProps {
     /** Callback when recording is completed */
-    onRecordingComplete: (blob: Blob, t0UserEnd: number, duration: number) => void;
+    onRecordingComplete: (blob: Blob, t0UserEnd: number, duration: number, tRecordingStart?: number, tFirstSpeech?: number) => void;
     /** Custom recorder options */
     options?: UseVoiceRecorderOptions;
     /** Whether the recorder is disabled */
@@ -39,7 +39,7 @@ export const VoiceRecorder = ({
     const recorder = useVoiceRecorder({
         ...options,
         onStop: (result) => {
-            onRecordingComplete(result.blob, result.t0UserEnd, result.duration);
+            onRecordingComplete(result.blob, result.t0UserEnd, result.duration, result.tRecordingStart, result.tFirstSpeech ?? undefined);
             options.onStop?.(result);
         },
     });

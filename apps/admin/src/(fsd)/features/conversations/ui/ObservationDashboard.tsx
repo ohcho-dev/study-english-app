@@ -323,7 +323,7 @@ function Layer1Card({ observation }: { observation: SessionObservation }) {
                             : '-'
                     }
                 />
-                <MetricRow label="긴 간격 (>5초)" value={`${l1.long_gap_count}회`} />
+                <MetricRow label="긴 간격 (>5초)" value={l1.long_gap_count != null ? `${l1.long_gap_count}회` : null} />
                 {l1.long_latency_turn_count != null && l1.long_latency_turn_count > 0 && (
                     <MetricRow
                         label="서버 응답 >5초 턴"
@@ -389,7 +389,11 @@ function Layer2Card({ observation }: { observation: SessionObservation }) {
                 </div>
                 <MetricRow
                     label="레벨 업 / 다운"
-                    value={`⬆${l2.level_up_count} / ⬇${l2.level_down_count}`}
+                    value={
+                        l2.level_up_count != null || l2.level_down_count != null
+                            ? `⬆${l2.level_up_count ?? 0} / ⬇${l2.level_down_count ?? 0}`
+                            : null
+                    }
                 />
                 {l2.primary_issues && l2.primary_issues.length > 0 && (
                     <div className="pt-2 border-t">

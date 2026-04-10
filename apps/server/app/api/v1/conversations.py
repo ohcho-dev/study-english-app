@@ -1398,7 +1398,7 @@ async def get_active_reporting_prompt(db: DbSession) -> dict:
             "id": None,
             "name": "기본 프롬프트 (코드 내장)",
             "system_prompt": None,
-            "llm_model": "gemini-3.1-pro",
+            "llm_model": "gemini-3.1-pro-preview",
             "temperature": "0.3",
             "is_active": True,
             "is_default": True,
@@ -1493,7 +1493,7 @@ async def get_default_reporting_prompt() -> dict:
 
     return {
         "system_prompt": DEFAULT_SYSTEM_PROMPT,
-        "llm_model": "gemini-3.1-pro",
+        "llm_model": "gemini-3.1-pro-preview",
         "temperature": "0.3",
     }
 

@@ -27,7 +27,7 @@ import {
 export function ReportingPromptModal() {
     const [open, setOpen] = useState(false);
     const [editedPrompt, setEditedPrompt] = useState('');
-    const [editedModel, setEditedModel] = useState('gemini-3.1-pro');
+    const [editedModel, setEditedModel] = useState('gemini-3.1-pro-preview');
     const [editedTemperature, setEditedTemperature] = useState('0.3');
     const [editedName, setEditedName] = useState('');
     const [loadingDefault, setLoadingDefault] = useState(false);

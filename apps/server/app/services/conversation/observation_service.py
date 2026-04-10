@@ -130,7 +130,14 @@ class ObservationService:
             turns: 해당 세션의 모든 ConversationTurn 목록 (turn_index ASC).
             metrics: 세션 집계 메트릭 (없을 수 있음).
         """
-        user_turns = [t for t in turns if t.turn_type == TurnType.USER]
+        # 중복 turn_index 제거: 동일 index에 여러 턴이 있으면 마지막 것만 유지
+        # (텍스트 재시도 시 부분 발화→완성 발화 순으로 쌓이는 경우)
+        all_user = [t for t in turns if t.turn_type == TurnType.USER]
+        seen_indices: dict[int, int] = {}  # turn_index → list position
+        for i, t in enumerate(all_user):
+            seen_indices[t.turn_index] = i
+        user_turns = [all_user[i] for i in sorted(seen_indices.values())]
+
         ai_turns = [
             t for t in turns
             if t.turn_type in (TurnType.AI, TurnType.MODERATOR)
@@ -172,16 +179,39 @@ class ObservationService:
             word_counts
         )
 
-        # ── 응답 간격 (t_first_speech - t_recording_start) ──
+        # ── 응답 간격 계산 ──
+        # 우선순위 1: t_first_speech - t_recording_start (정밀 — 유저가 말하기까지 걸린 시간)
+        # 우선순위 2: 이전 user 턴 t3 → 현 user 턴 t0 (fallback — AI 응답 후 다음 제출까지)
+        #   * t3는 user 턴에 기록됨 (= 해당 턴 후 AI 오디오 재생 시작 시점)
         intervals: list[float] = []
+
+        # 이전 user 턴의 t3 맵 생성 (user 턴의 인덱스 순서대로)
+        prev_user_t3: float | None = None
+        user_turn_prev_t3: dict[int, float | None] = {}
         for t in user_turns:
+            user_turn_prev_t3[t.turn_index] = prev_user_t3
+            if t.t3_audio_play_start is not None:
+                prev_user_t3 = t.t3_audio_play_start
+
+        for t in user_turns:
+            interval_sec: float | None = None
+
+            # 방법 1: 정밀 타이밍 (t_first_speech - t_recording_start)
             if (
                 t.t_first_speech is not None
                 and t.t_recording_start is not None
                 and t.t_first_speech >= t.t_recording_start
             ):
                 interval_sec = (t.t_first_speech - t.t_recording_start) / 1000.0
-                intervals.append(interval_sec)
+
+            # 방법 2: fallback (이전 user 턴 t3 → 현재 user 턴 t0)
+            elif t.t0_user_end is not None:
+                prev_t3 = user_turn_prev_t3.get(t.turn_index)
+                if prev_t3 is not None and t.t0_user_end > prev_t3:
+                    interval_sec = (t.t0_user_end - prev_t3) / 1000.0
+
+            if interval_sec is not None and interval_sec >= 0:
+                intervals.append(round(interval_sec, 2))
 
         if intervals:
             obs.avg_user_response_interval_sec = round(
@@ -190,16 +220,28 @@ class ObservationService:
             obs.long_gap_count = sum(1 for iv in intervals if iv > 5.0)
 
         # 첫 응답 시간 (첫 번째 user turn)
-        if (
-            user_turns
-            and user_turns[0].t_first_speech is not None
-            and user_turns[0].t_recording_start is not None
-        ):
-            first = (
-                user_turns[0].t_first_speech - user_turns[0].t_recording_start
-            ) / 1000.0
-            if first >= 0:
-                obs.first_user_response_time_sec = round(first, 2)
+        if user_turns:
+            first_ut = user_turns[0]
+            first_interval: float | None = None
+
+            # 정밀
+            if (
+                first_ut.t_first_speech is not None
+                and first_ut.t_recording_start is not None
+            ):
+                first_interval = (
+                    first_ut.t_first_speech - first_ut.t_recording_start
+                ) / 1000.0
+
+            # fallback: 세션 시작 시점 → 첫 user 턴 t0
+            elif first_ut.t0_user_end is not None and session.started_at:
+                import datetime as _dt
+                session_start_ms = session.started_at.timestamp() * 1000
+                if first_ut.t0_user_end > session_start_ms:
+                    first_interval = (first_ut.t0_user_end - session_start_ms) / 1000.0
+
+            if first_interval is not None and first_interval >= 0:
+                obs.first_user_response_time_sec = round(first_interval, 2)
 
         # 침묵 타임아웃 (content_text가 비어있는 user turn)
         obs.silence_timeout_count = sum(
@@ -325,18 +367,17 @@ class ObservationService:
             level = self._safe_get_nested(out, "persona_plan", "current_level")
             if level is not None:
                 try:
-                    levels.append(int(level))
+                    clamped = max(1, min(10, int(level)))  # 1~10 범위로 클램핑
+                    levels.append(clamped)
                 except (TypeError, ValueError):
                     pass
 
-            # decision.path: LEVEL_UP/LEVEL_JUMP → up, LEVEL_DOWN → down
-            path = self._safe_get_nested(out, "decision", "path")
-            if path:
-                path_upper = str(path).upper()
-                if "UP" in path_upper or "JUMP" in path_upper:
-                    level_up += 1
-                elif "DOWN" in path_upper:
-                    level_down += 1
+        # 실제 레벨 변화 기반으로 UP/DOWN 카운트 (path 이름이 아닌 실제 변화)
+        for i in range(1, len(levels)):
+            if levels[i] > levels[i - 1]:
+                level_up += 1
+            elif levels[i] < levels[i - 1]:
+                level_down += 1
 
         if levels:
             obs.level_progression = levels
