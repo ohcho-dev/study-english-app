@@ -26,7 +26,7 @@ from app.services.conversation.observation_service import ObservationService
 logger = logging.getLogger(__name__)
 
 # Reporting LLM 기본 모델 (기획서 §4.3 지정)
-DEFAULT_REPORTING_MODEL = "gemini-3.1-pro"
+DEFAULT_REPORTING_MODEL = "gemini-3.1-pro-preview"
 
 
 # ============================================================================

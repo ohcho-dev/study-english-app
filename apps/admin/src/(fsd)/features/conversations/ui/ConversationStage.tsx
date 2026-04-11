@@ -83,6 +83,8 @@ export const ConversationStage = ({
 
     // ── Streaming STT state (mirrors Run0Runner pattern) ──
     const [recordingStopTime, setRecordingStopTime] = useState<number | null>(null);
+    const recordingStartTimeRef = useRef<number | null>(null);
+    const firstSpeechTimeRef = useRef<number | null>(null);
     const streamingProcessedRef = useRef(false); // Guard against double-processing
 
     // ── Inline interim message for TranscriptTimeline ──
@@ -174,8 +176,16 @@ export const ConversationStage = ({
         setShowStreamingMessage(true);
 
         // Send transcript to server with timing (async — response will add to chatHistory)
-        sendText(transcript, recordingStopTime || undefined, streamingSTT.serverFinalTimestamp || undefined);
+        sendText(
+            transcript,
+            recordingStopTime || undefined,
+            streamingSTT.serverFinalTimestamp || undefined,
+            recordingStartTimeRef.current ?? undefined,
+            firstSpeechTimeRef.current ?? undefined,
+        );
         setRecordingStopTime(null);
+        recordingStartTimeRef.current = null;
+        firstSpeechTimeRef.current = null;
 
         // Reset streaming STT for next turn
         streamingSTT.disconnect();
@@ -204,10 +214,11 @@ export const ConversationStage = ({
 
     const handleRecordingComplete = useCallback((blob: Blob, t0UserEnd: number, tRecordingStart?: number, tFirstSpeech?: number) => {
         if (isStreamingMode) {
-            // Streaming mode: record stop time and wait for transcript
-            // (sendStop is already called by RecordingBar's internal onStreamStop)
-            console.log('[ConversationStage] Recording stopped (streaming mode), waiting for transcript...');
+            // Streaming mode: save all timing, wait for transcript
+            console.log(`[ConversationStage] Recording stopped (streaming), recStart=${tRecordingStart}, firstSpeech=${tFirstSpeech}`);
             setRecordingStopTime(t0UserEnd);
+            recordingStartTimeRef.current = tRecordingStart ?? null;
+            firstSpeechTimeRef.current = tFirstSpeech ?? null;
         } else {
             // Sync mode: send audio blob directly with timing data
             sendAudio(blob, t0UserEnd, tRecordingStart, tFirstSpeech);

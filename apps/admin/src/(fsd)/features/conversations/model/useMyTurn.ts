@@ -326,6 +326,7 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
             formData.append('audio_file', audioBlob, 'input.webm');
             // metrics: t0 (user end) — 녹음 종료 시점 사용
             formData.append('t0_user_end', (t0UserEnd || Date.now()).toString());
+            console.log(`[sendAudio] timing: t0=${t0UserEnd}, tRecStart=${tRecordingStart}, tFirstSpeech=${tFirstSpeech}`);
             if (tRecordingStart) formData.append('t_recording_start', tRecordingStart.toString());
             if (tFirstSpeech) formData.append('t_first_speech', tFirstSpeech.toString());
 

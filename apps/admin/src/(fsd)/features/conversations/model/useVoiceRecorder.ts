@@ -13,6 +13,8 @@ export interface RecordingState {
     audioLevel: number;
     /** Whether voice is currently detected (VAD) */
     isSpeaking: boolean;
+    /** Whether noise floor calibration is in progress */
+    isCalibrating: boolean;
 }
 
 export interface RecordingResult {
@@ -70,7 +72,10 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         duration: 0,
         audioLevel: 0,
         isSpeaking: false,
+        isCalibrating: false,
     });
+
+    console.log('ssss', state.isRecording, state.audioLevel, state.isSpeaking)
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -90,6 +95,21 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     const silenceSinceRef = useRef<number | null>(null);
     const hasSpokenRef = useRef<boolean>(false);
     const firstSpeechTimeRef = useRef<number | null>(null);
+    // Noise floor calibration: collect samples for first ~0.5s, then set threshold
+    const noiseCalibrationSamples = useRef<number[]>([]);
+    const noiseFloorRef = useRef<number | null>(null);
+    /** Calibration duration in ms */
+    const NOISE_CALIBRATION_MS = 500;
+    /** Consecutive frames above threshold required to confirm first speech */
+    const SPEECH_CONFIRM_FRAMES = 3;
+    const speechConfirmCountRef = useRef<number>(0);
+    const speechConfirmStartRef = useRef<number | null>(null);
+    // Running baseline: EMA that tracks ambient level in real-time (adapts to music volume changes)
+    const runningBaselineRef = useRef<number>(0);
+    /** EMA smoothing factor — lower = slower adaptation (0.15 ≈ ~6 sample half-life) */
+    const BASELINE_ALPHA = 0.15;
+    /** Additive spike threshold above running baseline to detect close-mic speech */
+    const SPEECH_SPIKE_OFFSET = 0.15;
     // Ref to performStop so updateAudioLevel can call it without circular dep
     const performStopRef = useRef<() => void>(() => { });
     // Track if VAD triggered the stop
@@ -156,13 +176,58 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             }
         }
 
-        // Track first speech timestamp (works regardless of enableVAD)
-        if (speaking && !hasSpokenRef.current) {
-            hasSpokenRef.current = true;
-            firstSpeechTimeRef.current = Date.now();
+        // First speech detection with adaptive baseline:
+        // 1. First 0.5s: collect ambient noise samples (calibration)
+        // 2. After calibration: maintain running baseline (EMA) that tracks ambient level
+        // 3. Detect speech as a spike significantly above the running baseline
+        //    — close-mic speech causes a sharp energy jump vs. distant music which changes gradually
+        if (!hasSpokenRef.current && isRecordingRef.current && !isPausedRef.current) {
+            const elapsed = Date.now() - startTimeRef.current;
+
+            if (elapsed < NOISE_CALIBRATION_MS) {
+                // Calibration phase: collect noise samples
+                noiseCalibrationSamples.current.push(normalizedLevel);
+            } else {
+                // Initialize noise floor & running baseline once after calibration
+                if (noiseFloorRef.current === null && noiseCalibrationSamples.current.length > 0) {
+                    const sorted = [...noiseCalibrationSamples.current].sort((a, b) => a - b);
+                    const p75Index = Math.floor(sorted.length * 0.75);
+                    const noiseFloor = sorted[p75Index];
+                    noiseFloorRef.current = noiseFloor;
+                    runningBaselineRef.current = noiseFloor;
+                    console.log(`[VAD] Calibration done: noiseFloor=${noiseFloor.toFixed(3)}, initial baseline=${noiseFloor.toFixed(3)} (${noiseCalibrationSamples.current.length} samples)`);
+                }
+
+                if (noiseFloorRef.current !== null) {
+                    // Update running baseline with EMA — tracks gradual ambient changes (music volume shifts)
+                    // but can't keep up with sudden spikes (close-mic speech)
+                    runningBaselineRef.current = BASELINE_ALPHA * normalizedLevel + (1 - BASELINE_ALPHA) * runningBaselineRef.current;
+
+                    // Speech threshold = running baseline + fixed offset
+                    // Close-mic speech easily exceeds baseline + 0.15; distant music rarely does
+                    const spikeThreshold = Math.max(runningBaselineRef.current + SPEECH_SPIKE_OFFSET, 0.15);
+
+                    if (normalizedLevel > spikeThreshold) {
+                        if (speechConfirmCountRef.current === 0) {
+                            speechConfirmStartRef.current = Date.now();
+                        }
+                        speechConfirmCountRef.current++;
+                        if (speechConfirmCountRef.current >= SPEECH_CONFIRM_FRAMES) {
+                            hasSpokenRef.current = true;
+                            firstSpeechTimeRef.current = speechConfirmStartRef.current;
+                            console.log(`[VAD] First speech confirmed: level=${normalizedLevel.toFixed(3)}, baseline=${runningBaselineRef.current.toFixed(3)}, threshold=${spikeThreshold.toFixed(3)}, ${SPEECH_CONFIRM_FRAMES} consecutive frames, elapsed=${(elapsed / 1000).toFixed(1)}s`);
+                        }
+                    } else {
+                        speechConfirmCountRef.current = 0;
+                        speechConfirmStartRef.current = null;
+                    }
+                }
+            }
         }
 
-        setState((prev) => ({ ...prev, audioLevel: normalizedLevel, isSpeaking: speaking }));
+        // Update calibrating state based on elapsed time
+        const calibrating = isRecordingRef.current && !hasSpokenRef.current && (Date.now() - startTimeRef.current) < NOISE_CALIBRATION_MS;
+        setState((prev) => ({ ...prev, audioLevel: normalizedLevel, isSpeaking: speaking, isCalibrating: calibrating }));
     }, [enableVAD, vadSilenceThreshold, vadSilenceTimeoutMs, vadMinDurationSec]);
 
     // Internal stop function (defined early so startRecording can reference it)
@@ -184,12 +249,16 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             }
 
             isRecordingRef.current = false;
+            // hasSpokenRef, firstSpeechTimeRef는 여기서 초기화하지 않음
+            // — mediaRecorder.onstop이 비동기로 실행되므로, 값을 읽기 전에 초기화하면 null이 됨
+            // — onstop 콜백에서 값을 읽은 후 초기화함
             setState((prev) => ({
                 ...prev,
                 isRecording: false,
                 isPaused: false,
                 audioLevel: 0,
                 isSpeaking: false,
+                isCalibrating: false,
             }));
         }
     }, []);
@@ -272,13 +341,25 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                     audioContextRef.current = null;
                 }
 
+                // 타이밍 값을 스냅샷 후 초기화 (performStop에서 비동기 레이스 방지)
+                const snapshotRecordingStart = startTimeRef.current;
+                const snapshotFirstSpeech = firstSpeechTimeRef.current;
+                console.log(`[useVoiceRecorder] onstop: recStart=${snapshotRecordingStart}, firstSpeech=${snapshotFirstSpeech}, noiseFloor=${noiseFloorRef.current?.toFixed(3)}, lastBaseline=${runningBaselineRef.current.toFixed(3)}`);
+                hasSpokenRef.current = false;
+                firstSpeechTimeRef.current = null;
+                noiseCalibrationSamples.current = [];
+                noiseFloorRef.current = null;
+                speechConfirmCountRef.current = 0;
+                speechConfirmStartRef.current = null;
+                runningBaselineRef.current = 0;
+
                 onStopRef.current?.({
                     blob,
                     duration,
                     t0UserEnd,
                     speechEndMethod: vadStoppedRef.current ? 'vad' : 'button',
-                    tRecordingStart: startTimeRef.current,
-                    tFirstSpeech: firstSpeechTimeRef.current,
+                    tRecordingStart: snapshotRecordingStart,
+                    tFirstSpeech: snapshotFirstSpeech,
                 });
             };
 
@@ -296,6 +377,11 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             silenceSinceRef.current = null;
             hasSpokenRef.current = false;
             firstSpeechTimeRef.current = null;
+            noiseCalibrationSamples.current = [];
+            noiseFloorRef.current = null;
+            speechConfirmCountRef.current = 0;
+            speechConfirmStartRef.current = null;
+            runningBaselineRef.current = 0;
             vadStoppedRef.current = false;
             mediaRecorder.start(100); // Collect data every 100ms
 
@@ -320,6 +406,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                 duration: 0,
                 audioLevel: 0,
                 isSpeaking: false,
+                isCalibrating: true,
             });
 
             onStartRef.current?.();

@@ -185,6 +185,7 @@ export const RecordingBar = ({
     const getStatusMessage = () => {
         if (isProcessing) return 'Processing...';
         if (recorder.isPaused) return `⏸ Paused ${recorder.formattedDuration} / ${recorder.formatDuration(recorder.maxDuration)}`;
+        if (recorder.isCalibrating) return 'Listening environment...';
         if (recorder.isRecording) return `Recording ${recorder.formattedDuration} / ${recorder.formatDuration(recorder.maxDuration)}`;
         if (isUserTurn) return 'Your Turn! 🎤';
         if (currentSpeakerName) return `${currentSpeakerName} is speaking...`;
@@ -192,9 +193,11 @@ export const RecordingBar = ({
     };
 
     const statusColor = isUserTurn
-        ? recorder.isPaused
-            ? 'text-yellow-400'
-            : 'text-emerald-400'
+        ? recorder.isCalibrating
+            ? 'text-amber-400'
+            : recorder.isPaused
+                ? 'text-yellow-400'
+                : 'text-emerald-400'
         : recorder.isRecording
             ? 'text-destructive'
             : 'text-muted-foreground';
@@ -204,7 +207,7 @@ export const RecordingBar = ({
     return (
         <div className="shrink-0 border-t border-border/50 bg-card/80 backdrop-blur-xl">
             {/* Pause hint — shown only when recording */}
-            {recorder.isRecording && !recorder.isPaused && (
+            {recorder.isRecording && !recorder.isPaused && !recorder.isCalibrating && (
                 <div className="text-center py-1 text-[10px] text-muted-foreground/60">
                     💡 생각할 시간이 필요하면 일시정지를 누르세요
                 </div>
@@ -302,22 +305,27 @@ export const RecordingBar = ({
 
                         {/* Center: Main mic button */}
                         <div className="relative">
-                            {recorder.isRecording && !recorder.isPaused && (
+                            {recorder.isRecording && !recorder.isPaused && !recorder.isCalibrating && (
                                 <div className="absolute inset-0 rounded-full bg-destructive/30 animate-ping" />
+                            )}
+                            {recorder.isCalibrating && (
+                                <div className="absolute -inset-1 rounded-full bg-amber-400/20 animate-pulse" />
                             )}
                             {isUserTurn && !recorder.isRecording && !isProcessing && (
                                 <div className="absolute -inset-1 rounded-full bg-emerald-500/20 animate-pulse" />
                             )}
                             <Button
                                 size="icon"
-                                variant={recorder.isRecording ? 'destructive' : 'default'}
+                                variant={recorder.isRecording && !recorder.isCalibrating ? 'destructive' : 'default'}
                                 className={cn(
                                     'relative rounded-full h-14 w-14 transition-all shadow-lg',
-                                    recorder.isRecording
-                                        ? 'bg-destructive hover:bg-destructive/80 shadow-destructive/30'
-                                        : isUserTurn
-                                            ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30 text-white'
-                                            : 'bg-muted hover:bg-muted'
+                                    recorder.isCalibrating
+                                        ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30 text-white'
+                                        : recorder.isRecording
+                                            ? 'bg-destructive hover:bg-destructive/80 shadow-destructive/30'
+                                            : isUserTurn
+                                                ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30 text-white'
+                                                : 'bg-muted hover:bg-muted'
                                 )}
                                 onClick={() => {
                                     if (recorder.isRecording) {
