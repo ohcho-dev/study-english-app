@@ -148,63 +148,86 @@ const TranscriptEntry = ({ message, pendingFeedback, feedbackCardType }: Transcr
                 </div>
             )}
 
-            {/* Pipeline data shown below user messages (evaluator/planner, when available) */}
-            {message.isUser && (message.evaluatorData || message.plannerData) && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px]">
-                    {message.evaluatorData?.overall_score != null && (
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-full font-medium",
-                            message.evaluatorData.overall_score >= 80
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : message.evaluatorData.overall_score >= 50
-                                    ? "bg-amber-500/15 text-amber-400"
-                                    : "bg-red-500/15 text-red-400"
-                        )}>
-                            Score {message.evaluatorData.overall_score}
-                        </span>
+            {/* Pipeline data shown below user messages (evaluator/planner/conductor) */}
+            {message.isUser && (message.evaluatorData || message.plannerData || message.conductorData) && (
+                <div className="mt-2 space-y-1 text-[10px]">
+                    {/* Evaluator row */}
+                    {message.evaluatorData && (
+                        <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-slate-500 font-medium w-[18px] shrink-0">E</span>
+                            {message.evaluatorData.overall_score != null && (
+                                <span className={cn(
+                                    "px-1.5 py-0.5 rounded font-medium",
+                                    message.evaluatorData.overall_score >= 80
+                                        ? "bg-emerald-500/15 text-emerald-400"
+                                        : message.evaluatorData.overall_score >= 50
+                                            ? "bg-amber-500/15 text-amber-400"
+                                            : "bg-red-500/15 text-red-400"
+                                )}>
+                                    Score {message.evaluatorData.overall_score}
+                                </span>
+                            )}
+                            {message.evaluatorData.wpm != null && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                                    {message.evaluatorData.wpm} WPM
+                                </span>
+                            )}
+                            {message.evaluatorData.primary_issue && message.evaluatorData.primary_issue !== 'NONE' && (
+                                <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400">
+                                    {message.evaluatorData.primary_issue}
+                                </span>
+                            )}
+                            {message.evaluatorData.recommended_action && message.evaluatorData.recommended_action !== 'CONTINUE' && (
+                                <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400">
+                                    {message.evaluatorData.recommended_action}
+                                </span>
+                            )}
+                            {message.evaluatorData.engine_trace && Object.entries(message.evaluatorData.engine_trace).map(([key, value]) => (
+                                <span key={`eval-${key}`} className="px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-400">
+                                    {key}: {String(value)}
+                                </span>
+                            ))}
+                        </div>
                     )}
-                    {message.evaluatorData?.wpm != null && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">
-                            {message.evaluatorData.wpm} WPM
-                        </span>
+                    {/* Planner row */}
+                    {message.plannerData && (
+                        <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-purple-500 font-medium w-[18px] shrink-0">P</span>
+                            {message.plannerData.current_level != null && (
+                                <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400">
+                                    Lv.{message.plannerData.current_level}
+                                </span>
+                            )}
+                            {message.plannerData.path && (
+                                <span className={cn(
+                                    "px-1.5 py-0.5 rounded font-medium",
+                                    message.plannerData.path === 'LEVEL_UP'
+                                        ? "bg-emerald-500/15 text-emerald-400"
+                                        : message.plannerData.path === 'LEVEL_DOWN'
+                                            ? "bg-red-500/15 text-red-400"
+                                            : "bg-slate-500/15 text-slate-400"
+                                )}>
+                                    {message.plannerData.path === 'LEVEL_UP' ? '↑ UP' : message.plannerData.path === 'LEVEL_DOWN' ? '↓ DOWN' : '= HOLD'}
+                                </span>
+                            )}
+                            {message.plannerData.engine_trace && Object.entries(message.plannerData.engine_trace).map(([key, value]) => (
+                                <span key={`plan-${key}`} className="px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400">
+                                    {key}: {String(value)}
+                                </span>
+                            ))}
+                        </div>
                     )}
-                    {message.plannerData?.current_level != null && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400">
-                            Lv.{message.plannerData.current_level}
-                        </span>
+                    {/* Conductor row */}
+                    {message.conductorData?.engine_trace && (
+                        <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-teal-500 font-medium w-[18px] shrink-0">C</span>
+                            {Object.entries(message.conductorData.engine_trace).map(([key, value]) => (
+                                <span key={`cond-${key}`} className="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400">
+                                    {key}: {String(value)}
+                                </span>
+                            ))}
+                        </div>
                     )}
-                    {message.plannerData?.path && message.plannerData.path !== 'LEVEL_HOLD' && (
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-full font-medium",
-                            message.plannerData.path === 'LEVEL_UP'
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : "bg-red-500/15 text-red-400"
-                        )}>
-                            {message.plannerData.path === 'LEVEL_UP' ? '↑ UP' : '↓ DOWN'}
-                        </span>
-                    )}
-                    {message.evaluatorData?.primary_issue && message.evaluatorData.primary_issue !== 'NONE' && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400">
-                            {message.evaluatorData.primary_issue}
-                        </span>
-                    )}
-                    {message.evaluatorData?.recommended_action && message.evaluatorData.recommended_action !== 'CONTINUE' && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">
-                            {message.evaluatorData.recommended_action}
-                        </span>
-                    )}
-                    {/* Engine trace: extra fields from evaluator */}
-                    {message.evaluatorData?.engine_trace && Object.entries(message.evaluatorData.engine_trace).map(([key, value]) => (
-                        <span key={`eval-${key}`} className="px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400">
-                            {key}: {String(value)}
-                        </span>
-                    ))}
-                    {/* Engine trace: extra fields from planner */}
-                    {message.plannerData?.engine_trace && Object.entries(message.plannerData.engine_trace).map(([key, value]) => (
-                        <span key={`plan-${key}`} className="px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400">
-                            {key}: {String(value)}
-                        </span>
-                    ))}
                 </div>
             )}
 

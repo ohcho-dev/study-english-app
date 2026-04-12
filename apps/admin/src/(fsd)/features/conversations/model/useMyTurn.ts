@@ -25,6 +25,12 @@ export interface PlannerData {
     engine_trace?: Record<string, unknown>;
 }
 
+/** Conductor pipeline output summary */
+export interface ConductorData {
+    /** Extra fields from LLM output not in standard schema */
+    engine_trace?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
     id: string;
     speaker: string;
@@ -47,6 +53,8 @@ export interface ChatMessage {
     evaluatorData?: EvaluatorData;
     /** Planner pipeline output (user messages only, when available) */
     plannerData?: PlannerData;
+    /** Conductor pipeline output (user messages only, when available) */
+    conductorData?: ConductorData;
 }
 
 export interface MyTurnState {
@@ -389,6 +397,7 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
                 betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
                 evaluatorData: data.evaluator_data || undefined,
                 plannerData: data.planner_data || undefined,
+                conductorData: data.conductor_data || undefined,
             };
 
             setState(prev => ({
@@ -440,6 +449,7 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
                 betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
                 evaluatorData: data.evaluator_data || undefined,
                 plannerData: data.planner_data || undefined,
+                conductorData: data.conductor_data || undefined,
             };
 
             setState(prev => ({

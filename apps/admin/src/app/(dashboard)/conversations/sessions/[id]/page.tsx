@@ -6,7 +6,7 @@
 
 import { use, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, MessageSquare, BarChart3, Eye, ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { ArrowLeft, Clock, MessageSquare, BarChart3, Eye, ChevronDown, ChevronRight, Zap, Copy } from 'lucide-react';
 
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
@@ -43,6 +43,8 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     const [pipelineLoading, setPipelineLoading] = useState(false);
     const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
     const [moduleFilter, setModuleFilter] = useState<string>('all');
+    const [copyingPipeline, setCopyingPipeline] = useState(false);
+    const [copyFeedback, setCopyFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
     // Fetch pipeline logs when pipeline or conversation tab is selected
     useEffect(() => {
@@ -124,6 +126,12 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     })();
     const isStreamingSTT = sttMode === 'streaming';
 
+    useEffect(() => {
+        if (!copyFeedback) return;
+        const timer = setTimeout(() => setCopyFeedback(null), 3000);
+        return () => clearTimeout(timer);
+    }, [copyFeedback]);
+
     // Format timestamp
     const formatTime = (dateString: string) => {
         return new Date(dateString).toLocaleString('ko-KR');
@@ -134,6 +142,68 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
         if (ms === null || ms === undefined) return '-';
         if (ms < 1000) return `${Math.round(ms)}ms`;
         return `${(ms / 1000).toFixed(2)}s`;
+    };
+
+    const handleCopyPipelineLogs = async () => {
+        if (!id) {
+            setCopyFeedback({ type: 'error', message: '세션 ID가 없습니다.' });
+            return;
+        }
+        try {
+            setCopyingPipeline(true);
+            setCopyFeedback(null);
+            const res = await getPipelineLogs(id);
+            const logs = (res.items || []).filter((log) => ['evaluator', 'planner', 'conductor'].includes(log.module_name));
+            if (logs.length === 0) {
+                setCopyFeedback({ type: 'error', message: '복사할 파이프라인 로그가 없습니다.' });
+                return;
+            }
+
+            const grouped = new Map<number, PipelineLog[]>();
+            logs.forEach((log) => {
+                const arr = grouped.get(log.turn_index) || [];
+                arr.push(log);
+                grouped.set(log.turn_index, arr);
+            });
+
+            const moduleOrder: PipelineLog['module_name'][] = ['evaluator', 'planner', 'conductor'];
+            const blocks: string[] = [];
+            Array.from(grouped.entries())
+                .sort((a, b) => a[0] - b[0])
+                .forEach(([turnIndex, turnLogs]) => {
+                    blocks.push(`Turn ${turnIndex}`);
+                    turnLogs
+                        .sort((a, b) => moduleOrder.indexOf(a.module_name) - moduleOrder.indexOf(b.module_name))
+                        .forEach((log) => {
+                            const header = `${log.module_name.toUpperCase()} (model: ${log.model_name || 'unknown'})`;
+                            blocks.push(header);
+                            if (log.output_json) {
+                                blocks.push(JSON.stringify(log.output_json, null, 2));
+                            } else {
+                                blocks.push('(no output)');
+                            }
+                        });
+                    blocks.push('');
+                });
+
+            const textToCopy = blocks.join('\n');
+            if (!textToCopy.trim()) {
+                setCopyFeedback({ type: 'error', message: '복사할 내용이 없습니다.' });
+                return;
+            }
+
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(textToCopy);
+                setCopyFeedback({ type: 'success', message: '파이프라인 로그를 복사했습니다.' });
+            } else {
+                throw new Error('Clipboard unavailable');
+            }
+        } catch (err) {
+            console.error('Failed to copy pipeline logs', err);
+            setCopyFeedback({ type: 'error', message: '복사에 실패했습니다.' });
+        } finally {
+            setCopyingPipeline(false);
+        }
     };
 
     if (sessionLoading) {
@@ -657,17 +727,37 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                 {/* Pipeline Logs Tab */}
                 <TabsContent value="pipeline" className="space-y-4">
                     {/* Module Filter */}
-                    <div className="flex gap-2">
-                        {['all', 'evaluator', 'planner', 'conductor'].map((mod) => (
+                    <div className="flex flex-wrap items-center gap-3 justify-between">
+                        <div className="flex gap-2 flex-wrap">
+                            {['all', 'evaluator', 'planner', 'conductor'].map((mod) => (
+                                <Button
+                                    key={mod}
+                                    variant={moduleFilter === mod ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setModuleFilter(mod)}
+                                >
+                                    {mod === 'all' ? '전체' : mod.charAt(0).toUpperCase() + mod.slice(1)}
+                                </Button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-2">
                             <Button
-                                key={mod}
-                                variant={moduleFilter === mod ? 'default' : 'outline'}
+                                variant="outline"
                                 size="sm"
-                                onClick={() => setModuleFilter(mod)}
+                                onClick={handleCopyPipelineLogs}
+                                disabled={copyingPipeline}
                             >
-                                {mod === 'all' ? '전체' : mod.charAt(0).toUpperCase() + mod.slice(1)}
+                                <Copy className="h-4 w-4 mr-1" />
+                                {copyingPipeline ? '복사 중...' : 'LLM 로그 복사'}
                             </Button>
-                        ))}
+                            {copyFeedback && (
+                                <span
+                                    className={`text-xs ${copyFeedback.type === 'success' ? 'text-emerald-600' : 'text-destructive'}`}
+                                >
+                                    {copyFeedback.message}
+                                </span>
+                            )}
+                        </div>
                     </div>
 
                     {pipelineLoading ? (
