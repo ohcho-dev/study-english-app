@@ -22,6 +22,7 @@ from typing import Optional
 
 import google.generativeai as genai
 from app.core.config import settings
+from app.services.conversation.default_levels import DEFAULT_LEVEL_DEFINITIONS
 from app.schemas.pipeline_schemas import (
     Decision,
     DecisionConstraints,
@@ -111,16 +112,21 @@ class PlannerService:
         self.custom_prompt = custom_prompt
         
         
-        # Use template-provided level definitions or fall back to defaults
-        # Empty list or None → use defaults
-        if level_definitions:
+        # Use template-provided level definitions
+        # None → use default 10 stages, [] → disable custom guidance
+        if level_definitions is None:
+            source_defs = DEFAULT_LEVEL_DEFINITIONS
+        else:
+            source_defs = level_definitions
+
+        if source_defs:
             self.level_defs = {
                 item["level"]: {
                     "name": item.get("name", f"Level {item['level']}"),
                     "description": item.get("description", ""),
                     "instruction": item.get("instruction", ""),
                 }
-                for item in level_definitions
+                for item in source_defs
             }
         else:
             self.level_defs = {}

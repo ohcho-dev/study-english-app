@@ -19,6 +19,7 @@ from typing import Optional
 
 import google.generativeai as genai
 from app.core.config import settings
+from app.services.conversation.default_levels import DEFAULT_LEVEL_DEFINITIONS
 from app.schemas.pipeline_schemas import (
     ConductorOutput,
     ConductorScript,
@@ -44,11 +45,16 @@ class ConductorService:
         self.llm_model = llm_model
         self.custom_prompt = custom_prompt
         genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
-        # Use Admin-provided level definitions or fall back to hardcoded defaults
-        if level_definitions:
+        # Use Admin definitions when provided. None → default list, [] → disable.
+        if level_definitions is None:
+            source_defs = DEFAULT_LEVEL_DEFINITIONS
+        else:
+            source_defs = level_definitions
+
+        if source_defs:
             self.level_instructions = {
                 item["level"]: item.get("instruction", f"Level {item['level']}")
-                for item in level_definitions
+                for item in source_defs
             }
         else:
             self.level_instructions = {}

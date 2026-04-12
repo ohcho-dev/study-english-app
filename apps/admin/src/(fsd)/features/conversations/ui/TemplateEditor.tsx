@@ -202,7 +202,9 @@ Keep responses concise (1-3 sentences) and conversational.`
     const [plannerLlmModel, setPlannerLlmModel] = useState(template?.planner_llm_model || '');
     const [conductorLlmModel, setConductorLlmModel] = useState(template?.conductor_llm_model || 'gemini-2.0-flash');
     const [levelDefinitions, setLevelDefinitions] = useState(
-        template?.level_definitions ? JSON.stringify(template.level_definitions, null, 2) : ''
+        template?.level_definitions
+            ? JSON.stringify(template.level_definitions, null, 2)
+            : '[]'
     );
     const [pipelineSaving, setPipelineSaving] = useState(false);
     const [pipelineSaved, setPipelineSaved] = useState(false);
@@ -738,7 +740,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                         레벨 정의 (JSON)
                                     </Label>
                                     <p className="text-xs text-muted-foreground">
-                                        Planner가 참조하는 단계별 레벨 정의입니다. 비워두면 기본 10단계가 적용됩니다.
+                                        Planner/Conductor가 사용하는 단계별 레벨 정의입니다. 값을 비워두면 기본 10단계가 자동 적용되고, <code>[]</code>만 입력하면 레벨 지침이 비활성화됩니다.
                                     </p>
                                     <details className="rounded-md border bg-muted/50 p-3 group">
                                         <summary className="flex cursor-pointer items-center justify-between text-xs font-medium text-muted-foreground">
