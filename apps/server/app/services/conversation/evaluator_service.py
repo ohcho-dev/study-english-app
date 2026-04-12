@@ -161,12 +161,12 @@ class EvaluatorService:
             context_parts.append(f"Scene: {scene_context}")
         if history_text:
             context_parts.append(f"\n## Recent Conversation\n{history_text}")
-        if response_delay_sec is not None:
-            context_parts.append(
-                "\n## Response Timing\n"
-                f"The user took ~{response_delay_sec:.2f}s from microphone activation to the first spoken word. "
-                "Interpret long delays as hesitation/latency when diagnosing participation or fluency."
-            )
+        delay_value = f"{response_delay_sec:.2f}" if response_delay_sec is not None else "unknown"
+        context_parts.append(
+            "\n## Response Timing\n"
+            f'"response_delay_sec": "{delay_value}"\n'
+            "Interpret long delays as hesitation/latency when diagnosing participation or fluency."
+        )
 
         context_parts.append(f'\n## User\'s Latest Utterance\n"{transcript}"')
         context_parts.append(

@@ -190,8 +190,9 @@ class ConductorService:
             custom_state_str = f"\n## Scenario State (from Planner)\n{json.dumps(custom_state, ensure_ascii=False)}"
             custom_state_str += "\nUse this state to determine what to practice next. Generate scripts consistent with this state."
 
-        response_delay_line = (
-            f"{response_delay_sec:.2f}s delay before the user started speaking. Encourage faster turn-taking if delay is long."
+        delay_value = f"{response_delay_sec:.2f}" if response_delay_sec is not None else "unknown"
+        delay_note = (
+            "Encourage faster turn-taking if the delay is long."
             if response_delay_sec is not None
             else "Response delay not measured for this turn."
         )
@@ -211,7 +212,8 @@ class ConductorService:
 {scene_context or 'General conversation practice'}
 
 ## Response Timing Clues
-- {response_delay_line}
+- "response_delay_sec": "{delay_value}"
+- {delay_note}
 
 ## User ({user_name or 'Student'}) said:
 "{user_transcript or '(no input)'}"

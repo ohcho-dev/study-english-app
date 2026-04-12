@@ -217,8 +217,9 @@ class ScenarioDirector:
         
         director_prompt = f"{base_director_prompt}\n\n# Custom Instructions (High Priority)\n{custom_instructions}"
         
-        response_delay_text = (
-            f"{response_delay_sec:.2f}s delay before speaking. Interpret long delays as hesitation."
+        delay_value = f"{response_delay_sec:.2f}" if response_delay_sec is not None else "unknown"
+        delay_note = (
+            "Interpret long delays as user hesitation."
             if response_delay_sec is not None
             else "Response delay not measured this turn."
         )
@@ -241,7 +242,9 @@ class ScenarioDirector:
         User Name: {self.session.user_name}
         Current Turn Index: {self.session.current_turn_index}
         Target Scenario Step Index: {current_step_index}
-        User Response Delay (record start → speech): {response_delay_text}
+        User Response Delay (record start → speech):
+        "response_delay_sec": "{delay_value}"
+        {delay_note}
         
         # Conversation History
         {history_text}

@@ -317,10 +317,11 @@ class PlannerService:
             custom_state_str += json.dumps(session_state.custom_state, ensure_ascii=False, indent=2)
             custom_state_str += "\n\nYou MUST update and return custom_state in your JSON output to track scenario-specific progression."
 
-        delay_line = (
-            f"{response_delay_sec:.2f}s (slow start — consider encouragement)"
+        delay_value = f"{response_delay_sec:.2f}" if response_delay_sec is not None else "unknown"
+        delay_note = (
+            "Slow start — consider encouragement."
             if response_delay_sec is not None
-            else "Not measured"
+            else "Response delay not measured this turn."
         )
 
         user_msg = f"""## Evaluator Results
@@ -333,7 +334,8 @@ class PlannerService:
 - Primary Issue: {eval_output.diagnosis.primary_issue}
 - Secondary Issues: {', '.join(eval_output.diagnosis.secondary_issues) or 'None'}
 - Recommended Action: {eval_output.diagnosis.recommended_action}
-- Response Delay: {delay_line}
+- "response_delay_sec": "{delay_value}"
+- Response Delay Note: {delay_note}
 
 ## Recent Conversation History
 {history_text or '(session just started)'}

@@ -1278,6 +1278,37 @@ class MyTurnService:
                     self._complete_turn_wrapper(session_id, script_index)
                 )
             
+            # Evaluator summary for frontend display
+            evaluator_summary = {
+                "overall_score": eval_output.aggregate.overall_score,
+                "primary_issue": eval_output.diagnosis.primary_issue,
+                "recommended_action": eval_output.diagnosis.recommended_action,
+                "wpm": eval_output.fluency.words_per_minute if eval_output.fluency else None,
+            }
+            # Include optional v0.1 engine fields if present
+            if hasattr(eval_output, "question_id") and eval_output.question_id:
+                evaluator_summary["question_id"] = eval_output.question_id
+            if hasattr(eval_output, "detected_stop_type") and eval_output.detected_stop_type:
+                evaluator_summary["detected_stop_type"] = eval_output.detected_stop_type
+            if hasattr(eval_output, "response_observed"):
+                evaluator_summary["response_observed"] = eval_output.response_observed
+            if hasattr(eval_output, "small_success"):
+                evaluator_summary["small_success"] = eval_output.small_success
+
+            # Planner summary for frontend display
+            planner_summary = {
+                "current_level": plan_output.persona_plan.current_level,
+                "path": plan_output.decision.path if plan_output.decision else None,
+                "reason": plan_output.decision.reason if plan_output.decision else None,
+            }
+            # Include optional v0.1 engine fields if present
+            if hasattr(plan_output, "question_id") and plan_output.question_id:
+                planner_summary["question_id"] = plan_output.question_id
+            if hasattr(plan_output, "intervention_seq"):
+                planner_summary["intervention_seq"] = plan_output.intervention_seq
+            if hasattr(plan_output, "question_completed"):
+                planner_summary["question_completed"] = plan_output.question_completed
+
             return {
                 "transcript": transcript,
                 "next_turn": session.current_turn_index,
@@ -1287,6 +1318,8 @@ class MyTurnService:
                 "corrections": conductor_output.corrections,
                 "better_expressions": conductor_output.better_expressions,
                 "feedback_text": conductor_output.feedback_text,
+                "evaluator_data": evaluator_summary,
+                "planner_data": planner_summary,
             }
         
         # ════════════════════════════════════════════════════════════
