@@ -152,7 +152,8 @@ class ScenarioDirector:
     async def evaluate_turn(self, 
                             user_input: str, 
                             history_text: str,
-                            current_step_index: int) -> DirectorOutput:
+                            current_step_index: int,
+                            response_delay_sec: Optional[float] = None) -> DirectorOutput:
         """
         Evaluates the user's latest turn against the current scenario step.
         """
@@ -216,6 +217,12 @@ class ScenarioDirector:
         
         director_prompt = f"{base_director_prompt}\n\n# Custom Instructions (High Priority)\n{custom_instructions}"
         
+        response_delay_text = (
+            f"{response_delay_sec:.2f}s delay before speaking. Interpret long delays as hesitation."
+            if response_delay_sec is not None
+            else "Response delay not measured this turn."
+        )
+
         prompt = f"""
         {director_prompt}
         
@@ -234,6 +241,7 @@ class ScenarioDirector:
         User Name: {self.session.user_name}
         Current Turn Index: {self.session.current_turn_index}
         Target Scenario Step Index: {current_step_index}
+        User Response Delay (record start → speech): {response_delay_text}
         
         # Conversation History
         {history_text}

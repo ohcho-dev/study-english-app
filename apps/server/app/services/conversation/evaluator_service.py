@@ -60,6 +60,7 @@ class EvaluatorService:
         session_id: Optional[str] = None,
         turn_id: Optional[str] = None,
         measured_wpm: Optional[float] = None,
+        response_delay_sec: Optional[float] = None,
     ) -> tuple[EvaluatorOutput, float]:
         """Evaluate user transcript and return structured scores.
 
@@ -75,6 +76,8 @@ class EvaluatorService:
             turn_id: Turn ID.
             measured_wpm: Server-computed WPM from actual timestamps.
                           When provided, overrides LLM-estimated WPM.
+            response_delay_sec: Seconds between recording start and first speech.
+                Helps the LLM reason about hesitation or slow starts.
 
         Returns:
             Tuple of (EvaluatorOutput, duration_ms).
@@ -158,6 +161,12 @@ class EvaluatorService:
             context_parts.append(f"Scene: {scene_context}")
         if history_text:
             context_parts.append(f"\n## Recent Conversation\n{history_text}")
+        if response_delay_sec is not None:
+            context_parts.append(
+                "\n## Response Timing\n"
+                f"The user took ~{response_delay_sec:.2f}s from microphone activation to the first spoken word. "
+                "Interpret long delays as hesitation/latency when diagnosing participation or fluency."
+            )
 
         context_parts.append(f'\n## User\'s Latest Utterance\n"{transcript}"')
         context_parts.append(

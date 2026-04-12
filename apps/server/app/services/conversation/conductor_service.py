@@ -65,6 +65,7 @@ class ConductorService:
         trace_id: Optional[str] = None,
         turn_id: Optional[str] = None,
         custom_state: Optional[dict] = None,
+        response_delay_sec: Optional[float] = None,
     ) -> tuple[ConductorOutput, float]:
         """Generate moderator feedback and AI scripts."""
         t_start = time.time()
@@ -90,6 +91,7 @@ class ConductorService:
             user_transcript=user_transcript,
             user_name=user_name,
             custom_state=custom_state,
+            response_delay_sec=response_delay_sec,
         )
 
         MAX_RETRIES = 3
@@ -179,6 +181,7 @@ class ConductorService:
         user_transcript: Optional[str],
         user_name: Optional[str],
         custom_state: Optional[dict] = None,
+        response_delay_sec: Optional[float] = None,
     ) -> str:
         decision = planner_output.decision
 
@@ -186,6 +189,12 @@ class ConductorService:
         if custom_state:
             custom_state_str = f"\n## Scenario State (from Planner)\n{json.dumps(custom_state, ensure_ascii=False)}"
             custom_state_str += "\nUse this state to determine what to practice next. Generate scripts consistent with this state."
+
+        response_delay_line = (
+            f"{response_delay_sec:.2f}s delay before the user started speaking. Encourage faster turn-taking if delay is long."
+            if response_delay_sec is not None
+            else "Response delay not measured for this turn."
+        )
 
         return f"""## Current State
 - Path: {decision.path}
@@ -200,6 +209,9 @@ class ConductorService:
 
 ## Scene Context
 {scene_context or 'General conversation practice'}
+
+## Response Timing Clues
+- {response_delay_line}
 
 ## User ({user_name or 'Student'}) said:
 "{user_transcript or '(no input)'}"

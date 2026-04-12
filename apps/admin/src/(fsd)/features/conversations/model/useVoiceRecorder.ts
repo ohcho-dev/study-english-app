@@ -6,6 +6,15 @@
 
 import { useCallback, useRef, useState } from 'react';
 
+const MIN_DB_LEVEL = 1e-4;
+const MIN_DYNAMIC_THRESHOLD_GAP = 0.02;
+const MAX_DYNAMIC_THRESHOLD = 0.9;
+const SPEECH_CALIBRATION_MS = 1000;
+const MIN_NOISE_LEVEL = 0.005;
+
+const levelToDb = (level: number) => 20 * Math.log10(Math.max(level, MIN_DB_LEVEL));
+const dbToLevel = (db: number) => 10 ** (db / 20);
+
 export interface RecordingState {
     isRecording: boolean;
     isPaused: boolean;
@@ -40,6 +49,8 @@ export interface UseVoiceRecorderOptions {
     onDataAvailable?: (data: Blob) => void;
     /** Callback on error */
     onError?: (error: Error) => void;
+    /** Callback invoked when first speech is confirmed */
+    onFirstSpeech?: (payload: { tRecordingStart: number; tFirstSpeech: number }) => void;
     /** Audio level update interval in ms (default: 100) */
     levelUpdateInterval?: number;
     /** Enable VAD (Voice Activity Detection) auto-stop (default: false) */
@@ -59,6 +70,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         onStop,
         onDataAvailable,
         onError,
+        onFirstSpeech,
         levelUpdateInterval = 100,
         enableVAD = false,
         vadSilenceThreshold = 0.05,
@@ -74,8 +86,6 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         isSpeaking: false,
         isCalibrating: false,
     });
-
-    console.log('ssss', state.isRecording, state.audioLevel, state.isSpeaking)
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -104,6 +114,9 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     const SPEECH_CONFIRM_FRAMES = 3;
     const speechConfirmCountRef = useRef<number>(0);
     const speechConfirmStartRef = useRef<number | null>(null);
+    const dynamicVadThresholdRef = useRef<number>(vadSilenceThreshold);
+    const speechCalibrationSamples = useRef<number[]>([]);
+    const speechCalibrationStartRef = useRef<number | null>(null);
     // Running baseline: EMA that tracks ambient level in real-time (adapts to music volume changes)
     const runningBaselineRef = useRef<number>(0);
     /** EMA smoothing factor — lower = slower adaptation (0.15 ≈ ~6 sample half-life) */
@@ -119,12 +132,43 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
     const onStartRef = useRef(onStart);
     const onDataAvailableRef = useRef(onDataAvailable);
     const onErrorRef = useRef(onError);
+    const onFirstSpeechRef = useRef(onFirstSpeech);
 
     // Keep refs in sync with latest callbacks
     onStopRef.current = onStop;
     onStartRef.current = onStart;
     onDataAvailableRef.current = onDataAvailable;
     onErrorRef.current = onError;
+    onFirstSpeechRef.current = onFirstSpeech;
+
+    const updateDynamicThreshold = useCallback((noiseLevel: number | null, speechLevel?: number | null) => {
+        if (noiseLevel === null || Number.isNaN(noiseLevel)) {
+            return;
+        }
+        const safeNoise = Math.max(noiseLevel, MIN_NOISE_LEVEL);
+        let targetLevel = safeNoise + MIN_DYNAMIC_THRESHOLD_GAP;
+
+        if (speechLevel && speechLevel > safeNoise) {
+            const noiseDb = levelToDb(safeNoise);
+            const speechDb = levelToDb(speechLevel);
+            const averageDb = (noiseDb + speechDb) / 2;
+            const plusTenDb = noiseDb + 10;
+            const chosenDb = Math.min(averageDb, plusTenDb);
+            targetLevel = dbToLevel(chosenDb);
+        }
+
+        const finalThreshold = Math.min(
+            Math.max(targetLevel, safeNoise + MIN_DYNAMIC_THRESHOLD_GAP, vadSilenceThreshold * 0.8, 0.02),
+            MAX_DYNAMIC_THRESHOLD,
+        );
+        const changed = Math.abs(finalThreshold - dynamicVadThresholdRef.current) > 0.005;
+        dynamicVadThresholdRef.current = finalThreshold;
+        if (changed) {
+            console.log(
+                `[VAD] Dynamic silence threshold updated → ${finalThreshold.toFixed(3)} (noise=${safeNoise.toFixed(3)}, speech=${speechLevel ? speechLevel.toFixed(3) : 'N/A'})`,
+            );
+        }
+    }, [vadSilenceThreshold]);
 
     // Calculate audio level focused on human voice frequencies (85Hz – 3000Hz)
     const updateAudioLevel = useCallback(() => {
@@ -151,16 +195,17 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         }
         const voiceAvg = voiceBins > 0 ? voiceSum / voiceBins : 0;
         const normalizedLevel = Math.min(voiceAvg / 128, 1);
+        const now = Date.now();
 
         // VAD: detect speech/silence
-        const speaking = normalizedLevel > vadSilenceThreshold;
+        const vadThreshold = dynamicVadThresholdRef.current ?? vadSilenceThreshold;
+        const speaking = normalizedLevel > vadThreshold;
         if (enableVAD && isRecordingRef.current && !isPausedRef.current) {
             if (speaking) {
                 // hasSpokenRef + firstSpeechTimeRef set by general block below
                 silenceSinceRef.current = null;
             } else if (hasSpokenRef.current) {
                 // Silence detected after speech
-                const now = Date.now();
                 if (silenceSinceRef.current === null) {
                     silenceSinceRef.current = now;
                 } else {
@@ -182,7 +227,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         // 3. Detect speech as a spike significantly above the running baseline
         //    — close-mic speech causes a sharp energy jump vs. distant music which changes gradually
         if (!hasSpokenRef.current && isRecordingRef.current && !isPausedRef.current) {
-            const elapsed = Date.now() - startTimeRef.current;
+            const elapsed = now - startTimeRef.current;
 
             if (elapsed < NOISE_CALIBRATION_MS) {
                 // Calibration phase: collect noise samples
@@ -196,6 +241,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                     noiseFloorRef.current = noiseFloor;
                     runningBaselineRef.current = noiseFloor;
                     console.log(`[VAD] Calibration done: noiseFloor=${noiseFloor.toFixed(3)}, initial baseline=${noiseFloor.toFixed(3)} (${noiseCalibrationSamples.current.length} samples)`);
+                    updateDynamicThreshold(noiseFloor);
                 }
 
                 if (noiseFloorRef.current !== null) {
@@ -209,12 +255,28 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
 
                     if (normalizedLevel > spikeThreshold) {
                         if (speechConfirmCountRef.current === 0) {
-                            speechConfirmStartRef.current = Date.now();
+                            speechConfirmStartRef.current = now;
                         }
                         speechConfirmCountRef.current++;
                         if (speechConfirmCountRef.current >= SPEECH_CONFIRM_FRAMES) {
                             hasSpokenRef.current = true;
-                            firstSpeechTimeRef.current = speechConfirmStartRef.current;
+                            const snapshotFirstSpeechRaw = speechConfirmStartRef.current ?? now;
+                            const snapshotRecordingStart = startTimeRef.current;
+                            let adjustedFirstSpeech = snapshotFirstSpeechRaw;
+                            if (snapshotRecordingStart) {
+                                const delta = snapshotFirstSpeechRaw - snapshotRecordingStart;
+                                const adjustedDelta = Math.max(0, delta - NOISE_CALIBRATION_MS);
+                                adjustedFirstSpeech = snapshotRecordingStart + adjustedDelta;
+                            }
+                            firstSpeechTimeRef.current = adjustedFirstSpeech;
+                            speechCalibrationSamples.current = [normalizedLevel];
+                            speechCalibrationStartRef.current = now;
+                            if (snapshotRecordingStart) {
+                                onFirstSpeechRef.current?.({
+                                    tRecordingStart: snapshotRecordingStart,
+                                    tFirstSpeech: adjustedFirstSpeech,
+                                });
+                            }
                             console.log(`[VAD] First speech confirmed: level=${normalizedLevel.toFixed(3)}, baseline=${runningBaselineRef.current.toFixed(3)}, threshold=${spikeThreshold.toFixed(3)}, ${SPEECH_CONFIRM_FRAMES} consecutive frames, elapsed=${(elapsed / 1000).toFixed(1)}s`);
                         }
                     } else {
@@ -225,10 +287,31 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             }
         }
 
+        if (speechCalibrationStartRef.current !== null && hasSpokenRef.current) {
+            const speechElapsed = now - speechCalibrationStartRef.current;
+            const noiseLevel = noiseFloorRef.current ?? runningBaselineRef.current;
+            if (normalizedLevel > Math.max(noiseLevel, MIN_NOISE_LEVEL) + MIN_DYNAMIC_THRESHOLD_GAP) {
+                speechCalibrationSamples.current.push(normalizedLevel);
+            }
+            if (speechElapsed >= SPEECH_CALIBRATION_MS) {
+                const samples = speechCalibrationSamples.current.length > 0
+                    ? speechCalibrationSamples.current
+                    : [normalizedLevel];
+                const avgSpeech = samples.reduce((acc, val) => acc + val, 0) / samples.length;
+                speechCalibrationSamples.current = [];
+                speechCalibrationStartRef.current = null;
+                updateDynamicThreshold(noiseLevel, avgSpeech);
+            }
+        }
+
         // Update calibrating state based on elapsed time
-        const calibrating = isRecordingRef.current && !hasSpokenRef.current && (Date.now() - startTimeRef.current) < NOISE_CALIBRATION_MS;
+        const noisePhaseActive = isRecordingRef.current && !hasSpokenRef.current && (now - startTimeRef.current) < NOISE_CALIBRATION_MS;
+        const speechPhaseActive = speechCalibrationStartRef.current !== null
+            ? (now - speechCalibrationStartRef.current) < SPEECH_CALIBRATION_MS
+            : false;
+        const calibrating = noisePhaseActive || speechPhaseActive;
         setState((prev) => ({ ...prev, audioLevel: normalizedLevel, isSpeaking: speaking, isCalibrating: calibrating }));
-    }, [enableVAD, vadSilenceThreshold, vadSilenceTimeoutMs, vadMinDurationSec]);
+    }, [enableVAD, vadSilenceThreshold, vadSilenceTimeoutMs, vadMinDurationSec, updateDynamicThreshold]);
 
     // Internal stop function (defined early so startRecording can reference it)
     const performStop = useCallback(() => {
@@ -352,6 +435,10 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
                 speechConfirmCountRef.current = 0;
                 speechConfirmStartRef.current = null;
                 runningBaselineRef.current = 0;
+                silenceSinceRef.current = null;
+                speechCalibrationSamples.current = [];
+                speechCalibrationStartRef.current = null;
+                dynamicVadThresholdRef.current = vadSilenceThreshold;
 
                 onStopRef.current?.({
                     blob,
@@ -382,6 +469,9 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
             speechConfirmCountRef.current = 0;
             speechConfirmStartRef.current = null;
             runningBaselineRef.current = 0;
+            speechCalibrationSamples.current = [];
+            speechCalibrationStartRef.current = null;
+            dynamicVadThresholdRef.current = vadSilenceThreshold;
             vadStoppedRef.current = false;
             mediaRecorder.start(100); // Collect data every 100ms
 
@@ -413,7 +503,7 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
         } catch (error) {
             onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to start recording'));
         }
-    }, [maxDuration, levelUpdateInterval, updateAudioLevel, performStop]);
+    }, [maxDuration, levelUpdateInterval, updateAudioLevel, performStop, vadSilenceThreshold]);
 
     // Stop recording (public API)
     const stopRecording = useCallback(() => {
@@ -476,4 +566,3 @@ export const useVoiceRecorder = (options: UseVoiceRecorderOptions = {}) => {
 };
 
 export default useVoiceRecorder;
-

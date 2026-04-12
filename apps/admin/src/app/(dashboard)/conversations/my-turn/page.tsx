@@ -447,6 +447,7 @@ const MyTurnContent = () => {
                         isEnded={pageState === 'ended'}
                         userName={user?.username || 'User'}
                         sessionConfig={sessionConfig}
+                        showResponseStats={isAdmin}
                     />
                 </div>
             </div>

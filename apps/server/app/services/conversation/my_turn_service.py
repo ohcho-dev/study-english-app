@@ -1054,6 +1054,15 @@ class MyTurnService:
             except: 
                 pass
         
+        response_delay_sec: float | None = None
+        if (
+            t_recording_start
+            and t_first_speech
+            and t_recording_start > 0
+            and t_first_speech >= t_recording_start
+        ):
+            response_delay_sec = round((t_first_speech - t_recording_start) / 1000.0, 2)
+
         if pipeline_mode == "v0.2":
             # ════════════════════════════════════════════════════════════
             # v0.2 EXPERT PIPELINE: Evaluator → Planner → Conductor
@@ -1113,6 +1122,7 @@ class MyTurnService:
                 session_id=str(session.id),
                 turn_id=turn_id,
                 measured_wpm=measured_wpm,  # 실측값 주입
+                response_delay_sec=response_delay_sec,
             )
             
             # Log Evaluator
@@ -1152,6 +1162,8 @@ class MyTurnService:
                 trace_id=trace_id,
                 turn_id=turn_id,
                 history_text=history,
+                scene_context=effective_scene_context,
+                response_delay_sec=response_delay_sec,
             )
             
             # Update session state in variant
@@ -1196,6 +1208,7 @@ class MyTurnService:
                 trace_id=trace_id,
                 turn_id=turn_id,
                 custom_state=session_state.custom_state,
+                response_delay_sec=response_delay_sec,
             )
             
             # Log Conductor
@@ -1285,7 +1298,12 @@ class MyTurnService:
         # Target step is usually next step in sequence
         target_step_index = (script_index if script_index is not None else -1) + 1
         
-        director_output = await director.evaluate_turn(transcript, history, target_step_index)
+        director_output = await director.evaluate_turn(
+            transcript,
+            history,
+            target_step_index,
+            response_delay_sec=response_delay_sec,
+        )
         logger.info(f"Director Evaluation: {director_output.to_dict()}")
         
         # Update Script Index based on Director

@@ -145,6 +145,7 @@ class PlannerService:
         turn_id: Optional[str] = None,
         history_text: Optional[str] = None,
         scene_context: Optional[str] = None,
+        response_delay_sec: Optional[float] = None,
     ) -> tuple[PlannerOutput, float]:
         """Make a strategic decision based on evaluation results.
 
@@ -167,6 +168,7 @@ class PlannerService:
             prev_level=prev_level,
             history_text=history_text,
             scene_context=scene_context,
+            response_delay_sec=response_delay_sec,
         )
 
         # If LLM failed, fallback to rule-based
@@ -282,6 +284,7 @@ class PlannerService:
         prev_level: int,
         history_text: Optional[str] = None,
         scene_context: Optional[str] = None,
+        response_delay_sec: Optional[float] = None,
     ) -> tuple[Optional[int], Optional[str], Optional[list[str]]]:
         """Use LLM for nuanced level decision.
 
@@ -314,6 +317,12 @@ class PlannerService:
             custom_state_str += json.dumps(session_state.custom_state, ensure_ascii=False, indent=2)
             custom_state_str += "\n\nYou MUST update and return custom_state in your JSON output to track scenario-specific progression."
 
+        delay_line = (
+            f"{response_delay_sec:.2f}s (slow start — consider encouragement)"
+            if response_delay_sec is not None
+            else "Not measured"
+        )
+
         user_msg = f"""## Evaluator Results
 - Overall Score: {eval_output.aggregate.overall_score}/100
 - Slot A (Context): {eval_output.narrative_scores.get('slot_a', {}).score if hasattr(eval_output.narrative_scores.get('slot_a', {}), 'score') else 'N/A'}/10
@@ -324,6 +333,7 @@ class PlannerService:
 - Primary Issue: {eval_output.diagnosis.primary_issue}
 - Secondary Issues: {', '.join(eval_output.diagnosis.secondary_issues) or 'None'}
 - Recommended Action: {eval_output.diagnosis.recommended_action}
+- Response Delay: {delay_line}
 
 ## Recent Conversation History
 {history_text or '(session just started)'}

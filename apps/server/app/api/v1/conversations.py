@@ -9,9 +9,12 @@ This module provides API endpoints for:
 
 import logging
 import math
+import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
+
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 
@@ -49,6 +52,48 @@ from app.services.conversation.webrtc_service import webrtc_service
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 logger = logging.getLogger(__name__)
+_KST = ZoneInfo("Asia/Seoul")
+_INVALID_XML_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _format_timestamp_ms(value: float | int | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        ts = float(value)
+    except (TypeError, ValueError):
+        return None
+    if ts <= 0:
+        return None
+    dt = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc).astimezone(_KST)
+    return f"{dt:%Y-%m-%d %H:%M:%S}.{int(dt.microsecond / 1000):03d} KST"
+
+
+def _sanitize_excel_value(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _INVALID_XML_RE.sub("", value)
+    if isinstance(value, (dict, list)):
+        return _INVALID_XML_RE.sub("", str(value))
+    return value
+
+
+def _append_row(ws, values):
+    ws.append([_sanitize_excel_value(v) for v in values])
+
+
+def _relative_seconds(base: float | int | None, target: float | int | None) -> float | None:
+    if base is None or target is None:
+        return None
+    try:
+        b = float(base)
+        t = float(target)
+    except (TypeError, ValueError):
+        return None
+    if b <= 0 or t < b:
+        return None
+    return round((t - b) / 1000.0, 2)
 
 
 # ============================================================================
@@ -1583,7 +1628,7 @@ def _write_overview_sheet(ws, obs) -> None:
     """개요 시트 — Layer 1+2 전체 메트릭."""
     from openpyxl.styles import Font
 
-    ws.append(["=== Layer 1: Rule-Based 메트릭 ==="])
+    _append_row(ws, ["=== Layer 1: Rule-Based 메트릭 ==="])
     ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
 
     metrics_l1 = [
@@ -1605,10 +1650,10 @@ def _write_overview_sheet(ws, obs) -> None:
         ("짧은 답변 후 개선 횟수", obs.followup_after_short_answer),
     ]
     for label, value in metrics_l1:
-        ws.append([label, value])
+        _append_row(ws, [label, value])
 
-    ws.append([])
-    ws.append(["=== Layer 2: Pipeline 집계 ==="])
+    _append_row(ws, [])
+    _append_row(ws, ["=== Layer 2: Pipeline 집계 ==="])
     ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
 
     metrics_l2 = [
@@ -1621,7 +1666,7 @@ def _write_overview_sheet(ws, obs) -> None:
         ("핵심 이슈 TOP 3", ", ".join(obs.primary_issues) if obs.primary_issues else None),
     ]
     for label, value in metrics_l2:
-        ws.append([label, value])
+        _append_row(ws, [label, value])
 
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 25
@@ -1637,7 +1682,7 @@ def _write_turns_sheet(ws, turns, pipeline_logs) -> None:
         "E2E(ms)", "Evaluator 점수", "주요 이슈", "레벨", "Path",
         "교정", "더 나은 표현",
     ]
-    ws.append(headers)
+    _append_row(ws, headers)
     fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     font = Font(bold=True, color="FFFFFF")
     for col in range(1, len(headers) + 1):
@@ -1682,7 +1727,7 @@ def _write_turns_sheet(ws, turns, pipeline_logs) -> None:
 
         turn_type_str = t.turn_type.value if hasattr(t.turn_type, "value") else str(t.turn_type)
 
-        ws.append([
+        _append_row(ws, [
             t.turn_index,
             turn_type_str,
             t.speaker_name or "",
@@ -1723,9 +1768,9 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
         # Conductor
         "교정 표현", "더 나은 표현", "피드백",
         # 타이밍
-        "t_recording_start", "t_first_speech", "t0_user_end", "E2E(ms)",
+        "t_recording_start", "t_first_speech", "Δfirst_speech(s)", "t0_user_end", "Δuser_end(s)", "E2E(ms)",
     ]
-    ws.append(headers)
+    _append_row(ws, headers)
 
     # 헤더 스타일
     fill_eval = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -1825,6 +1870,12 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
         better = ", ".join(cd.get("better_expressions", [])) if isinstance(cd, dict) else None
         feedback = cd.get("feedback_text", "")[:200] if isinstance(cd, dict) else None
 
+        formatted_recording_start = _format_timestamp_ms(t.t_recording_start)
+        formatted_first_speech = _format_timestamp_ms(t.t_first_speech)
+        formatted_user_end = _format_timestamp_ms(t.t0_user_end)
+        relative_first_speech = _relative_seconds(t.t_recording_start, t.t_first_speech)
+        relative_user_end = _relative_seconds(t.t_recording_start, t.t0_user_end)
+
         row = [
             t.turn_index, turn_type_str, t.content_text or "", word_count,
             wpm,
@@ -1842,9 +1893,14 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
             # Conductor
             corr, better, feedback,
             # Timing
-            t.t_recording_start, t.t_first_speech, t.t0_user_end, e2e_ms,
+            formatted_recording_start,
+            formatted_first_speech,
+            relative_first_speech,
+            formatted_user_end,
+            relative_user_end,
+            e2e_ms,
         ]
-        ws.append(row)
+        _append_row(ws, row)
 
         # 행 배경 (user 턴 강조)
         if turn_type_str == "user":
@@ -1859,7 +1915,7 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
         18, 20, 16,              # eval diagnosis
         8, 8, 14, 50, 8,         # planner
         25, 25, 40,              # conductor
-        16, 16, 16, 10,          # timing
+        16, 16, 12, 16, 12, 10,  # timing
     ]
     for i, w in enumerate(widths2, 1):
         if i <= len(headers):
@@ -1889,46 +1945,46 @@ def _write_analysis_sheet(ws, obs) -> None:
         ("흐름 유지", obs.flow_maintenance),
     ]
     for label, value in sections:
-        ws.append([label, str(value) if value is not None else "-"])
+        _append_row(ws, [label, str(value) if value is not None else "-"])
         ws.cell(row=ws.max_row, column=1).font = bold
 
-    ws.append([])
+    _append_row(ws, [])
 
     if obs.key_learning_points:
-        ws.append(["=== 핵심 학습 포인트 ==="])
+        _append_row(ws, ["=== 핵심 학습 포인트 ==="])
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
         for point in obs.key_learning_points:
-            ws.append(["•", point])
+            _append_row(ws, ["•", point])
 
-    ws.append([])
+    _append_row(ws, [])
 
     if obs.struggle_points:
-        ws.append(["=== 어려움 포인트 ==="])
+        _append_row(ws, ["=== 어려움 포인트 ==="])
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
         for point in obs.struggle_points:
-            ws.append(["•", point])
+            _append_row(ws, ["•", point])
 
-    ws.append([])
+    _append_row(ws, [])
 
     if obs.improvement_suggestions:
-        ws.append(["=== 개선 제안 ==="])
+        _append_row(ws, ["=== 개선 제안 ==="])
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
         for sug in obs.improvement_suggestions:
-            ws.append(["•", sug])
+            _append_row(ws, ["•", sug])
 
-    ws.append([])
+    _append_row(ws, [])
 
     if obs.elaboration_adequacy and isinstance(obs.elaboration_adequacy, dict):
-        ws.append(["=== 상세도 적정성 분석 ==="])
+        _append_row(ws, ["=== 상세도 적정성 분석 ==="])
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
-        ws.append(["전체 점수", obs.elaboration_adequacy.get("overall_score")])
-        ws.append(["추이", obs.elaboration_adequacy.get("trend")])
-        ws.append([])
+        _append_row(ws, ["전체 점수", obs.elaboration_adequacy.get("overall_score")])
+        _append_row(ws, ["추이", obs.elaboration_adequacy.get("trend")])
+        _append_row(ws, [])
         if obs.elaboration_adequacy.get("evaluated_turns"):
-            ws.append(["턴#", "질문 유형", "가중치", "단어 수", "점수", "판정", "피드백"])
+            _append_row(ws, ["턴#", "질문 유형", "가중치", "단어 수", "점수", "판정", "피드백"])
             for et in obs.elaboration_adequacy["evaluated_turns"]:
                 if isinstance(et, dict):
-                    ws.append([
+                    _append_row(ws, [
                         et.get("turn_index"),
                         et.get("question_type"),
                         et.get("question_weight"),

@@ -38,6 +38,7 @@ interface RecordingBarProps {
     onStreamStart?: () => void;
     onStreamData?: (data: Blob) => void;
     onStreamStop?: () => void;
+    onResponseIntervalPreview?: (tRecordingStart: number, tFirstSpeech: number) => void;
 }
 
 export const RecordingBar = ({
@@ -52,6 +53,7 @@ export const RecordingBar = ({
     onStreamStart,
     onStreamData,
     onStreamStop,
+    onResponseIntervalPreview,
 }: RecordingBarProps) => {
     const [isTextMode, setIsTextMode] = useState(false);
     const [textValue, setTextValue] = useState('');
@@ -63,6 +65,14 @@ export const RecordingBar = ({
     // Silence detection: track when silence started
     const silenceStartRef = useRef<number | null>(null);
     const lastDebugLogRef = useRef<number>(0);
+
+    const emitTextFirstSpeech = useCallback(() => {
+        if (textFirstKeyTimeRef.current) return;
+        const firstKey = Date.now();
+        textFirstKeyTimeRef.current = firstKey;
+        const recStart = textFocusTimeRef.current ?? (firstKey - 2000);
+        onResponseIntervalPreview?.(recStart, firstKey);
+    }, [onResponseIntervalPreview]);
 
     // isUserTurn이 true로 전환되면 텍스트 모드 타이밍 자동 시작
     useEffect(() => {
@@ -88,6 +98,9 @@ export const RecordingBar = ({
         },
         onStart: onStreamStart,
         onDataAvailable: onStreamData,
+        onFirstSpeech: onResponseIntervalPreview
+            ? ({ tRecordingStart, tFirstSpeech }) => onResponseIntervalPreview(tRecordingStart, tFirstSpeech)
+            : undefined,
     });
 
     // Auto-recording: start recording when it becomes user's turn
@@ -173,7 +186,7 @@ export const RecordingBar = ({
     const handleKeyDown = (e: React.KeyboardEvent) => {
         // 첫 키 입력 시점 기록 (t_first_speech 대용)
         if (!textFirstKeyTimeRef.current && e.key !== 'Enter') {
-            textFirstKeyTimeRef.current = Date.now();
+            emitTextFirstSpeech();
         }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -244,7 +257,7 @@ export const RecordingBar = ({
                                     setTextValue(e.target.value);
                                     // 첫 키 입력 시점 캡쳐 (한글 IME 등 onKeyDown 누락 대비)
                                     if (!textFirstKeyTimeRef.current && e.target.value.length > 0) {
-                                        textFirstKeyTimeRef.current = Date.now();
+                                        emitTextFirstSpeech();
                                     }
                                 }}
                                 placeholder="Type your response..."

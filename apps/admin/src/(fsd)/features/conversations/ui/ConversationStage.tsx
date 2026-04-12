@@ -31,6 +31,8 @@ interface ConversationStageProps {
     userName?: string;
     /** Session config with per-participant settings (stt_mode, etc.) */
     sessionConfig?: SessionConfig;
+    /** Whether to display response timing stats (admins only) */
+    showResponseStats?: boolean;
 }
 
 export const ConversationStage = ({
@@ -41,6 +43,7 @@ export const ConversationStage = ({
     isEnded = false,
     userName = 'User',
     sessionConfig,
+    showResponseStats = false,
 }: ConversationStageProps) => {
     const {
         isConnected,
@@ -60,6 +63,55 @@ export const ConversationStage = ({
     } = useMyTurn(sessionId, { energyFlowEnabled: template.energy_flow_enabled });
 
     const streamingSTT = useStreamingSTT();
+
+    const responseTrackingEnabled = showResponseStats;
+
+    const [responseStats, setResponseStats] = useState({
+        first: null as number | null,
+        last: null as number | null,
+        avg: null as number | null,
+        count: 0,
+        total: 0,
+    });
+    const lastPreviewStartRef = useRef<number | null>(null);
+
+    const resetResponseStats = useCallback(() => {
+        setResponseStats({ first: null, last: null, avg: null, count: 0, total: 0 });
+    }, []);
+
+    useEffect(() => {
+        if (!responseTrackingEnabled) {
+            lastPreviewStartRef.current = null;
+            return;
+        }
+        resetResponseStats();
+        lastPreviewStartRef.current = null;
+    }, [sessionId, resetResponseStats, responseTrackingEnabled]);
+
+    const updateResponseStats = useCallback((tRecordingStart?: number | null, tFirstSpeech?: number | null) => {
+        if (!responseTrackingEnabled) return;
+        if (!tRecordingStart || !tFirstSpeech || tFirstSpeech < tRecordingStart) return;
+        const intervalSec = Number(((tFirstSpeech - tRecordingStart) / 1000).toFixed(2));
+        if (Number.isNaN(intervalSec) || intervalSec < 0) return;
+        setResponseStats((prev) => {
+            const nextCount = prev.count + 1;
+            const nextTotal = prev.total + intervalSec;
+            const avg = Number((nextTotal / nextCount).toFixed(2));
+            return {
+                first: prev.first ?? intervalSec,
+                last: intervalSec,
+                avg,
+                count: nextCount,
+                total: nextTotal,
+            };
+        });
+    }, [responseTrackingEnabled]);
+
+    const handleResponsePreview = useCallback((tRecordingStart: number, tFirstSpeech: number) => {
+        if (!responseTrackingEnabled) return;
+        lastPreviewStartRef.current = tRecordingStart;
+        updateResponseStats(tRecordingStart, tFirstSpeech);
+    }, [updateResponseStats, responseTrackingEnabled]);
 
     // Determine STT settings from the user participant's config
     const userSttConfig = useMemo(() => {
@@ -213,6 +265,13 @@ export const ConversationStage = ({
     };
 
     const handleRecordingComplete = useCallback((blob: Blob, t0UserEnd: number, tRecordingStart?: number, tFirstSpeech?: number) => {
+        if (responseTrackingEnabled) {
+            const alreadyPreviewed = !!(tRecordingStart && lastPreviewStartRef.current === tRecordingStart);
+            if (!alreadyPreviewed) {
+                updateResponseStats(tRecordingStart, tFirstSpeech);
+            }
+            lastPreviewStartRef.current = null;
+        }
         if (isStreamingMode) {
             // Streaming mode: save all timing, wait for transcript
             console.log(`[ConversationStage] Recording stopped (streaming), recStart=${tRecordingStart}, firstSpeech=${tFirstSpeech}`);
@@ -223,7 +282,7 @@ export const ConversationStage = ({
             // Sync mode: send audio blob directly with timing data
             sendAudio(blob, t0UserEnd, tRecordingStart, tFirstSpeech);
         }
-    }, [isStreamingMode, sendAudio]);
+    }, [isStreamingMode, sendAudio, updateResponseStats, responseTrackingEnabled]);
 
     // Streaming STT callbacks for RecordingBar (matches Run0 VoiceRecorder pattern)
     const handleStreamStart = useCallback(() => {
@@ -253,6 +312,11 @@ export const ConversationStage = ({
     }, [isStreamingMode, streamingSTT]);
 
     const participants = template.participants || [];
+
+    const formatSeconds = (value: number | null) => {
+        if (value === null || Number.isNaN(value)) return '–';
+        return `${value.toFixed(2)}s`;
+    };
 
     // Determine if AI is "thinking"
     const isAiThinking = !!currentSpeaker && !isUserTurn && !aiResponse && isProcessing;
@@ -297,6 +361,33 @@ export const ConversationStage = ({
                     isUserTurn={isUserTurn}
                     userName={userName}
                 />
+                {responseTrackingEnabled && (
+                    <div className="px-4 pb-3">
+                    <div className="grid grid-cols-3 gap-2 text-center text-[10px] text-muted-foreground">
+                        <div className="rounded-lg border border-border/30 bg-background/60 px-2 py-1.5">
+                            <div className="text-xs font-semibold text-foreground">첫 응답</div>
+                            <div className="text-base font-bold text-foreground">
+                                {formatSeconds(responseStats.first)}
+                            </div>
+                            <div>첫 턴</div>
+                        </div>
+                        <div className="rounded-lg border border-border/30 bg-background/60 px-2 py-1.5">
+                            <div className="text-xs font-semibold text-foreground">이번 턴</div>
+                            <div className="text-base font-bold text-foreground">
+                                {formatSeconds(responseStats.last)}
+                            </div>
+                            <div>현재</div>
+                        </div>
+                        <div className="rounded-lg border border-border/30 bg-background/60 px-2 py-1.5">
+                            <div className="text-xs font-semibold text-foreground">평균</div>
+                            <div className="text-base font-bold text-foreground">
+                                {formatSeconds(responseStats.avg)}
+                            </div>
+                            <div>{responseStats.count > 0 ? `${responseStats.count}회` : '응답 없음'}</div>
+                        </div>
+                    </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Transcript Timeline ── */}
@@ -345,6 +436,7 @@ export const ConversationStage = ({
                     onStreamStart={isStreamingMode ? handleStreamStart : undefined}
                     onStreamData={isStreamingMode ? handleStreamData : undefined}
                     onStreamStop={isStreamingMode ? handleStreamStop : undefined}
+                    onResponseIntervalPreview={responseTrackingEnabled ? handleResponsePreview : undefined}
                 />
             )}
         </div>
