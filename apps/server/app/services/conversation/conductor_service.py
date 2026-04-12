@@ -258,6 +258,16 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
                     language=s.get("language", "en-US"),
                 ))
 
+        # Collect extra fields not in standard schema as engine_trace
+        _standard_keys = {
+            "scripts", "return_to_user_after", "user_emotion",
+            "feedback_text", "feedback_instruction", "level_instruction",
+            "corrections", "better_expressions", "energy_flow",
+            "schema_version", "trace_id", "turn_id",
+        }
+        extra = {k: v for k, v in data.items() if k not in _standard_keys}
+        engine_trace = extra if extra else None
+
         return ConductorOutput(
             schema_version=SCHEMA_VERSION,
             trace_id=trace_id or "",
@@ -271,6 +281,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             corrections=self._normalize_string_list(data.get("corrections", [])),
             better_expressions=self._normalize_string_list(data.get("better_expressions", [])),
             energy_flow=data.get("energy_flow"),
+            engine_trace=engine_trace,
         )
 
     def _build_fallback(

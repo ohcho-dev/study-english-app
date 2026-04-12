@@ -4,7 +4,7 @@
  * Session Detail Page - View conversation session details and metrics
  */
 
-import { use, useState, useEffect } from 'react';
+import { use, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Clock, MessageSquare, BarChart3, Eye, ChevronDown, ChevronRight, Zap } from 'lucide-react';
 
@@ -44,16 +44,30 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
     const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
     const [moduleFilter, setModuleFilter] = useState<string>('all');
 
-    // Fetch pipeline logs when pipeline tab is selected
+    // Fetch pipeline logs when pipeline or conversation tab is selected
     useEffect(() => {
-        if (activeTab === 'pipeline' && id) {
+        if ((activeTab === 'pipeline' || activeTab === 'conversation') && id) {
             setPipelineLoading(true);
-            getPipelineLogs(id, moduleFilter === 'all' ? undefined : moduleFilter)
+            getPipelineLogs(id, activeTab === 'pipeline' && moduleFilter !== 'all' ? moduleFilter : undefined)
                 .then((res) => setPipelineLogs(res.items || []))
                 .catch(() => setPipelineLogs([]))
                 .finally(() => setPipelineLoading(false));
         }
     }, [activeTab, id, moduleFilter]);
+
+    // Index pipeline logs by turn_index for conversation tab
+    const pipelineByTurn = useMemo(() => {
+        const map: Record<number, { evaluator?: Record<string, unknown>; planner?: Record<string, unknown>; conductor?: Record<string, unknown> }> = {};
+        for (const log of pipelineLogs) {
+            if (!log.output_json) continue;
+            const ti = log.turn_index;
+            if (!map[ti]) map[ti] = {};
+            if (log.module_name === 'evaluator') map[ti].evaluator = log.output_json;
+            else if (log.module_name === 'planner') map[ti].planner = log.output_json;
+            else if (log.module_name === 'conductor') map[ti].conductor = log.output_json;
+        }
+        return map;
+    }, [pipelineLogs]);
 
     const { data: session, isLoading: sessionLoading } = useSession(id);
     const { data: turnsData, isLoading: turnsLoading } = useSessionTurns(id);
@@ -313,6 +327,63 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                     )}
                                                 </>
                                             )}
+                                            {/* Pipeline data below user turns */}
+                                            {turn.turn_type === 'user' && pipelineByTurn[turn.turn_index] && (() => {
+                                                const pd = pipelineByTurn[turn.turn_index];
+                                                const ev = pd.evaluator as Record<string, Record<string, unknown>> | undefined;
+                                                const pl = pd.planner as Record<string, Record<string, unknown>> | undefined;
+                                                const score = ev?.aggregate?.overall_score as number | undefined;
+                                                const issue = ev?.diagnosis?.primary_issue as string | undefined;
+                                                const action = ev?.diagnosis?.recommended_action as string | undefined;
+                                                const wpm = ev?.fluency?.words_per_minute as number | undefined;
+                                                const level = pl?.persona_plan?.current_level as number | undefined;
+                                                const path = pl?.decision?.path as string | undefined;
+                                                // engine_trace: extra fields from LLM
+                                                const evTrace = ev?.engine_trace as Record<string, unknown> | undefined;
+                                                const plTrace = pl?.engine_trace as Record<string, unknown> | undefined;
+
+                                                const hasData = score != null || level != null || evTrace || plTrace;
+                                                if (!hasData) return null;
+
+                                                return (
+                                                    <div className="flex flex-wrap gap-1 mt-2">
+                                                        {score != null && (
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${score >= 80 ? 'bg-emerald-500/15 text-emerald-500' : score >= 50 ? 'bg-amber-500/15 text-amber-500' : 'bg-red-500/15 text-red-500'}`}>
+                                                                Score {score}
+                                                            </span>
+                                                        )}
+                                                        {wpm != null && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-500">{wpm} WPM</span>
+                                                        )}
+                                                        {level != null && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-500">Lv.{level}</span>
+                                                        )}
+                                                        {path && path !== 'LEVEL_HOLD' && (
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${path === 'LEVEL_UP' ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'}`}>
+                                                                {path === 'LEVEL_UP' ? '↑ UP' : '↓ DOWN'}
+                                                            </span>
+                                                        )}
+                                                        {issue && issue !== 'NONE' && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-500">{issue}</span>
+                                                        )}
+                                                        {action && action !== 'CONTINUE' && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-500">{action}</span>
+                                                        )}
+                                                        {/* Engine trace: extra fields from evaluator */}
+                                                        {evTrace && Object.entries(evTrace).map(([key, value]) => (
+                                                            <span key={`ev-${key}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-500">
+                                                                {key}: {String(value)}
+                                                            </span>
+                                                        ))}
+                                                        {/* Engine trace: extra fields from planner */}
+                                                        {plTrace && Object.entries(plTrace).map(([key, value]) => (
+                                                            <span key={`pl-${key}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500">
+                                                                {key}: {String(value)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 ))}

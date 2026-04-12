@@ -162,7 +162,7 @@ class PlannerService:
         prev_level = session_state.current_level
 
         # Try LLM-based decision first
-        new_level, path, reasons = await self._llm_decide(
+        new_level, path, reasons, engine_trace = await self._llm_decide(
             eval_output=eval_output,
             session_state=session_state,
             prev_level=prev_level,
@@ -173,6 +173,7 @@ class PlannerService:
 
         # If LLM failed, fallback to rule-based
         if new_level is None:
+            engine_trace = None
             new_level, path, reasons = self._rule_based_decide(
                 overall_score=overall_score,
                 complexity=complexity,
@@ -266,6 +267,7 @@ class PlannerService:
                 next_constraints=constraints,
             ),
             persona_plan=persona_plan,
+            engine_trace=engine_trace,
         )
 
         duration_ms = (time.time() - t_start) * 1000
@@ -285,15 +287,15 @@ class PlannerService:
         history_text: Optional[str] = None,
         scene_context: Optional[str] = None,
         response_delay_sec: Optional[float] = None,
-    ) -> tuple[Optional[int], Optional[str], Optional[list[str]]]:
+    ) -> tuple[Optional[int], Optional[str], Optional[list[str]], Optional[dict]]:
         """Use LLM for nuanced level decision.
 
         Returns:
-            Tuple of (new_level, path, reasons) or (None, None, None) on failure.
+            Tuple of (new_level, path, reasons, engine_trace) or (None, None, None, None) on failure.
         """
         if not self.model:
             logger.info("[Planner] No LLM model, using rule-based fallback")
-            return None, None, None
+            return None, None, None, None
 
         # Build prompt: use custom_prompt from Admin (no hardcoded fallback)
         base_prompt = self.custom_prompt or ""
@@ -377,11 +379,19 @@ Return JSON with: new_level, path, reasons, focus_area, and custom_state (object
                 if isinstance(data.get("custom_state"), dict):
                     session_state.custom_state = data["custom_state"]
 
+                # Collect extra fields not in standard schema as engine_trace
+                _standard_keys = {
+                    "new_level", "path", "reasons", "focus_area", "custom_state",
+                    "schema_version", "trace_id", "turn_id", "decision", "persona_plan",
+                }
+                extra = {k: v for k, v in data.items() if k not in _standard_keys}
+                engine_trace = extra if extra else None
+
                 logger.warning(
                     f"[Planner] LLM decision: level {prev_level}→{new_level}, path={path}, "
                     f"custom_state={session_state.custom_state}"
                 )
-                return new_level, path, reasons
+                return new_level, path, reasons, engine_trace
 
             except Exception as e:
                 last_error = e
@@ -391,7 +401,7 @@ Return JSON with: new_level, path, reasons, focus_area, and custom_state (object
                 else:
                     logger.error(f"[Planner] LLM failed after {MAX_RETRIES} attempts: {e}")
         
-        return None, None, None
+        return None, None, None, None
 
     def _rule_based_decide(
         self,

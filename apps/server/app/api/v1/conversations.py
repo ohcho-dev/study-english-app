@@ -1681,6 +1681,7 @@ def _write_turns_sheet(ws, turns, pipeline_logs) -> None:
         "턴#", "유형", "화자", "발화 내용", "단어 수", "응답 간격(초)",
         "E2E(ms)", "Evaluator 점수", "주요 이슈", "레벨", "Path",
         "교정", "더 나은 표현",
+        "녹음 시작", "첫 발화", "발화 종료",
     ]
     _append_row(ws, headers)
     fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -1741,9 +1742,12 @@ def _write_turns_sheet(ws, turns, pipeline_logs) -> None:
             path,
             corrections,
             better_expr,
+            _format_timestamp_ms(t.t_recording_start),
+            _format_timestamp_ms(t.t_first_speech),
+            _format_timestamp_ms(t.t0_user_end),
         ])
 
-    widths = [6, 10, 12, 50, 8, 12, 10, 10, 12, 18, 8, 14, 30, 30]
+    widths = [6, 10, 12, 50, 8, 12, 10, 10, 12, 18, 8, 14, 30, 30, 28, 28, 28]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 

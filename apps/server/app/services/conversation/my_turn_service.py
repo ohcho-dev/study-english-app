@@ -1285,15 +1285,9 @@ class MyTurnService:
                 "recommended_action": eval_output.diagnosis.recommended_action,
                 "wpm": eval_output.fluency.words_per_minute if eval_output.fluency else None,
             }
-            # Include optional v0.1 engine fields if present
-            if hasattr(eval_output, "question_id") and eval_output.question_id:
-                evaluator_summary["question_id"] = eval_output.question_id
-            if hasattr(eval_output, "detected_stop_type") and eval_output.detected_stop_type:
-                evaluator_summary["detected_stop_type"] = eval_output.detected_stop_type
-            if hasattr(eval_output, "response_observed"):
-                evaluator_summary["response_observed"] = eval_output.response_observed
-            if hasattr(eval_output, "small_success"):
-                evaluator_summary["small_success"] = eval_output.small_success
+            # Include engine_trace fields from evaluator (v0.1 engine fields etc.)
+            if eval_output.engine_trace:
+                evaluator_summary["engine_trace"] = eval_output.engine_trace
 
             # Planner summary for frontend display
             planner_summary = {
@@ -1301,13 +1295,9 @@ class MyTurnService:
                 "path": plan_output.decision.path if plan_output.decision else None,
                 "reason": plan_output.decision.reason if plan_output.decision else None,
             }
-            # Include optional v0.1 engine fields if present
-            if hasattr(plan_output, "question_id") and plan_output.question_id:
-                planner_summary["question_id"] = plan_output.question_id
-            if hasattr(plan_output, "intervention_seq"):
-                planner_summary["intervention_seq"] = plan_output.intervention_seq
-            if hasattr(plan_output, "question_completed"):
-                planner_summary["question_completed"] = plan_output.question_completed
+            # Include engine_trace fields from planner (v0.1 engine fields etc.)
+            if plan_output.engine_trace:
+                planner_summary["engine_trace"] = plan_output.engine_trace
 
             return {
                 "transcript": transcript,

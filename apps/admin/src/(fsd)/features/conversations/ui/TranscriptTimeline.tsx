@@ -148,6 +148,66 @@ const TranscriptEntry = ({ message, pendingFeedback, feedbackCardType }: Transcr
                 </div>
             )}
 
+            {/* Pipeline data shown below user messages (evaluator/planner, when available) */}
+            {message.isUser && (message.evaluatorData || message.plannerData) && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px]">
+                    {message.evaluatorData?.overall_score != null && (
+                        <span className={cn(
+                            "px-1.5 py-0.5 rounded-full font-medium",
+                            message.evaluatorData.overall_score >= 80
+                                ? "bg-emerald-500/15 text-emerald-400"
+                                : message.evaluatorData.overall_score >= 50
+                                    ? "bg-amber-500/15 text-amber-400"
+                                    : "bg-red-500/15 text-red-400"
+                        )}>
+                            Score {message.evaluatorData.overall_score}
+                        </span>
+                    )}
+                    {message.evaluatorData?.wpm != null && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">
+                            {message.evaluatorData.wpm} WPM
+                        </span>
+                    )}
+                    {message.plannerData?.current_level != null && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400">
+                            Lv.{message.plannerData.current_level}
+                        </span>
+                    )}
+                    {message.plannerData?.path && message.plannerData.path !== 'LEVEL_HOLD' && (
+                        <span className={cn(
+                            "px-1.5 py-0.5 rounded-full font-medium",
+                            message.plannerData.path === 'LEVEL_UP'
+                                ? "bg-emerald-500/15 text-emerald-400"
+                                : "bg-red-500/15 text-red-400"
+                        )}>
+                            {message.plannerData.path === 'LEVEL_UP' ? '↑ UP' : '↓ DOWN'}
+                        </span>
+                    )}
+                    {message.evaluatorData?.primary_issue && message.evaluatorData.primary_issue !== 'NONE' && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400">
+                            {message.evaluatorData.primary_issue}
+                        </span>
+                    )}
+                    {message.evaluatorData?.recommended_action && message.evaluatorData.recommended_action !== 'CONTINUE' && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">
+                            {message.evaluatorData.recommended_action}
+                        </span>
+                    )}
+                    {/* Engine trace: extra fields from evaluator */}
+                    {message.evaluatorData?.engine_trace && Object.entries(message.evaluatorData.engine_trace).map(([key, value]) => (
+                        <span key={`eval-${key}`} className="px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400">
+                            {key}: {String(value)}
+                        </span>
+                    ))}
+                    {/* Engine trace: extra fields from planner */}
+                    {message.plannerData?.engine_trace && Object.entries(message.plannerData.engine_trace).map(([key, value]) => (
+                        <span key={`plan-${key}`} className="px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400">
+                            {key}: {String(value)}
+                        </span>
+                    ))}
+                </div>
+            )}
+
             {/* Energy flow card shown below user messages (parallel API, appears first) */}
             {message.isUser && (message.energyFlowLoading || message.energyFlow) && (
                 <EnergyFlowCard

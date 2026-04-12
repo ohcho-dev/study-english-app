@@ -102,6 +102,7 @@ class EvaluatorOutput(BaseModel):
     detected: DetectedElements = Field(default_factory=DetectedElements)
     fluency: FluencyMetrics = Field(default_factory=FluencyMetrics)
     diagnosis: Diagnosis = Field(default_factory=Diagnosis)
+    engine_trace: dict | None = Field(default=None, description="Extra fields from LLM output not in standard schema")
 
 
 # ============================================================================
@@ -144,6 +145,7 @@ class PlannerOutput(BaseModel):
     turn_id: str = Field(default="")
     decision: Decision = Field(description="Strategic decision")
     persona_plan: PersonaPlan = Field(default_factory=PersonaPlan)
+    engine_trace: dict | None = Field(default=None, description="Extra fields from LLM output not in standard schema")
 
 
 # ============================================================================
@@ -194,6 +196,7 @@ class ConductorOutput(BaseModel):
     corrections: list[str] = Field(default_factory=list, description="Grammar/expression corrections")
     better_expressions: list[str] = Field(default_factory=list, description="Suggested better expressions")
     energy_flow: dict | None = Field(default=None, description="Energy flow comparison data for UI visualization")
+    engine_trace: dict | None = Field(default=None, description="Extra fields from LLM output not in standard schema")
 
 
 # ============================================================================

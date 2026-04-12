@@ -6,6 +6,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { endSession as apiEndSession } from '../api/conversationsApi';
 import { WS_BASE_URL } from '@/shared/lib/api';
 
+/** Evaluator pipeline output summary */
+export interface EvaluatorData {
+    overall_score?: number;
+    primary_issue?: string;
+    recommended_action?: string;
+    wpm?: number;
+    /** Extra fields from LLM output not in standard schema */
+    engine_trace?: Record<string, unknown>;
+}
+
+/** Planner pipeline output summary */
+export interface PlannerData {
+    current_level?: number;
+    path?: string;
+    reason?: string | string[];
+    /** Extra fields from LLM output not in standard schema */
+    engine_trace?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
     id: string;
     speaker: string;
@@ -24,6 +43,10 @@ export interface ChatMessage {
     } | null;
     /** Whether energy flow is still loading */
     energyFlowLoading?: boolean;
+    /** Evaluator pipeline output (user messages only, when available) */
+    evaluatorData?: EvaluatorData;
+    /** Planner pipeline output (user messages only, when available) */
+    plannerData?: PlannerData;
 }
 
 export interface MyTurnState {
@@ -364,6 +387,8 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
                 timestamp: Date.now(),
                 corrections: data.corrections?.length ? data.corrections : undefined,
                 betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
+                evaluatorData: data.evaluator_data || undefined,
+                plannerData: data.planner_data || undefined,
             };
 
             setState(prev => ({
@@ -413,6 +438,8 @@ export const useMyTurn = (sessionId: string | null, options: UseMyTurnOptions = 
                 timestamp: Date.now(),
                 corrections: data.corrections?.length ? data.corrections : undefined,
                 betterExpressions: data.better_expressions?.length ? data.better_expressions : undefined,
+                evaluatorData: data.evaluator_data || undefined,
+                plannerData: data.planner_data || undefined,
             };
 
             setState(prev => ({

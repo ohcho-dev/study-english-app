@@ -276,6 +276,14 @@ class EvaluatorService:
             recommended_action=diag.get("recommended_action", "CONTINUE"),
         )
 
+        # Collect extra fields not in standard schema as engine_trace
+        _standard_keys = {
+            "narrative_scores", "aggregate", "detected", "fluency", "diagnosis",
+            "schema_version", "trace_id", "session_id", "turn_id",
+        }
+        extra = {k: v for k, v in result.items() if k not in _standard_keys}
+        engine_trace = extra if extra else None
+
         return EvaluatorOutput(
             trace_id=trace_id,
             session_id=session_id or "",
@@ -285,6 +293,7 @@ class EvaluatorService:
             detected=detected,
             fluency=fluency,
             diagnosis=diagnosis,
+            engine_trace=engine_trace,
         )
 
     def _fallback_evaluation(
