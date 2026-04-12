@@ -8,6 +8,7 @@ It handles session initialization, user input processing, and AI response genera
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Optional, Any
 from uuid import UUID
 
@@ -54,10 +55,23 @@ def _merge_question_progress(
     if plan_trace.get("session_completed") is not None:
         meta["session_completed"] = bool(plan_trace.get("session_completed"))
 
+    history = list(meta.get("interventions", []))
     if cond_trace.get("intervention_seq") is not None:
-        meta["intervention_seq"] = cond_trace.get("intervention_seq")
+        seq = cond_trace.get("intervention_seq")
+        meta["intervention_seq"] = seq
+        history.append(
+            {
+                "turn_id": plan_output.turn_id,
+                "engine_module_used": cond_trace.get("engine_module_used"),
+                "engine_prompt_key": cond_trace.get("engine_prompt_key"),
+                "intervention_seq": seq,
+                "question_id": question_id,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
     else:
         meta.setdefault("intervention_seq", 0)
+    meta["interventions"] = history
 
     if eval_trace.get("response_delay_sec") is not None:
         meta["response_delay_sec"] = eval_trace.get("response_delay_sec")

@@ -33,7 +33,7 @@
 1. **Moderator 강제 전환**
    - `_force_moderator_turn`이 true면 `complete_turn`에서 Moderator를 다음 화자로 설정, 사용자 앞에서 질문을 닫도록 처리.
 2. **Intervention Seq**
-   - Conductor `engine_trace.intervention_seq`를 question_progress에 저장해 다음 턴 컨텍스트에 재사용. 아직 누적 증분 로직은 없으므로 필요 시 추가 구현 가능.
+   - Conductor `engine_trace.intervention_seq`와 모듈/프롬프트 정보를 question_progress의 `interventions` 배열에 누적 저장해, 다중 개입 조건이나 디버깅에 그대로 활용 가능.
 3. **Evaluator 엔진 트레이스**
    - `question_id`, `response_delay_sec` 등을 payload에 포함했으나, Planner/Conductor의 출력 `engine_trace`가 동일 값을 보장하려면 추후 코드 병합이 필요함.
 

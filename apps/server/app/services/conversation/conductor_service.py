@@ -211,6 +211,16 @@ class ConductorService:
             else "Response delay not measured for this turn."
         )
 
+        question_completed = (
+            planner_output.engine_trace.get("question_completed") if planner_output.engine_trace else False
+        )
+        intervention_seq = (
+            planner_output.engine_trace.get("intervention_seq") if planner_output.engine_trace else None
+        )
+        question_id = (
+            planner_output.engine_trace.get("question_id") if planner_output.engine_trace else None
+        )
+
         message = f"""## Current State
 - Path: {decision.path}
 - Action: {decision.action_code}
@@ -235,6 +245,12 @@ class ConductorService:
 ## Recent History
 {history_text or '(session just started)'}
 
+## Planner Question State
+- question_id: {question_id or 'unknown'}
+- intervention_seq: {intervention_seq if intervention_seq is not None else 'unknown'}
+- question_completed: {question_completed}
+
+If question_completed is true, return engine_module_used="None" with no intervention.
 Generate scripts based on the current state. return_to_user_after MUST be false."""
 
         if raw_payload:
