@@ -12,6 +12,7 @@ export interface EvaluatorData {
     primary_issue?: string;
     recommended_action?: string;
     wpm?: number;
+    response_delay_sec?: number;
     /** Extra fields from LLM output not in standard schema */
     engine_trace?: Record<string, unknown>;
 }
@@ -27,6 +28,10 @@ export interface PlannerData {
 
 /** Conductor pipeline output summary */
 export interface ConductorData {
+    scripts?: number;
+    return_to_user_after?: boolean;
+    user_emotion?: string;
+    level_instruction?: string;
     /** Extra fields from LLM output not in standard schema */
     engine_trace?: Record<string, unknown>;
 }

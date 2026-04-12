@@ -88,6 +88,10 @@ class EvaluatorOutput(BaseModel):
     trace_id: str = Field(default="")
     session_id: str = Field(default="")
     turn_id: str = Field(default="")
+    response_delay_sec: float | None = Field(
+        default=None,
+        description="Seconds between recording start and first speech",
+    )
     narrative_scores: dict[str, SlotScore] = Field(
         default_factory=lambda: {
             "slot_a": SlotScore(score=0, is_missing=True),

@@ -5,6 +5,7 @@
  */
 
 import { use, useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Clock, MessageSquare, BarChart3, Eye, ChevronDown, ChevronRight, Zap, Copy } from 'lucide-react';
 
@@ -22,6 +23,7 @@ import {
 import type { Turn, SessionStatus } from '@/(fsd)/features/conversations';
 import type { PipelineLog } from '@/(fsd)/features/conversations';
 import { ObservationDashboard } from '@/(fsd)/features/conversations/ui/ObservationDashboard';
+import { PipelineCard } from '@/(fsd)/features/conversations/ui/PipelineCard';
 
 interface PageParams {
     id: string;
@@ -400,57 +402,130 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             {/* Pipeline data below user turns */}
                                             {turn.turn_type === 'user' && pipelineByTurn[turn.turn_index] && (() => {
                                                 const pd = pipelineByTurn[turn.turn_index];
-                                                const ev = pd.evaluator as Record<string, Record<string, unknown>> | undefined;
-                                                const pl = pd.planner as Record<string, Record<string, unknown>> | undefined;
+                                                const ev = pd.evaluator as Record<string, any> | undefined;
+                                                const pl = pd.planner as Record<string, any> | undefined;
+                                                const cond = pd.conductor as Record<string, any> | undefined;
                                                 const score = ev?.aggregate?.overall_score as number | undefined;
                                                 const issue = ev?.diagnosis?.primary_issue as string | undefined;
                                                 const action = ev?.diagnosis?.recommended_action as string | undefined;
                                                 const wpm = ev?.fluency?.words_per_minute as number | undefined;
                                                 const level = pl?.persona_plan?.current_level as number | undefined;
                                                 const path = pl?.decision?.path as string | undefined;
-                                                // engine_trace: extra fields from LLM
                                                 const evTrace = ev?.engine_trace as Record<string, unknown> | undefined;
                                                 const plTrace = pl?.engine_trace as Record<string, unknown> | undefined;
+                                                const condTrace = cond?.engine_trace as Record<string, unknown> | undefined;
+                                                const condScripts = Array.isArray(cond?.scripts) ? cond?.scripts.length : undefined;
+                                                const condReturn = typeof cond?.return_to_user_after === 'boolean' ? cond.return_to_user_after : undefined;
+                                                const condEmotion = typeof cond?.user_emotion === 'string' ? cond.user_emotion : undefined;
+                                                const condLevelInstruction = typeof cond?.level_instruction === 'string' ? cond.level_instruction : undefined;
+                                                const responseDelay = typeof ev?.response_delay_sec === 'number'
+                                                    ? ev.response_delay_sec
+                                                    : typeof evTrace?.response_delay_sec === 'number'
+                                                        ? (evTrace.response_delay_sec as number)
+                                                        : undefined;
 
-                                                const hasData = score != null || level != null || evTrace || plTrace;
-                                                if (!hasData) return null;
+                                                const cards: ReactNode[] = [];
+                                                const evaluatorTags: ReactNode[] = [];
+                                                if (score != null) {
+                                                    evaluatorTags.push(
+                                                        <span
+                                                            key="ev-score"
+                                                            className={`px-1.5 py-0.5 rounded-full font-medium ${score >= 80 ? 'bg-emerald-500/20 text-emerald-100' : score >= 50 ? 'bg-amber-500/20 text-amber-100' : 'bg-red-500/20 text-red-100'}`}
+                                                        >
+                                                            Score {score}
+                                                        </span>
+                                                    );
+                                                }
+                                                if (wpm != null) {
+                                                    evaluatorTags.push(
+                                                        <span key="ev-wpm" className="px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-200">
+                                                            {wpm} WPM
+                                                        </span>
+                                                    );
+                                                }
+                                                if (responseDelay != null) {
+                                                    evaluatorTags.push(
+                                                        <span key="ev-delay" className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-100">
+                                                            Delay {responseDelay.toFixed(2)}s
+                                                        </span>
+                                                    );
+                                                }
+                                                if (issue && issue !== 'NONE') {
+                                                    evaluatorTags.push(
+                                                        <span key="ev-issue" className="px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-100">{issue}</span>
+                                                    );
+                                                }
+                                                if (action && action !== 'CONTINUE') {
+                                                    evaluatorTags.push(
+                                                        <span key="ev-action" className="px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-100">{action}</span>
+                                                    );
+                                                }
+                                                if (evaluatorTags.length || (evTrace && Object.keys(evTrace).length)) {
+                                                    cards.push(
+                                                        <PipelineCard key={`card-e-${turn.id}`} variant="evaluator" extras={evTrace ? Object.entries(evTrace) : undefined}>
+                                                            {evaluatorTags}
+                                                        </PipelineCard>
+                                                    );
+                                                }
 
+                                                const plannerTags: ReactNode[] = [];
+                                                if (level != null) {
+                                                    plannerTags.push(
+                                                        <span key="pl-level" className="px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-100">Lv.{level}</span>
+                                                    );
+                                                }
+                                                if (path && path !== 'LEVEL_HOLD') {
+                                                    plannerTags.push(
+                                                        <span key="pl-path" className={`px-1.5 py-0.5 rounded-full font-medium ${path === 'LEVEL_UP' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-red-500/20 text-red-100'}`}>
+                                                            {path === 'LEVEL_UP' ? '↑ UP' : '↓ DOWN'}
+                                                        </span>
+                                                    );
+                                                }
+                                                if (plannerTags.length || (plTrace && Object.keys(plTrace).length)) {
+                                                    cards.push(
+                                                        <PipelineCard key={`card-p-${turn.id}`} variant="planner" extras={plTrace ? Object.entries(plTrace) : undefined}>
+                                                            {plannerTags}
+                                                        </PipelineCard>
+                                                    );
+                                                }
+
+                                                const conductorTags: ReactNode[] = [];
+                                                if (typeof condScripts === 'number') {
+                                                    conductorTags.push(
+                                                        <span key="cond-scripts" className="px-1.5 py-0.5 rounded-full bg-teal-500/15 text-teal-100">Scripts {condScripts}</span>
+                                                    );
+                                                }
+                                                if (typeof condReturn === 'boolean') {
+                                                    conductorTags.push(
+                                                        <span key="cond-return" className="px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-100">
+                                                            {condReturn ? 'Return → User' : 'Continue AI'}
+                                                        </span>
+                                                    );
+                                                }
+                                                if (condEmotion && condEmotion !== 'neutral') {
+                                                    conductorTags.push(
+                                                        <span key="cond-emotion" className="px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-100">Emotion {condEmotion}</span>
+                                                    );
+                                                }
+                                                if (condLevelInstruction) {
+                                                    conductorTags.push(
+                                                        <span key="cond-level" className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-100 max-w-[220px] truncate" title={condLevelInstruction}>
+                                                            {condLevelInstruction}
+                                                        </span>
+                                                    );
+                                                }
+                                                if (conductorTags.length || (condTrace && Object.keys(condTrace).length)) {
+                                                    cards.push(
+                                                        <PipelineCard key={`card-c-${turn.id}`} variant="conductor" extras={condTrace ? Object.entries(condTrace) : undefined}>
+                                                            {conductorTags}
+                                                        </PipelineCard>
+                                                    );
+                                                }
+
+                                                if (!cards.length) return null;
                                                 return (
-                                                    <div className="flex flex-wrap gap-1 mt-2">
-                                                        {score != null && (
-                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${score >= 80 ? 'bg-emerald-500/15 text-emerald-500' : score >= 50 ? 'bg-amber-500/15 text-amber-500' : 'bg-red-500/15 text-red-500'}`}>
-                                                                Score {score}
-                                                            </span>
-                                                        )}
-                                                        {wpm != null && (
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-500">{wpm} WPM</span>
-                                                        )}
-                                                        {level != null && (
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-500">Lv.{level}</span>
-                                                        )}
-                                                        {path && path !== 'LEVEL_HOLD' && (
-                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${path === 'LEVEL_UP' ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'}`}>
-                                                                {path === 'LEVEL_UP' ? '↑ UP' : '↓ DOWN'}
-                                                            </span>
-                                                        )}
-                                                        {issue && issue !== 'NONE' && (
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-500">{issue}</span>
-                                                        )}
-                                                        {action && action !== 'CONTINUE' && (
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-500">{action}</span>
-                                                        )}
-                                                        {/* Engine trace: extra fields from evaluator */}
-                                                        {evTrace && Object.entries(evTrace).map(([key, value]) => (
-                                                            <span key={`ev-${key}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-500">
-                                                                {key}: {String(value)}
-                                                            </span>
-                                                        ))}
-                                                        {/* Engine trace: extra fields from planner */}
-                                                        {plTrace && Object.entries(plTrace).map(([key, value]) => (
-                                                            <span key={`pl-${key}`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500">
-                                                                {key}: {String(value)}
-                                                            </span>
-                                                        ))}
+                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                        {cards}
                                                     </div>
                                                 );
                                             })()}
@@ -848,7 +923,19 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                             </CardHeader>
                                             {isExpanded && (
                                                 <CardContent className="pt-0 space-y-3">
-                                                    {logs.map((log) => (
+                                                    {logs.map((log) => {
+                                                        const evaluatorOutput = log.module_name === 'evaluator'
+                                                            ? (log.output_json as Record<string, any> | null)
+                                                            : null;
+                                                        const responseDelay = evaluatorOutput
+                                                            ? typeof evaluatorOutput.response_delay_sec === 'number'
+                                                                ? evaluatorOutput.response_delay_sec
+                                                                : typeof evaluatorOutput.engine_trace?.response_delay_sec === 'number'
+                                                                    ? evaluatorOutput.engine_trace.response_delay_sec
+                                                                    : undefined
+                                                            : undefined;
+
+                                                        return (
                                                         <div key={log.id} className="border rounded-lg p-3">
                                                             <div className="flex items-center gap-2 mb-2">
                                                                 <Badge
@@ -879,6 +966,9 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                                     <div className="flex gap-3 mb-2 text-xs">
                                                                         <span>Score: <strong>{out?.aggregate?.overall_score ?? '-'}</strong></span>
                                                                         <span>Issue: <strong>{out?.diagnosis?.primary_issue ?? '-'}</strong></span>
+                                                                        {responseDelay != null && (
+                                                                            <span>Delay: <strong>{responseDelay.toFixed(2)}s</strong></span>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })()}
@@ -920,10 +1010,11 @@ export default function SessionDetailPage({ params }: { params: Promise<PagePara
                                                                 </div>
                                                             </details>
                                                         </div>
-                                                    ))}
-                                                </CardContent>
-                                            )}
-                                        </Card>
+                                                        );
+                                                    })}
+                                               </CardContent>
+                                           )}
+                                       </Card>
                                     );
                                 });
                             })()}

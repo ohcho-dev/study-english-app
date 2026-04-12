@@ -16,6 +16,7 @@ import type { FeedbackCardType } from '../model/types';
 import { FeedbackCard } from './FeedbackCard';
 import { DetailedFeedbackCard } from './DetailedFeedbackCard';
 import { EnergyFlowCard } from './EnergyFlowCard';
+import { PipelineCard } from './PipelineCard';
 
 interface TranscriptTimelineProps {
     messages: ChatMessage[];
@@ -150,84 +151,129 @@ const TranscriptEntry = ({ message, pendingFeedback, feedbackCardType }: Transcr
 
             {/* Pipeline data shown below user messages (evaluator/planner/conductor) */}
             {message.isUser && (message.evaluatorData || message.plannerData || message.conductorData) && (
-                <div className="mt-2 space-y-1 text-[10px]">
-                    {/* Evaluator row */}
-                    {message.evaluatorData && (
-                        <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-slate-500 font-medium w-[18px] shrink-0">E</span>
-                            {message.evaluatorData.overall_score != null && (
-                                <span className={cn(
-                                    "px-1.5 py-0.5 rounded font-medium",
-                                    message.evaluatorData.overall_score >= 80
-                                        ? "bg-emerald-500/15 text-emerald-400"
-                                        : message.evaluatorData.overall_score >= 50
-                                            ? "bg-amber-500/15 text-amber-400"
-                                            : "bg-red-500/15 text-red-400"
-                                )}>
+                <div className="mt-2 flex flex-wrap gap-2">
+                    {message.evaluatorData && (() => {
+                        const tags: React.ReactNode[] = [];
+                        if (message.evaluatorData.overall_score != null) {
+                            tags.push(
+                                <span
+                                    key="ev-score"
+                                    className={cn(
+                                        'px-1.5 py-0.5 rounded-full font-medium',
+                                        message.evaluatorData.overall_score >= 80
+                                            ? 'bg-emerald-500/20 text-emerald-100'
+                                            : message.evaluatorData.overall_score >= 50
+                                                ? 'bg-amber-500/20 text-amber-100'
+                                                : 'bg-red-500/20 text-red-100'
+                                    )}
+                                >
                                     Score {message.evaluatorData.overall_score}
                                 </span>
-                            )}
-                            {message.evaluatorData.wpm != null && (
-                                <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                            );
+                        }
+                        if (message.evaluatorData.wpm != null) {
+                            tags.push(
+                                <span key="ev-wpm" className="px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-200">
                                     {message.evaluatorData.wpm} WPM
                                 </span>
-                            )}
-                            {message.evaluatorData.primary_issue && message.evaluatorData.primary_issue !== 'NONE' && (
-                                <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400">
+                            );
+                        }
+                        if (typeof message.evaluatorData.response_delay_sec === 'number') {
+                            tags.push(
+                                <span key="ev-delay" className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-100">
+                                    Delay {message.evaluatorData.response_delay_sec.toFixed(2)}s
+                                </span>
+                            );
+                        }
+                        if (message.evaluatorData.primary_issue && message.evaluatorData.primary_issue !== 'NONE') {
+                            tags.push(
+                                <span key="ev-issue" className="px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-100">
                                     {message.evaluatorData.primary_issue}
                                 </span>
-                            )}
-                            {message.evaluatorData.recommended_action && message.evaluatorData.recommended_action !== 'CONTINUE' && (
-                                <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400">
+                            );
+                        }
+                        if (message.evaluatorData.recommended_action && message.evaluatorData.recommended_action !== 'CONTINUE') {
+                            tags.push(
+                                <span key="ev-action" className="px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-100">
                                     {message.evaluatorData.recommended_action}
                                 </span>
-                            )}
-                            {message.evaluatorData.engine_trace && Object.entries(message.evaluatorData.engine_trace).map(([key, value]) => (
-                                <span key={`eval-${key}`} className="px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-400">
-                                    {key}: {String(value)}
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                    {/* Planner row */}
-                    {message.plannerData && (
-                        <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-purple-500 font-medium w-[18px] shrink-0">P</span>
-                            {message.plannerData.current_level != null && (
-                                <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400">
+                            );
+                        }
+                        const extras = message.evaluatorData.engine_trace
+                            ? Object.entries(message.evaluatorData.engine_trace)
+                            : undefined;
+                        return (
+                            <PipelineCard key="pipeline-evaluator" variant="evaluator" extras={extras}>
+                                {tags}
+                            </PipelineCard>
+                        );
+                    })()}
+                    {message.plannerData && (() => {
+                        const tags: React.ReactNode[] = [];
+                        if (message.plannerData.current_level != null) {
+                            tags.push(
+                                <span key="pl-level" className="px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-100">
                                     Lv.{message.plannerData.current_level}
                                 </span>
-                            )}
-                            {message.plannerData.path && (
-                                <span className={cn(
-                                    "px-1.5 py-0.5 rounded font-medium",
-                                    message.plannerData.path === 'LEVEL_UP'
-                                        ? "bg-emerald-500/15 text-emerald-400"
-                                        : message.plannerData.path === 'LEVEL_DOWN'
-                                            ? "bg-red-500/15 text-red-400"
-                                            : "bg-slate-500/15 text-slate-400"
-                                )}>
-                                    {message.plannerData.path === 'LEVEL_UP' ? '↑ UP' : message.plannerData.path === 'LEVEL_DOWN' ? '↓ DOWN' : '= HOLD'}
+                            );
+                        }
+                        if (message.plannerData.path) {
+                            tags.push(
+                                <span key="pl-path" className="px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-100">
+                                    {message.plannerData.path === 'LEVEL_UP' ? '↑ UP'
+                                        : message.plannerData.path === 'LEVEL_DOWN' ? '↓ DOWN'
+                                            : '= HOLD'}
                                 </span>
-                            )}
-                            {message.plannerData.engine_trace && Object.entries(message.plannerData.engine_trace).map(([key, value]) => (
-                                <span key={`plan-${key}`} className="px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400">
-                                    {key}: {String(value)}
+                            );
+                        }
+                        const extras = message.plannerData.engine_trace
+                            ? Object.entries(message.plannerData.engine_trace)
+                            : undefined;
+                        return (
+                            <PipelineCard key="pipeline-planner" variant="planner" extras={extras}>
+                                {tags}
+                            </PipelineCard>
+                        );
+                    })()}
+                    {message.conductorData && (() => {
+                        const tags: React.ReactNode[] = [];
+                        if (typeof message.conductorData.scripts === 'number') {
+                            tags.push(
+                                <span key="cond-scripts" className="px-1.5 py-0.5 rounded-full bg-teal-500/15 text-teal-100">
+                                    Scripts {message.conductorData.scripts}
                                 </span>
-                            ))}
-                        </div>
-                    )}
-                    {/* Conductor row */}
-                    {message.conductorData?.engine_trace && (
-                        <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-teal-500 font-medium w-[18px] shrink-0">C</span>
-                            {Object.entries(message.conductorData.engine_trace).map(([key, value]) => (
-                                <span key={`cond-${key}`} className="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400">
-                                    {key}: {String(value)}
+                            );
+                        }
+                        if (typeof message.conductorData.return_to_user_after === 'boolean') {
+                            tags.push(
+                                <span key="cond-return" className="px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-100">
+                                    {message.conductorData.return_to_user_after ? 'Return → User' : 'Continue AI'}
                                 </span>
-                            ))}
-                        </div>
-                    )}
+                            );
+                        }
+                        if (message.conductorData.user_emotion && message.conductorData.user_emotion !== 'neutral') {
+                            tags.push(
+                                <span key="cond-emotion" className="px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-100">
+                                    Emotion {message.conductorData.user_emotion}
+                                </span>
+                            );
+                        }
+                        if (message.conductorData.level_instruction) {
+                            tags.push(
+                                <span key="cond-level" className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-100 max-w-[200px] truncate" title={message.conductorData.level_instruction}>
+                                    {message.conductorData.level_instruction}
+                                </span>
+                            );
+                        }
+                        const extras = message.conductorData.engine_trace
+                            ? Object.entries(message.conductorData.engine_trace)
+                            : undefined;
+                        return (
+                            <PipelineCard key="pipeline-conductor" variant="conductor" extras={extras}>
+                                {tags}
+                            </PipelineCard>
+                        );
+                    })()}
                 </div>
             )}
 

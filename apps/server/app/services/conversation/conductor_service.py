@@ -44,6 +44,7 @@ class ConductorService:
     ) -> None:
         self.llm_model = llm_model
         self.custom_prompt = custom_prompt
+        self.last_prompt: Optional[str] = None
         genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
         # Use Admin definitions when provided. None → default list, [] → disable.
         if level_definitions is None:
@@ -72,10 +73,12 @@ class ConductorService:
         turn_id: Optional[str] = None,
         custom_state: Optional[dict] = None,
         response_delay_sec: Optional[float] = None,
+        raw_payload: Optional[dict] = None,
     ) -> tuple[ConductorOutput, float]:
         """Generate moderator feedback and AI scripts."""
         t_start = time.time()
 
+        self.last_prompt = None
         level = planner_output.persona_plan.current_level
         level_instr = self.level_instructions.get(level, self.level_instructions.get(1, f"Level {level}"))
         action = planner_output.decision.action_code
@@ -98,6 +101,7 @@ class ConductorService:
             user_name=user_name,
             custom_state=custom_state,
             response_delay_sec=response_delay_sec,
+            raw_payload=raw_payload,
         )
 
         MAX_RETRIES = 3
@@ -106,9 +110,12 @@ class ConductorService:
         for attempt in range(MAX_RETRIES):
             try:
                 model = genai.GenerativeModel(self.llm_model)
+                prompt_text = base_prompt + "\n\n" + user_msg
+                logger.warning(f"[Conductor] Prompt: {prompt_text}")
+                self.last_prompt = prompt_text
                 response = await model.generate_content_async(
                     [
-                        {"role": "user", "parts": [{"text": base_prompt + "\n\n" + user_msg}]},
+                        {"role": "user", "parts": [{"text": prompt_text}]},
                     ],
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.7,
@@ -188,6 +195,7 @@ class ConductorService:
         user_name: Optional[str],
         custom_state: Optional[dict] = None,
         response_delay_sec: Optional[float] = None,
+        raw_payload: Optional[dict] = None,
     ) -> str:
         decision = planner_output.decision
 
@@ -203,7 +211,7 @@ class ConductorService:
             else "Response delay not measured for this turn."
         )
 
-        return f"""## Current State
+        message = f"""## Current State
 - Path: {decision.path}
 - Action: {decision.action_code}
 - Reasons: {', '.join(decision.reason)}
@@ -228,6 +236,15 @@ class ConductorService:
 {history_text or '(session just started)'}
 
 Generate scripts based on the current state. return_to_user_after MUST be false."""
+
+        if raw_payload:
+            try:
+                payload_str = json.dumps(raw_payload, ensure_ascii=False, indent=2)
+            except Exception:
+                payload_str = str(raw_payload)
+            message += f"\n\n## Runtime Payload\n{payload_str}"
+
+        return message
 
     def _parse_response(
         self,

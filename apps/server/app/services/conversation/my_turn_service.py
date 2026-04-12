@@ -8,7 +8,7 @@ It handles session initialization, user input processing, and AI response genera
 import asyncio
 import logging
 import time
-from typing import Optional
+from typing import Optional, Any
 from uuid import UUID
 
 from app.api.deps import DbSession
@@ -23,9 +23,57 @@ import json
 from sqlalchemy import select, update
 
 logger = logging.getLogger(__name__)
+pipeline_logger = logging.getLogger("uvicorn.error")
 
 # Safety limit to prevent infinite AI-to-AI loops
 MAX_CONSECUTIVE_AI_TURNS = 10
+LOG_PAYLOAD_LIMIT = 4000
+
+
+def _merge_question_progress(
+    existing: dict | None,
+    eval_output,
+    plan_output,
+    conductor_output,
+) -> dict:
+    meta = dict(existing or {})
+    eval_trace = eval_output.engine_trace or {}
+    plan_trace = plan_output.engine_trace or {}
+    cond_trace = conductor_output.engine_trace or {}
+
+    question_id = eval_trace.get("question_id") or plan_trace.get("question_id")
+    if question_id:
+        meta["question_id"] = question_id
+
+    if plan_trace.get("question_unit_index") is not None:
+        meta["question_unit_index"] = plan_trace.get("question_unit_index")
+
+    if plan_trace.get("question_completed") is not None:
+        meta["question_completed"] = bool(plan_trace.get("question_completed"))
+
+    if plan_trace.get("session_completed") is not None:
+        meta["session_completed"] = bool(plan_trace.get("session_completed"))
+
+    if cond_trace.get("intervention_seq") is not None:
+        meta["intervention_seq"] = cond_trace.get("intervention_seq")
+    else:
+        meta.setdefault("intervention_seq", 0)
+
+    if eval_trace.get("response_delay_sec") is not None:
+        meta["response_delay_sec"] = eval_trace.get("response_delay_sec")
+
+    return meta
+
+
+def _format_json_for_log(payload: Any, limit: int = LOG_PAYLOAD_LIMIT) -> str:
+    """Serialize payload for logging with truncation."""
+    try:
+        text = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        text = str(payload)
+    if len(text) > limit:
+        return f"{text[:limit]}... (truncated)"
+    return text
 
 
 def detect_mentioned_participant(text: str, participants, exclude_speaker_name: str = None):
@@ -337,10 +385,12 @@ class MyTurnService:
         
         # Get current script index
         variant = {}  # Initialize default
+        force_moderator_turn = False
         if session.variant:
             try:
                 variant = json.loads(session.variant)
                 logger.info(f"[complete_turn] Loaded variant: {variant}")
+                force_moderator_turn = bool(variant.pop("_force_moderator_turn", False))
             except Exception as e:
                 logger.error(f"[complete_turn] Failed to parse variant: {e}")
                 
@@ -373,7 +423,28 @@ class MyTurnService:
         
         should_return_to_user = return_to_user_after or was_encouragement
         
-        if should_return_to_user:
+        question_progress = variant.get("_question_progress")
+
+        if force_moderator_turn:
+            moderator_participant = None
+            if session.template and session.template.participants:
+                for p in sorted(session.template.participants, key=lambda x: x.order_index):
+                    if p.participant_type == ParticipantType.MODERATOR:
+                        moderator_participant = p
+                        break
+            if moderator_participant:
+                logger.info("[complete_turn] Forcing moderator turn due to question completion")
+                next_turn_info = {
+                    "next_participant": moderator_participant,
+                    "turn_type": "ai",
+                    "is_user_turn": False,
+                }
+            else:
+                next_turn_info = await orchestrator.determine_next_turn(
+                    session.current_turn_index - 1,
+                    script_index=script_index
+                )
+        elif should_return_to_user:
             # Clear flag if needed (nothing to clear in DB history)
             pass
             
@@ -408,6 +479,9 @@ class MyTurnService:
         if next_turn_info:
             next_participant = next_turn_info["next_participant"]
             is_user_turn = next_turn_info["is_user_turn"]
+
+            if question_progress:
+                next_turn_info.setdefault("question_progress", question_progress)
             
             # Update Session State
             session.current_speaker_id = next_participant.id
@@ -447,7 +521,8 @@ class MyTurnService:
                     "type": next_turn_info["turn_type"],
                     "avatar_url": next_participant.avatar_url,
                 },
-                "is_user_turn": is_user_turn
+                "is_user_turn": is_user_turn,
+                "question_progress": question_progress,
             })
 
             # Trigger AI if next speaker is not the user
@@ -668,6 +743,7 @@ class MyTurnService:
                 level = pipeline_result.get("level", 1)
                 level_instr = pipeline_result.get("level_instruction", "")
                 speaker_scripts = pipeline_result.get("speaker_scripts", {})
+                engine_trace_data = pipeline_result.get("engine_trace") or {}
                 
                 my_script = speaker_scripts.get(participant.name, {})
                 if my_script.get("text"):
@@ -675,6 +751,8 @@ class MyTurnService:
                     context += f'\n\n[CONDUCTOR SCRIPT]:\n"{my_script["text"]}"'
                     if instruction:
                         context += f"\n{instruction}"
+                elif engine_trace_data.get("intervention_emitted_text"):
+                    context += f"\n\n[CONDUCTOR INTERVENTION]: {engine_trace_data['intervention_emitted_text']}"
                 elif level_instr:
                     context += f"\n\n[LEVEL INSTRUCTION]: Level {level}. {level_instr}"
         
@@ -735,9 +813,16 @@ class MyTurnService:
             elif pipeline_mode == "v0.2" and pipeline_result:
                 speaker_scripts = pipeline_result.get("speaker_scripts", {})
                 my_script = speaker_scripts.get(participant.name, {})
+                engine_trace_data = pipeline_result.get("engine_trace") or {}
                 if my_script.get("text"):
                     should_bypass_llm = True
                     pre_generated_text = my_script.get("text")
+                elif (
+                    engine_trace_data.get("intervention_emitted_text")
+                    and participant.participant_type != ParticipantType.MODERATOR
+                ):
+                    should_bypass_llm = True
+                    pre_generated_text = engine_trace_data["intervention_emitted_text"]
             
             if should_bypass_llm:
                 logger.info(f"[process_ai_turn] Bypassing LLM for {participant.name}. Using Conductor script directly.")
@@ -1082,7 +1167,19 @@ class MyTurnService:
             if user_topic:
                 effective_scene_context += f"\n\nUser's requested topic for this session: {user_topic}"
 
-            logger.info(f"[process_user_turn] v0.2 Pipeline: trace_id={trace_id}")
+            participant_summaries = []
+            if session.template and session.template.participants:
+                for p in session.template.participants:
+                    participant_summaries.append(
+                        {
+                            "id": str(p.id),
+                            "name": p.name,
+                            "type": p.participant_type.value if hasattr(p.participant_type, "value") else str(p.participant_type),
+                            "order_index": p.order_index,
+                        }
+                    )
+
+            pipeline_logger.warning(f"[process_user_turn] v0.2 Pipeline: trace_id={trace_id}")
 
             # ── 실측 WPM 계산 (LLM 추정 대체) ──
             # 단어 수 / 실제 발화 시간(분) 으로 계산.
@@ -1112,6 +1209,19 @@ class MyTurnService:
                 llm_model=getattr(session.template, 'evaluator_llm_model', None) or "gemini-2.0-flash",
                 custom_prompt=getattr(session.template, 'evaluator_prompt', None),
             )
+            eval_input_payload = {
+                "transcript": transcript,
+                "topic": session.template.topic,
+                "target_level": session.template.difficulty,
+                "scene_context": effective_scene_context,
+                "history_text": history,
+                "trace_id": trace_id,
+                "session_id": str(session.id),
+                "turn_id": turn_id,
+                "measured_wpm": measured_wpm,
+                "response_delay_sec": response_delay_sec,
+            }
+            pipeline_logger.warning("[Pipeline][Evaluator][Input] %s", _format_json_for_log(eval_input_payload))
             eval_output, eval_duration = await evaluator.evaluate(
                 transcript=transcript,
                 topic=session.template.topic,
@@ -1123,15 +1233,25 @@ class MyTurnService:
                 turn_id=turn_id,
                 measured_wpm=measured_wpm,  # 실측값 주입
                 response_delay_sec=response_delay_sec,
+                raw_payload=eval_input_payload,
             )
+            pipeline_logger.warning("[Pipeline][Evaluator][Output] %s", _format_json_for_log(eval_output.model_dump()))
+
+            if response_delay_sec is not None:
+                if eval_output.engine_trace is None:
+                    eval_output.engine_trace = {}
+                if isinstance(eval_output.engine_trace, dict):
+                    eval_output.engine_trace["response_delay_sec"] = response_delay_sec
             
             # Log Evaluator
+            eval_input_for_log = dict(eval_input_payload)
+            eval_input_for_log["prompt_text"] = getattr(evaluator, "last_prompt", None)
             eval_log = PipelineLog(
                 trace_id=trace_id,
                 session_id=session.id,
                 turn_index=session.current_turn_index,
                 module_name="evaluator",
-                input_json={"transcript": transcript, "topic": session.template.topic},
+                input_json=eval_input_for_log,
                 output_json=eval_output.model_dump(),
                 duration_ms=eval_duration,
                 model_name=evaluator.llm_model,
@@ -1139,7 +1259,7 @@ class MyTurnService:
             )
             self.db.add(eval_log)
             
-            logger.info(
+            pipeline_logger.warning(
                 f"[v0.2 Evaluator] overall_score={eval_output.aggregate.overall_score}, "
                 f"primary_issue={eval_output.diagnosis.primary_issue}, "
                 f"duration={eval_duration:.0f}ms"
@@ -1153,8 +1273,21 @@ class MyTurnService:
             )
             
             session_state = SessionState.from_variant(variant)
-            logger.warning(f"[v0.2 Pipeline] custom_state LOADED: {session_state.custom_state}")
+            if not isinstance(session_state.custom_state, dict):
+                session_state.custom_state = {}
+            pipeline_logger.warning(f"[v0.2 Pipeline] custom_state LOADED: {session_state.custom_state}")
 
+            planner_input_payload = {
+                "eval_output": eval_output.model_dump(),
+                "session_state": session_state.to_dict(),
+                "participants": participant_summaries,
+                "trace_id": trace_id,
+                "turn_id": turn_id,
+                "history_text": history,
+                "scene_context": effective_scene_context,
+                "response_delay_sec": response_delay_sec,
+            }
+            pipeline_logger.warning("[Pipeline][Planner][Input] %s", _format_json_for_log(planner_input_payload))
             plan_output, plan_duration = await planner.decide(
                 eval_output=eval_output,
                 session_state=session_state,
@@ -1164,19 +1297,23 @@ class MyTurnService:
                 history_text=history,
                 scene_context=effective_scene_context,
                 response_delay_sec=response_delay_sec,
+                raw_payload=planner_input_payload,
             )
+            pipeline_logger.warning("[Pipeline][Planner][Output] %s", _format_json_for_log(plan_output.model_dump()))
             
             # Update session state in variant
             variant["_pipeline_state"] = session_state.to_dict()
-            logger.warning(f"[v0.2 Pipeline] custom_state SAVED: {session_state.custom_state}")
+            pipeline_logger.warning(f"[v0.2 Pipeline] custom_state SAVED: {session_state.custom_state}")
             
             # Log Planner
+            planner_input_for_log = dict(planner_input_payload)
+            planner_input_for_log["prompt_text"] = getattr(planner, "last_prompt", None)
             plan_log = PipelineLog(
                 trace_id=trace_id,
                 session_id=session.id,
                 turn_index=session.current_turn_index,
                 module_name="planner",
-                input_json=eval_output.model_dump(),
+                input_json=planner_input_for_log,
                 output_json=plan_output.model_dump(),
                 duration_ms=plan_duration,
                 model_name=planner.llm_model,
@@ -1184,7 +1321,7 @@ class MyTurnService:
             )
             self.db.add(plan_log)
             
-            logger.info(
+            pipeline_logger.warning(
                 f"[v0.2 Planner] path={plan_output.decision.path}, "
                 f"action={plan_output.decision.action_code}, "
                 f"speakers={plan_output.persona_plan.speakers}, "
@@ -1197,6 +1334,20 @@ class MyTurnService:
                 custom_prompt=getattr(session.template, 'conductor_prompt', None),
                 level_definitions=getattr(session.template, 'level_definitions', None),
             )
+            conductor_input_payload = {
+                "planner_output": plan_output.model_dump(),
+                "participants": participant_summaries,
+                "scene_context": effective_scene_context,
+                "history_text": history,
+                "user_transcript": transcript,
+                "user_name": session.user_name,
+                "system_prompt": session.template.system_prompt if session.template else None,
+                "trace_id": trace_id,
+                "turn_id": turn_id,
+                "custom_state": session_state.custom_state,
+                "response_delay_sec": response_delay_sec,
+            }
+            pipeline_logger.warning("[Pipeline][Conductor][Input] %s", _format_json_for_log(conductor_input_payload))
             conductor_output, conductor_duration = await conductor.generate_scripts(
                 planner_output=plan_output,
                 participants=session.template.participants if session.template else None,
@@ -1209,15 +1360,19 @@ class MyTurnService:
                 turn_id=turn_id,
                 custom_state=session_state.custom_state,
                 response_delay_sec=response_delay_sec,
+                raw_payload=conductor_input_payload,
             )
-            
+            pipeline_logger.warning("[Pipeline][Conductor][Output] %s", _format_json_for_log(conductor_output.model_dump()))
+
             # Log Conductor
+            conductor_input_for_log = dict(conductor_input_payload)
+            conductor_input_for_log["prompt_text"] = getattr(conductor, "last_prompt", None)
             cond_log = PipelineLog(
                 trace_id=trace_id,
                 session_id=session.id,
                 turn_index=session.current_turn_index,
                 module_name="conductor",
-                input_json=plan_output.model_dump(),
+                input_json=conductor_input_for_log,
                 output_json=conductor_output.model_dump(),
                 duration_ms=conductor_duration,
                 model_name=conductor.llm_model,
@@ -1225,7 +1380,7 @@ class MyTurnService:
             )
             self.db.add(cond_log)
             
-            logger.info(
+            pipeline_logger.warning(
                 f"[v0.2 Conductor] scripts={len(conductor_output.scripts)}, "
                 f"feedback={len(conductor_output.feedback_text)} chars, "
                 f"duration={conductor_duration:.0f}ms"
@@ -1246,6 +1401,14 @@ class MyTurnService:
                     "instruction": s.instruction,
                 }
             
+            question_progress = _merge_question_progress(
+                session_state.custom_state.get("question_progress"),
+                eval_output,
+                plan_output,
+                conductor_output,
+            )
+            session_state.custom_state["question_progress"] = question_progress
+
             variant["_pipeline_result"] = {
                 "feedback_text": conductor_output.feedback_text,
                 "feedback_instruction": conductor_output.feedback_instruction,
@@ -1256,7 +1419,15 @@ class MyTurnService:
                 "energy_flow": conductor_output.energy_flow,
                 "speaker_scripts": speaker_scripts,
                 "user_emotion": conductor_output.user_emotion,
+                "question_progress": question_progress,
             }
+            if conductor_output.engine_trace:
+                variant["_pipeline_result"]["engine_trace"] = conductor_output.engine_trace
+
+            variant["_question_progress"] = question_progress
+
+            if question_progress.get("question_completed"):
+                variant["_force_moderator_turn"] = True
             
             # Reset consecutive AI turn counter
             variant["_consecutive_ai_turns"] = 0
@@ -1285,7 +1456,8 @@ class MyTurnService:
                 "recommended_action": eval_output.diagnosis.recommended_action,
                 "wpm": eval_output.fluency.words_per_minute if eval_output.fluency else None,
             }
-            # Include engine_trace fields from evaluator (v0.1 engine fields etc.)
+            if response_delay_sec is not None:
+                evaluator_summary["response_delay_sec"] = response_delay_sec
             if eval_output.engine_trace:
                 evaluator_summary["engine_trace"] = eval_output.engine_trace
 
@@ -1295,9 +1467,17 @@ class MyTurnService:
                 "path": plan_output.decision.path if plan_output.decision else None,
                 "reason": plan_output.decision.reason if plan_output.decision else None,
             }
-            # Include engine_trace fields from planner (v0.1 engine fields etc.)
             if plan_output.engine_trace:
                 planner_summary["engine_trace"] = plan_output.engine_trace
+
+            conductor_summary = {
+                "scripts": len(conductor_output.scripts),
+                "return_to_user_after": conductor_output.return_to_user_after,
+                "user_emotion": conductor_output.user_emotion,
+                "level_instruction": conductor_output.level_instruction,
+            }
+            if conductor_output.engine_trace:
+                conductor_summary["engine_trace"] = conductor_output.engine_trace
 
             return {
                 "transcript": transcript,
@@ -1310,7 +1490,11 @@ class MyTurnService:
                 "feedback_text": conductor_output.feedback_text,
                 "evaluator_data": evaluator_summary,
                 "planner_data": planner_summary,
+                "conductor_data": conductor_summary,
+                "response_delay_sec": response_delay_sec,
+                "question_progress": question_progress,
             }
+
         
         # ════════════════════════════════════════════════════════════
         # BASIC MODE (existing ScenarioDirector — unchanged)

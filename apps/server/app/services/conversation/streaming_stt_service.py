@@ -10,6 +10,7 @@ import time
 from typing import Any, AsyncGenerator
 
 from app.core.config import settings
+from google.api_core import exceptions as google_exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,15 @@ class StreamingSTTSession:
                         asyncio.run_coroutine_threadsafe(result_queue.put(parsed), loop)
                         logger.info(f"Streaming STT: {parsed['type']} result: {alt.transcript[:50]}")
                         
+            except google_exceptions.Aborted as e:
+                logger.warning(
+                    "Streaming STT aborted (likely idle stream). details=%s",
+                    getattr(e, "details", str(e)),
+                )
+                asyncio.run_coroutine_threadsafe(
+                    result_queue.put({"type": "error", "error": "stream_timeout", "is_final": True}),
+                    loop,
+                )
             except Exception as e:
                 logger.error(f"Streaming STT error: {e}", exc_info=True)
                 asyncio.run_coroutine_threadsafe(

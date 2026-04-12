@@ -999,6 +999,11 @@ async def websocket_stt_stream(websocket: WebSocket):
                     stop_received = True
                     await audio_queue.put(None)
                     return
+                except RuntimeError as err:
+                    logger.info(f"WS STT: receive aborted ({err}) after {chunk_count} chunks")
+                    stop_received = True
+                    await audio_queue.put(None)
+                    return
 
         # Start WebSocket reader as background task
         reader_task = asyncio.create_task(ws_audio_reader())
@@ -1032,7 +1037,12 @@ async def websocket_stt_stream(websocket: WebSocket):
 
                 got_final = False
                 async for result in session.stream(session_audio_generator()):
-                    await websocket.send_json(result)
+                    try:
+                        await websocket.send_json(result)
+                    except (WebSocketDisconnect, RuntimeError) as send_err:
+                        logger.info(f"WS STT: send aborted ({send_err}). stopping session loop")
+                        stop_received = True
+                        break
                     if result.get("is_final"):
                         got_final = True
 
@@ -1047,7 +1057,10 @@ async def websocket_stt_stream(websocket: WebSocket):
             except asyncio.CancelledError:
                 pass
 
-        await websocket.send_json({"type": "done"})
+        try:
+            await websocket.send_json({"type": "done"})
+        except Exception as send_err:
+            logger.info(f"WS STT: unable to send completion message ({send_err})")
 
     except WebSocketDisconnect:
         logger.info("Streaming STT WebSocket disconnected")

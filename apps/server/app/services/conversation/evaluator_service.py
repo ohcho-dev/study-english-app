@@ -41,6 +41,7 @@ class EvaluatorService:
         self.llm_model = llm_model
         self.custom_prompt = custom_prompt
         self.model = None
+        self.last_prompt: Optional[str] = None
 
         if settings.GOOGLE_AI_API_KEY:
             genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
@@ -61,6 +62,7 @@ class EvaluatorService:
         turn_id: Optional[str] = None,
         measured_wpm: Optional[float] = None,
         response_delay_sec: Optional[float] = None,
+        raw_payload: Optional[dict] = None,
     ) -> tuple[EvaluatorOutput, float]:
         """Evaluate user transcript and return structured scores.
 
@@ -84,6 +86,11 @@ class EvaluatorService:
         """
         t_start = time.time()
         _trace_id = trace_id or str(uuid.uuid4())
+        self.last_prompt = None
+
+        def attach_delay(output_obj: EvaluatorOutput):
+            if response_delay_sec is not None:
+                output_obj.response_delay_sec = response_delay_sec
 
         # 1. Heuristic fast path for hesitation fillers
         import re
@@ -116,6 +123,7 @@ class EvaluatorService:
                     recommended_action="TRIGGER_HELPER",
                 ),
             )
+            attach_delay(output)
             duration_ms = (time.time() - t_start) * 1000
             return output, duration_ms
 
@@ -137,15 +145,18 @@ class EvaluatorService:
                     recommended_action="TRIGGER_HELPER",
                 ),
             )
+            attach_delay(output)
             duration_ms = (time.time() - t_start) * 1000
             return output, duration_ms
 
         # 3. LLM-based evaluation
         if not self.model:
             logger.warning("[Evaluator] No LLM model available, using fallback")
-            return self._fallback_evaluation(
+            fallback_output, fallback_duration = self._fallback_evaluation(
                 transcript, _trace_id, session_id, turn_id, t_start
             )
+            attach_delay(fallback_output)
+            return fallback_output, fallback_duration
 
         # Build prompt: custom replaces base (same as Planner/Conductor)
         base_prompt = self.custom_prompt or ""
@@ -173,7 +184,16 @@ class EvaluatorService:
             "\n## OUTPUT\nRespond with the JSON object ONLY. No markdown fences."
         )
 
+        if raw_payload:
+            try:
+                payload_str = json.dumps(raw_payload, ensure_ascii=False, indent=2)
+            except Exception:
+                payload_str = str(raw_payload)
+            context_parts.append("\n## Runtime Payload\n" + payload_str)
+
         prompt = "\n".join(context_parts)
+        logger.warning(f"[Evaluator] Prompt: {prompt}")
+        self.last_prompt = prompt
 
         # Call LLM with retry
         for attempt in range(2):
@@ -201,6 +221,7 @@ class EvaluatorService:
                     f"wpm={output.fluency.words_per_minute}(measured={measured_wpm}), "
                     f"duration={duration_ms:.0f}ms"
                 )
+                attach_delay(output)
                 return output, duration_ms
 
             except json.JSONDecodeError as e:
@@ -218,9 +239,11 @@ class EvaluatorService:
 
         # All retries failed → fallback
         logger.warning("[Evaluator] All retries failed, using rule-based fallback")
-        return self._fallback_evaluation(
+        fallback_output, fallback_duration = self._fallback_evaluation(
             transcript, _trace_id, session_id, turn_id, t_start
         )
+        attach_delay(fallback_output)
+        return fallback_output, fallback_duration
 
     def _parse_llm_response(
         self,

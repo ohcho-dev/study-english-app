@@ -110,8 +110,9 @@ class PlannerService:
     ) -> None:
         self.llm_model = llm_model
         self.custom_prompt = custom_prompt
-        
-        
+        self.last_prompt: Optional[str] = None
+
+
         # Use template-provided level definitions
         # None → use default 10 stages, [] → disable custom guidance
         if level_definitions is None:
@@ -152,6 +153,7 @@ class PlannerService:
         history_text: Optional[str] = None,
         scene_context: Optional[str] = None,
         response_delay_sec: Optional[float] = None,
+        raw_payload: Optional[dict] = None,
     ) -> tuple[PlannerOutput, float]:
         """Make a strategic decision based on evaluation results.
 
@@ -175,6 +177,7 @@ class PlannerService:
             history_text=history_text,
             scene_context=scene_context,
             response_delay_sec=response_delay_sec,
+            raw_payload=raw_payload,
         )
 
         # If LLM failed, fallback to rule-based
@@ -293,6 +296,7 @@ class PlannerService:
         history_text: Optional[str] = None,
         scene_context: Optional[str] = None,
         response_delay_sec: Optional[float] = None,
+        raw_payload: Optional[dict] = None,
     ) -> tuple[Optional[int], Optional[str], Optional[list[str]], Optional[dict]]:
         """Use LLM for nuanced level decision.
 
@@ -301,6 +305,7 @@ class PlannerService:
         """
         if not self.model:
             logger.info("[Planner] No LLM model, using rule-based fallback")
+            self.last_prompt = None
             return None, None, None, None
 
         # Build prompt: use custom_prompt from Admin (no hardcoded fallback)
@@ -359,12 +364,22 @@ Determine the optimal next level (1-{self.max_level}) and provide your reasoning
 Use the conversation history to understand the current context — which verb/topic is being practiced, what the student has already done.
 Return JSON with: new_level, path, reasons, focus_area, and custom_state (object with any scenario-specific tracking data)."""
 
+        if raw_payload:
+            try:
+                payload_str = json.dumps(raw_payload, ensure_ascii=False, indent=2)
+            except Exception:
+                payload_str = str(raw_payload)
+            user_msg += f"\n\n## Runtime Payload\n{payload_str}"
+
         MAX_RETRIES = 3
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
+                prompt_text = base_prompt + "\n\n" + user_msg
+                logger.warning(f"[Planner] Prompt: {prompt_text}")
+                self.last_prompt = prompt_text
                 response = await self.model.generate_content_async(
-                    [{"role": "user", "parts": [{"text": base_prompt + "\n\n" + user_msg}]}],
+                    [{"role": "user", "parts": [{"text": prompt_text}]}],
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.1,
                         max_output_tokens=1000,
