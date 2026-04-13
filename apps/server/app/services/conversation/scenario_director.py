@@ -63,61 +63,21 @@ class ScenarioDirector:
         3. **Guide the AI**: Give specific instructions on tone, content, and difficulty level.
         """
 
-    TASK_AND_OUTPUT_FORMAT = """
-        # YOUR TASK
-        Analyze the user's latest input carefully. Determine if the user responded appropriately.
-        
-        ## EVALUATION CRITERIA (apply in order):
-        
-        ### "Clarification_Needed" — User is asking for help OR providing ambiguous input
-        The user is confused, asking for repetition, OR gave a minimal response that is unclear.
-        Examples:
-        - Questions: "Come again?", "What?", "Pardon?", "I don't understand"
-        - Ambiguous fillers: "um", "um...", "Mmm...", "Hmm...", "Uh...", "Ah..." (without further speech)
-        - When it's unclear if the user is thinking, agreeing, or disagreeing.
-        → should_continue_script: false
-        → instruction: Tell the next AI to gently encourage the user or re-ask the question more simply.
-        
-        ### "FAIL" — Gibberish, bad transcription, or off-topic
-        The input is unintelligible or clearly a mistake.
-        Red flags:
-        - Random words ("vinyl Park", "table green")
-        - Mistranscribed foreign language
-        - Very short meaningless utterances that are NOT valid fillers (e.g. single random word like "Wall")
-        → should_continue_script: false
-        → instruction: Tell the next AI to gently re-ask or rephrase the question.
-        
-        ### "Simulate_Reaction" — User said something that warrants a brief reaction first
-        The input makes sense but calls for a quick reaction (surprise, acknowledgment) before the main response.
-        → should_continue_script: false
-        → instruction: Give a brief reaction instruction.
-        
-        ### "PASS" — Good, relevant response in proper English
-        ONLY use PASS when ALL of the following are true:
-        - The input is coherent English.
-        - The input is relevant to the current conversation.
-        - The input ADVANCES the conversation (more than just "Mmm" or "Uh").
-        
-        CRITICAL: Do NOT mark "Mmm" or "Hmm" as PASS unless the user is clearly answering a question like "Is it tasty?". If the context is a general question like "How are you?" or "Introduction", "Mmm" is usually a hesitation -> Use Clarification_Needed.
-        
-        → should_continue_script: true
-        → instruction: Direct the next AI on how to continue the conversation.
-        
-        ## IMPORTANT RULES
-        - When in doubt, prefer Clarification_Needed or FAIL over PASS.
-        - "Mmm", "Hmm", "Uh" alone are almost ALWAYS Clarification_Needed (Hesitation).
-        - STT transcription errors are very common — be skeptical.
-        
-        ## OUTPUT FORMAT
-        Respond with a JSON object:
+    # NOTE: Task & Output Protocol was intentionally removed (see admin request).
+    # Keep the attribute so existing APIs stay compatible, but expose it as an empty string.
+    TASK_AND_OUTPUT_FORMAT = ""
+
+    _OUTPUT_RESPONSE_SCHEMA = """
+        Respond strictly with a JSON object containing:
         {
             "evaluation": "PASS" | "FAIL" | "Clarification_Needed" | "Simulate_Reaction",
-            "instruction": "Specific instruction for the next AI speaker",
+            "instruction": "One short instruction for the next AI speaker",
             "should_continue_script": true | false,
-            "bridge_speaker": "(optional) Name of the AI who should handle non-PASS situations (e.g. help the user).",
-            "user_emotion": "The user's emotional state inferred from their input and context. One of: happy, excited, nervous, confused, frustrated, neutral, shy",
-            "next_speaker": "(optional) For PASS turns, name of which AI participant should speak next. Use this to direct conversation flow. If omitted, system uses round-robin."
+            "bridge_speaker": "(optional) helper AI name for non-PASS turns",
+            "user_emotion": "happy|excited|nervous|confused|frustrated|neutral|shy",
+            "next_speaker": "(optional) AI name to speak next when evaluation is PASS"
         }
+        Do not add analysis, explanations, or any extra fields.
         """
 
     def __init__(self, session: ConversationSession):
@@ -252,7 +212,7 @@ class ScenarioDirector:
         # User's Latest Input
         "{user_input}"
         
-        {self.TASK_AND_OUTPUT_FORMAT}
+        {self._OUTPUT_RESPONSE_SCHEMA}
         """
         
         try:

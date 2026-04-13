@@ -793,12 +793,9 @@ Keep responses concise (1-3 sentences) and conversational.`
                                                     {directorSpec?.base_prompt || "Loading..."}
                                                 </div>
                                             </div>
-                                            <div>
-                                                <strong className="text-foreground">Task & Output Protocol:</strong>
-                                                <div className="mt-1 p-2 bg-background rounded border">
-                                                    {directorSpec?.output_format || "Loading..."}
-                                                </div>
-                                            </div>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                Task & Output Protocol 항목은 제거되었습니다. Director는 기본 턴 라우팅 역할만 수행합니다.
+                                            </p>
                                         </div>
                                     </details>
                                 </div>

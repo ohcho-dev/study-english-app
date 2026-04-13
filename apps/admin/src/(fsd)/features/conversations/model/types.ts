@@ -346,7 +346,6 @@ export interface GreetingResponse {
 
 export interface DirectorPromptSpec {
     base_prompt: string;
-    output_format: string;
 }
 
 // ============================================================================

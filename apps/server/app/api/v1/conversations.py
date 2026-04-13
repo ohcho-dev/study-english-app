@@ -213,11 +213,10 @@ async def duplicate_template(
 
 @router.get("/director-prompt-spec")
 async def get_director_prompt_spec():
-    """Get the immutable Base Prompt and Protocol for Scenario Director."""
+    """Get the immutable Base Prompt metadata for Scenario Director."""
     from app.services.conversation.scenario_director import ScenarioDirector
     return {
         "base_prompt": ScenarioDirector.BASE_PROMPT,
-        "output_format": ScenarioDirector.TASK_AND_OUTPUT_FORMAT
     }
 
 
