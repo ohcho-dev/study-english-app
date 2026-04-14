@@ -400,11 +400,14 @@ class MyTurnService:
         # Get current script index
         variant = {}  # Initialize default
         force_moderator_turn = False
+        pending_session_end = False
         if session.variant:
             try:
                 variant = json.loads(session.variant)
                 logger.info(f"[complete_turn] Loaded variant: {variant}")
                 force_moderator_turn = bool(variant.pop("_force_moderator_turn", False))
+                variant.pop("_force_session_end", None)  # legacy — no longer used
+                pending_session_end = bool(variant.get("_pending_session_end", False))
             except Exception as e:
                 logger.error(f"[complete_turn] Failed to parse variant: {e}")
                 
@@ -494,9 +497,25 @@ class MyTurnService:
             next_participant = next_turn_info["next_participant"]
             is_user_turn = next_turn_info["is_user_turn"]
 
+            # Closing scripts have played — end session when user turn would come next
+            if pending_session_end and is_user_turn:
+                logger.info(f"[complete_turn] Closing scripts done. Ending session {session_id}.")
+                variant.pop("_pending_session_end", None)
+                session.variant = json.dumps(variant)
+                session.status = SessionStatus.COMPLETED
+                await self.db.commit()
+                try:
+                    obs_service = ObservationService(self.db)
+                    await obs_service.generate_observation(session.id)
+                    await self.db.commit()
+                except Exception as obs_err:
+                    logger.error(f"[MyTurnService] Observation failed for {session_id}: {obs_err}")
+                await manager.send_message(str(session.id), {"type": "session_completed"})
+                return
+
             if question_progress:
                 next_turn_info.setdefault("question_progress", question_progress)
-            
+
             # Update Session State
             session.current_speaker_id = next_participant.id
             session.current_speaker_type = next_turn_info["turn_type"]
@@ -1065,6 +1084,11 @@ class MyTurnService:
         if not session:
              raise ValueError("Session not found")
 
+        # Guard: reject input if session is already completed
+        if session.status != SessionStatus.ACTIVE:
+            logger.info(f"[process_user_turn] Session {session_id} is {session.status}. Ignoring input.")
+            return {"status": "session_not_active", "session_status": str(session.status)}
+
         # 1. STT (skip if text_input provided)
         stt_result = {}
         t1_5_llm_start = time.time() * 1000  # POST arrival time = t1.5
@@ -1440,9 +1464,13 @@ class MyTurnService:
 
             variant["_question_progress"] = question_progress
 
-            if question_progress.get("question_completed"):
+            if question_progress.get("session_completed"):
+                # Let closing scripts play first (moderator + Emma), then end after
                 variant["_force_moderator_turn"] = True
-            
+                variant["_pending_session_end"] = True
+            elif question_progress.get("question_completed"):
+                variant["_force_moderator_turn"] = True
+
             # Reset consecutive AI turn counter
             variant["_consecutive_ai_turns"] = 0
             session.variant = json.dumps(variant)

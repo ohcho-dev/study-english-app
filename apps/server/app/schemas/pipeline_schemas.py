@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 SCHEMA_VERSION = "0.2.0"
@@ -181,7 +181,12 @@ class ConductorScript(BaseModel):
 
     speaker_name: str = Field(description="Persona name")
     text: str = Field(description="Generated text to speak")
-    instruction: str = Field(default="", description="Internal instruction for this speaker")
+    instruction: Optional[str] = Field(default="", description="Internal instruction for this speaker")
+
+    @field_validator("instruction", mode="before")
+    @classmethod
+    def coerce_instruction(cls, v):
+        return v if v is not None else ""
     language: str = Field(default="en-US", description="Language of the text")
 
 

@@ -92,42 +92,10 @@ class EvaluatorService:
             if response_delay_sec is not None:
                 output_obj.response_delay_sec = response_delay_sec
 
-        # 1. Heuristic fast path for hesitation fillers
         import re
         input_cleaned = transcript.strip() if transcript else ""
-        hesitation_pattern = re.compile(
-            r"^(m+|h+m+|uh+|ah+|huh+)\s*[.,?!\-]*$", re.IGNORECASE
-        )
 
-        if hesitation_pattern.match(input_cleaned):
-            logger.info(
-                f"[Evaluator] Heuristic: '{input_cleaned}' → hesitation filler"
-            )
-            output = EvaluatorOutput(
-                trace_id=_trace_id,
-                session_id=session_id or "",
-                turn_id=turn_id or "",
-                narrative_scores={
-                    "slot_a": SlotScore(score=0, is_missing=True),
-                    "slot_b": SlotScore(score=0, is_missing=True),
-                    "slot_c": SlotScore(score=0, is_missing=True),
-                },
-                aggregate=AggregateScores(
-                    slot_avg=0,
-                    imitation_score=0,
-                    complexity_score=0,
-                    overall_score=10,
-                ),
-                diagnosis=Diagnosis(
-                    primary_issue="MISSING_SLOT_B",
-                    recommended_action="TRIGGER_HELPER",
-                ),
-            )
-            attach_delay(output)
-            duration_ms = (time.time() - t_start) * 1000
-            return output, duration_ms
-
-        # 2. Empty or very short input
+        # 1. Empty or very short input
         if not input_cleaned or len(input_cleaned) < 2:
             logger.info(f"[Evaluator] Empty/too-short input: '{input_cleaned}'")
             output = EvaluatorOutput(
@@ -153,7 +121,7 @@ class EvaluatorService:
         if not self.model:
             logger.warning("[Evaluator] No LLM model available, using fallback")
             fallback_output, fallback_duration = self._fallback_evaluation(
-                transcript, _trace_id, session_id, turn_id, t_start
+                transcript, _trace_id, session_id, turn_id, t_start, measured_wpm
             )
             attach_delay(fallback_output)
             return fallback_output, fallback_duration
@@ -240,7 +208,7 @@ class EvaluatorService:
         # All retries failed → fallback
         logger.warning("[Evaluator] All retries failed, using rule-based fallback")
         fallback_output, fallback_duration = self._fallback_evaluation(
-            transcript, _trace_id, session_id, turn_id, t_start
+            transcript, _trace_id, session_id, turn_id, t_start, measured_wpm
         )
         attach_delay(fallback_output)
         return fallback_output, fallback_duration
@@ -326,6 +294,7 @@ class EvaluatorService:
         session_id: Optional[str],
         turn_id: Optional[str],
         t_start: float,
+        measured_wpm: Optional[float] = None,
     ) -> tuple[EvaluatorOutput, float]:
         """Rule-based fallback when LLM is unavailable or fails.
 
