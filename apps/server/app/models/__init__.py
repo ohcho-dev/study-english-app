@@ -36,6 +36,12 @@ from app.models.conversation import (
 from app.models.pipeline_log import PipelineLog
 from app.models.session_observation import SessionObservation
 from app.models.reporting_prompt_setting import ReportingPromptSetting
+from app.models.visual_pipeline import (
+    PipelineExecutionLog,
+    TemplateVisualPipelineLink,
+    VisualPipeline,
+    VisualPipelineVersion,
+)
 
 __all__ = [
     "Base",
@@ -82,6 +88,10 @@ __all__ = [
     "SessionObservation",
     # Reporting LLM
     "ReportingPromptSetting",
+    # Visual pipelines
+    "VisualPipeline",
+    "VisualPipelineVersion",
+    "TemplateVisualPipelineLink",
+    "PipelineExecutionLog",
 ]
-
 

@@ -700,7 +700,7 @@ class MyTurnService:
         # Adjust prompt based on difficulty (basic mode only; v0.2 uses pipeline level system)
         difficulty_instruction = ""
         pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
-        if pipeline_mode != "v0.2":
+        if pipeline_mode not in ("v0.2", "visual"):
             if difficulty <= 1:
                 difficulty_instruction = "Use very simple vocabulary and short sentences (A1 level)."
             elif difficulty == 2:
@@ -754,7 +754,7 @@ class MyTurnService:
         pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
         pipeline_result = session_config.get("_pipeline_result")
         
-        if pipeline_mode == "v0.2" and pipeline_result:
+        if pipeline_mode in ("v0.2", "visual") and pipeline_result:
             participant_type = participant.participant_type.value if hasattr(participant.participant_type, 'value') else str(participant.participant_type)
             
             if participant_type == "moderator":
@@ -776,9 +776,13 @@ class MyTurnService:
                 level = pipeline_result.get("level", 1)
                 level_instr = pipeline_result.get("level_instruction", "")
                 speaker_scripts = pipeline_result.get("speaker_scripts", {})
+                if not isinstance(speaker_scripts, dict):
+                    speaker_scripts = {}
                 engine_trace_data = pipeline_result.get("engine_trace") or {}
-                
+
                 my_script = speaker_scripts.get(participant.name, {})
+                if not isinstance(my_script, dict):
+                    my_script = {}
                 if my_script.get("text"):
                     instruction = my_script.get("instruction", "")
                     context += f'\n\n[CONDUCTOR SCRIPT]:\n"{my_script["text"]}"'
@@ -843,9 +847,13 @@ class MyTurnService:
                 logger.info(f"[process_ai_turn] Using greeting_message for {participant.name}: {pre_generated_text[:50]}...")
             
             # 2nd priority: Use Conductor script from pipeline
-            elif pipeline_mode == "v0.2" and pipeline_result:
+            elif pipeline_mode in ("v0.2", "visual") and pipeline_result:
                 speaker_scripts = pipeline_result.get("speaker_scripts", {})
+                if not isinstance(speaker_scripts, dict):
+                    speaker_scripts = {}
                 my_script = speaker_scripts.get(participant.name, {})
+                if not isinstance(my_script, dict):
+                    my_script = {}
                 engine_trace_data = pipeline_result.get("engine_trace") or {}
                 if my_script.get("text"):
                     should_bypass_llm = True
@@ -856,6 +864,19 @@ class MyTurnService:
                 ):
                     should_bypass_llm = True
                     pre_generated_text = engine_trace_data["intervention_emitted_text"]
+                # 3rd priority (visual only): feedback_text를 AI 참여자 대사로 직접 사용
+                # speaker_scripts/engine_trace 없이 feedback_text만 반환하는 파이프라인 대응
+                elif (
+                    pipeline_mode == "visual"
+                    and participant.participant_type != ParticipantType.MODERATOR
+                    and pipeline_result.get("feedback_text")
+                ):
+                    should_bypass_llm = True
+                    pre_generated_text = pipeline_result["feedback_text"]
+                    logger.info(
+                        f"[process_ai_turn] visual 3rd-priority bypass: using feedback_text "
+                        f"for {participant.name}"
+                    )
             
             if should_bypass_llm:
                 logger.info(f"[process_ai_turn] Bypassing LLM for {participant.name}. Using Conductor script directly.")
@@ -863,7 +884,7 @@ class MyTurnService:
                 t1_llm_start = time.time() * 1000
                 generation_prompt = "[LLM Bypassed - Used Conductor Script]\n" + pre_generated_text
             else:
-                if pipeline_mode == "v0.2":
+                if pipeline_mode in ("v0.2", "visual"):
                     # v0.2: System prompt from Admin controls all behavior.
                     # Only add minimal output formatting instruction.
                     generation_prompt = f"""{context}
@@ -1185,6 +1206,121 @@ class MyTurnService:
             and t_first_speech >= t_recording_start
         ):
             response_delay_sec = round((t_first_speech - t_recording_start) / 1000.0, 2)
+
+        if pipeline_mode == "visual":
+            import uuid as _uuid
+
+            from app.services.pipeline_runner.context import PipelineContext
+            from app.services.pipeline_runner.pipeline_crud_service import (
+                VisualPipelineCrudService,
+            )
+            from app.services.pipeline_runner.runner import PipelineRunner
+
+            effective_scene_context = session.template.scene_context or ""
+            user_topic = variant.get("user_topic")
+            if user_topic:
+                effective_scene_context += (
+                    f"\n\nUser's requested topic for this session: {user_topic}"
+                )
+
+            participant_summaries = []
+            if session.template and session.template.participants:
+                for p in session.template.participants:
+                    participant_summaries.append(
+                        {
+                            "id": str(p.id),
+                            "name": p.name,
+                            "type": (
+                                p.participant_type.value
+                                if hasattr(p.participant_type, "value")
+                                else str(p.participant_type)
+                            ),
+                            "order_index": p.order_index,
+                        }
+                    )
+
+            measured_wpm: float | None = None
+            word_count_now = len(transcript.strip().split()) if transcript and transcript.strip() else 0
+            if word_count_now > 0:
+                if t_first_speech and t_first_speech > 0 and t0_user_end and t0_user_end > 0:
+                    speaking_ms = max(0, t0_user_end - t_first_speech)
+                    if speaking_ms > 500:
+                        measured_wpm = round(word_count_now / (speaking_ms / 60000), 1)
+                elif not text_input:
+                    audio_dur = stt_result.get("duration_ms")
+                    if audio_dur and audio_dur > 500:
+                        measured_wpm = round(word_count_now / (audio_dur / 60000), 1)
+
+            trace_id = str(_uuid.uuid4())
+            visual_service = VisualPipelineCrudService(self.db)
+            link = await visual_service.get_link_for_template(session.template.id)
+            if link is None:
+                raise ValueError("Template has visual pipeline mode but no linked visual pipeline")
+
+            pipeline_id, pipeline_version, graph_json, timeout_ms = (
+                await visual_service.get_pipeline_for_execution(
+                    link.pipeline_id,
+                    link.pipeline_version,
+                )
+            )
+            runner = PipelineRunner(
+                self.db,
+                graph_json,
+                pipeline_id,
+                pipeline_version,
+                timeout_ms=timeout_ms,
+            )
+            pipeline_context = PipelineContext(
+                trace_id=trace_id,
+                session_id=session.id,
+                turn_index=session.current_turn_index,
+                transcript=transcript,
+                history=history,
+                topic=session.template.topic,
+                scene_context=effective_scene_context,
+                participants=participant_summaries,
+                variant=variant,
+                measured_wpm=measured_wpm,
+                response_delay_sec=response_delay_sec,
+                persist_logs=True,
+            )
+            pipeline_result = await runner.execute(pipeline_context)
+
+            variant["_pipeline_result"] = pipeline_result
+            question_progress = pipeline_result.get("question_progress") or {}
+            if question_progress:
+                variant["_question_progress"] = question_progress
+                if question_progress.get("session_completed"):
+                    variant["_force_moderator_turn"] = True
+                    variant["_pending_session_end"] = True
+                elif question_progress.get("question_completed"):
+                    variant["_force_moderator_turn"] = True
+
+            variant["_consecutive_ai_turns"] = 0
+            session.variant = json.dumps(variant)
+            await self.db.commit()
+
+            if background_tasks:
+                background_tasks.add_task(
+                    self._complete_turn_wrapper,
+                    session_id,
+                    script_index,
+                )
+            else:
+                asyncio.create_task(self._complete_turn_wrapper(session_id, script_index))
+
+            return {
+                "transcript": transcript,
+                "next_turn": session.current_turn_index,
+                "pipeline": "visual",
+                "trace_id": trace_id,
+                "level": pipeline_result.get("level"),
+                "corrections": pipeline_result.get("corrections"),
+                "better_expressions": pipeline_result.get("better_expressions"),
+                "feedback_text": pipeline_result.get("feedback_text"),
+                "response_delay_sec": response_delay_sec,
+                "question_progress": question_progress,
+            }
 
         if pipeline_mode == "v0.2":
             # ════════════════════════════════════════════════════════════

@@ -4,7 +4,20 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.v1 import admin, ai_lab, analytics, audio, auth, conversations, logs, prompts, scenarios, themes, variables
+from app.api.v1 import (
+    admin,
+    ai_lab,
+    analytics,
+    audio,
+    auth,
+    conversations,
+    logs,
+    prompts,
+    scenarios,
+    themes,
+    variables,
+    visual_pipelines,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +31,7 @@ router.include_router(logs.router)
 router.include_router(analytics.router)
 router.include_router(themes.router)
 router.include_router(ai_lab.router)
+router.include_router(visual_pipelines.router)
 router.include_router(conversations.router)
 router.include_router(audio.router)
 router.include_router(auth.router)
@@ -53,4 +67,3 @@ async def translate_text(request: TranslateRequest):
     except Exception as e:
         logger.error(f"Translation error: {e}", exc_info=True)
         return {"translated_text": request.text, "error": str(e)}
-

@@ -1,646 +1,1782 @@
-# 학습 모듈 & 파이프라인 재설계 기획서
+# Visual Pipeline Builder — AI Lab 기획서
 
-## 1. 배경 및 목표
-- 현재 템플릿에 LLM 프롬프트/모델이 직접 박혀 있어 재사용과 히스토리 관리가 어려움.
-- v0.1/v0.2 파이프라인 흐름이 코드에 하드코딩되어 있어 새로운 조합/병렬 실행을 만들기 힘듦.
-- 요청 사항:
-  - LLM 모듈을 별도로 생성/버전화하고, 템플릿은 모듈을 참조하는 방식으로 전환.
-  - 파이프라인도 데이터 기반으로 정의하여 직렬/병렬 조합을 자유롭게 구성.
-  - 모듈/파이프라인 관리 전용 페이지 + API 추가, 변경 히스토리와 사유 기록.
-  - 기존 템플릿/세션 기록 경험은 유지하되 MyTurn 실행 시 새 파이프라인을 사용.
+> **상태**: 설계 완료 / 구현 대기  
+> **작성일**: 2026-04-16  
+> **대상 구현자**: Claude Sonnet / Codex 에이전트 (이 문서만으로 구현 가능하도록 자기 완결적으로 작성)
 
-### 1.1 현행 시스템 분석 (As-Is)
+## 한국어 요약
 
-#### 파이프라인 모드
-- **basic 모드**: `ScenarioDirector`가 단독으로 사용자 발화를 평가(`evaluate_turn`)하고 다음 턴을 결정. 별도의 Evaluator/Planner/Conductor 없이 단일 서비스로 동작.
-- **v0.2 모드**: `Evaluator → Planner → Conductor` 직렬 파이프라인. 각 모듈이 `evaluator_service.py`, `planner_service.py`, `conductor_service.py`로 구현되어 있으며, `my_turn_service.py`의 `process_user_turn()` 안에서 순차 호출됨.
-- 파이프라인 모드 전환은 `conversation_templates.pipeline_mode` 컬럼(`"basic"` 또는 `"v0.2"`)으로 결정.
+### 무엇을 만드는가
+n8n/Dify와 같은 **시각적 노드 기반 파이프라인 빌더**를 AI Lab 어드민 대시보드에 구축한다. 현재 `my_turn_service.py`에 하드코딩된 v0.2 파이프라인(Evaluator → Planner → Conductor)을 대체하여, 관리자가 드래그 앤 드롭으로 세션 로직을 자유롭게 설계할 수 있게 한다.
 
-#### 템플릿 ↔ 프롬프트 결합 현황
-| 필드 | 테이블 | 역할 |
-|---|---|---|
-| `system_prompt` | `conversation_templates` | 기본 LLM 시스템 프롬프트 |
-| `director_system_prompt` | `conversation_templates` | basic 모드 ScenarioDirector 커스텀 프롬프트 |
-| `evaluator_prompt` | `conversation_templates` | v0.2 Evaluator 커스텀 프롬프트 |
-| `planner_prompt` | `conversation_templates` | v0.2 Planner 커스텀 프롬프트 |
-| `conductor_prompt` | `conversation_templates` | v0.2 Conductor 커스텀 프롬프트 |
-| `evaluator_llm_model` | `conversation_templates` | Evaluator LLM 모델 오버라이드 |
-| `planner_llm_model` | `conversation_templates` | Planner LLM 모델 오버라이드 |
-| `conductor_llm_model` | `conversation_templates` | Conductor LLM 모델 오버라이드 |
-| `director_llm_model` | `conversation_templates` | ScenarioDirector LLM 모델 |
+### 왜 만드는가
+- 현재 새로운 학습 세션 로직을 만들려면 Python 코드를 직접 수정해야 함
+- 병렬 분석(에너지 흐름, 감정 분석 등)을 추가하려면 코드 변경 필요
+- 조건 분기(발화 패턴에 따른 다른 개입 모듈 라우팅)가 하드코딩됨
+- AI Lab의 실험용 파이프라인과 실제 세션용 파이프라인이 분리되어 재사용 불가
 
-#### 파이프라인 로그 현황
-- `pipeline_logs` 테이블에 `module_name`(`"evaluator"`, `"planner"`, `"conductor"`) 문자열로 모듈 식별.
-- `prompt_used` 컬럼에 실행 시점의 프롬프트 원문 저장 (마이그레이션으로 추가됨).
-- `ObservationService`(Layer 2)가 `module_name` 하드코딩으로 필터링하여 집계.
+### 핵심 설계
+- **고정 엔드포인트**: 사용자 발화 녹음/STT(시작) ↔ AI 발화/TTS(끝)는 그대로 유지
+- **자유 구성 구간**: 시작~끝 사이 모든 단계를 노드 그래프로 정의
+- **9개 노드 타입**: Start, End, LLM, Code, Router, Parallel, Merge, UIEvent, Delay
+- **React Flow v12**: 어드민 UI의 비주얼 에디터 라이브러리
+- **graph_json JSONB**: React Flow의 `{ nodes, edges, viewport }` 그대로 DB에 저장
+- **기존 호환**: `pipeline_mode = "visual"` 추가, basic/v0.2 기존 세션은 변경 없음
 
-#### 별도 서비스
-- `EnergyFlowService`: EMF(에너지 흐름) 분석 전용 LLM 서비스. Conductor와 독립적으로 실행 가능.
-- `energy_flow_enabled` 플래그가 `conversation_templates`에 존재하여 템플릿 단위로 활성/비활성 제어.
+### 프로젝트 기술 스택
+| 영역 | 기술 |
+|------|------|
+| Server | FastAPI + SQLAlchemy 2.0 async + PostgreSQL 15 + Redis 7 |
+| Admin | Next.js 16 + Tailwind CSS v4 + shadcn/ui + Zustand + TanStack Query |
+| Mobile | React Native 0.81 + Expo SDK 54 |
+| AI | Google GenAI (Gemini), Google Cloud Speech/TTS |
+| Architecture | FSD (Feature-Sliced Design) for frontend, Layered for backend |
 
-## 2. 주요 구성 요소
-1. **LLM 모듈(Learning Module)**
-   - 이름, 설명, 파이프라인 모드(v0.1, v0.2 등), 기본 LLM 모델, 프롬프트 버전 컬렉션.
-   - 모듈 버전별로 change reason, 작성자, 작성일을 저장.
-2. **파이프라인 정의**
-   - 파이프라인 메타데이터 + 노드 그래프(직렬/병렬)로 구성.
-   - 노드마다 어떤 LLM 모듈을 사용하는지, 입력/출력 키 매핑, 실행 옵션 정의.
-3. **템플릿 ↔ 파이프라인 링크**
-   - 템플릿은 특정 파이프라인 버전을 참조.
-   - 필요 시 템플릿 단위 override(모듈 교체 등) 허용 여부 결정.
-4. **파이프라인 실행 러너**
-   - 현재의 v0.2 파이프라인(`evaluator → planner → conductor` 직렬 하드코딩)과 basic 모드(`ScenarioDirector` 단독)를 대체하는 범용 오케스트레이터.
-   - 노드 그래프를 따라 입력 컨텍스트를 전달하고, 병렬 노드는 asyncio.gather 등으로 동시 실행.
-   - ⚠️ **주의**: 현재 코드에 `director`는 v0.2 파이프라인의 일부가 아니라 basic 모드 전용. v0.2에서는 Conductor가 대본(scripts)과 피드백을 직접 생성하여 `process_ai_turn()`에서 소비됨.
-5. **세션 로그/관찰 뷰**
-   - 모듈 이름/ID 기반으로 로그 저장 → 기존 UI는 모듈 리스트를 일반화해서 렌더.
+### 구현 Phase (5단계)
+1. **Phase 1**: 서버 데이터 모델 + 파이프라인 러너 엔진
+2. **Phase 2**: 세션 통합 (process_user_turn에 visual 분기 추가)
+3. **Phase 3**: 어드민 비주얼 에디터 UI (React Flow)
+4. **Phase 4**: 실행 모니터링 + 템플릿 연결 UI
+5. **Phase 5**: 마이그레이션 도구 + UX 개선
 
-## 3. 데이터 모델 초안
+---
+
+## 1. Executive Summary
+
+The existing English learning platform runs a hardcoded v0.2 pipeline (Evaluator -> Planner -> Conductor) inside `my_turn_service.py` to analyze user speech and generate AI responses during learning sessions. This hardcoded flow prevents non-developer iteration on session logic, limits experimentation with parallel analysis branches, and makes it impossible to create new session types without code changes. The AI Lab admin section currently offers a sequential-agent pipeline editor with form-based CRUD, but it operates independently from actual learning sessions -- it is an experiment sandbox, not the session engine.
+
+This specification defines a visual node-based pipeline builder (modeled on n8n/Dify) that replaces both the hardcoded v0.2 pipeline and the separate AI Lab pipeline system with a single, unified visual programming interface. Administrators will drag-and-drop nodes onto a canvas, connect them with edges, configure each node through a side panel, and deploy the pipeline as the actual session logic for conversation templates. The pipeline definition becomes the session engine: when a user speaks, the server loads the pipeline graph, executes it as a DAG with support for parallel branches and conditional routing, and produces the AI response plus any UI events.
+
+The design preserves the existing fixed endpoints (user speech recording/STT at the start, AI speech/TTS at the end) while making everything in between fully configurable. It supports parallel processing (e.g., one branch handles the main pedagogical flow while another computes energy flow analysis and pushes UI updates via WebSocket), conditional routing (e.g., classify a speech pattern and route to different intervention modules), and real-time execution visualization in the admin dashboard.
+
+---
+
+## 2. System Architecture
+
+### 2.1 High-Level Component Diagram
+
 ```
-learning_modules (
-    id UUID PK,
-    name TEXT UNIQUE,
-    description TEXT,
-    pipeline_mode VARCHAR (enum: v0.1, v0.2, ...),
-    default_llm_model TEXT,
-    module_type VARCHAR DEFAULT 'llm',   -- llm | metric | hybrid (측정 전용 모듈 구분)
-    created_by UUID,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-)
-
-learning_module_versions (
-    id UUID PK,
-    module_id UUID FK -> learning_modules,
-    version INT,
-    prompt_text TEXT,
-    change_reason TEXT,
-    llm_model_override TEXT NULL,
-    generation_config JSONB NULL,  -- temperature, max_output_tokens, response_mime_type 등
-    output_schema JSONB NULL,      -- 모듈 출력 구조 정의 (다운스트림 소비자 호환성 보장용)
-    is_active BOOLEAN,
-    created_by UUID,
-    created_at TIMESTAMP
-)
-
-pipelines (
-    id UUID PK,
-    name TEXT,
-    description TEXT,
-    pipeline_mode VARCHAR,
-    version INT,
-    -- graph JSONB는 사용하지 않음 (결정 Q1: pipeline_nodes 테이블로 분리 저장)
-    is_active BOOLEAN,
-    created_by UUID,
-    created_at TIMESTAMP
-)
--- 파이프라인 버전 전략: 새 버전 생성 시 현재 pipeline_nodes를 전부 복사하여
--- 새 pipeline 레코드(version+1)에 연결. 이전 버전의 노드는 읽기 전용으로 보존.
--- template_pipeline_links가 특정 version을 pin하므로 기존 템플릿은 영향 없음.
-
--- ⚠️ 기존 pipeline_logs 테이블에 신규 필드 추가 필요:
-pipeline_logs ALTER (
-    ADD node_key VARCHAR(50) NULL,       -- pipeline_nodes.node_key와 매칭 (ObservationService 집계 키)
-    ADD module_version TEXT NULL,         -- learning_module_versions.version
-    ADD pipeline_id UUID NULL FK -> pipelines  -- 실행된 파이프라인 참조
-)
--- ⚠️ 기존 필드 확인: prompt_used(TEXT) 컬럼은 이미 존재 (마이그레이션 e026f4a8b9c1).
-
-pipeline_nodes (
-    id UUID PK,
-    pipeline_id UUID FK -> pipelines ON DELETE CASCADE,
-    node_key TEXT,          -- 예: evaluator, planner_a
-    module_id UUID FK -> learning_modules,
-    module_version_id UUID FK -> learning_module_versions NULL,  -- NULL이면 모듈의 is_active 버전 사용
-    node_type VARCHAR,      -- serial | parallel_group | merge 등
-    input_scope JSONB,      -- all_context / prev_only / explicit { modules: ["evaluator"] }
-    input_mapping JSONB,
-    output_mapping JSONB,
-    affects_turn_flow BOOLEAN DEFAULT true,   -- false이면 sidecar/백그라운드 분석 (UI만 갱신)
-    output_targets JSONB DEFAULT '{"websocket": false, "turn_log": false, "session_record": false}',
-    activation_condition JSONB NULL,  -- 선택형 분석용 (예: {"flag": "energy_flow_enabled", "value": true})
-    next_nodes TEXT[],
-    execution_order INT DEFAULT 0  -- 동일 레벨 내 정렬 순서
-)
--- 인덱스: idx_pipeline_nodes_pipeline_id (pipeline_id)
--- 인덱스: idx_pipeline_nodes_module_id (module_id)
-
-template_pipeline_links (
-    id UUID PK,
-    template_id UUID FK -> conversation_templates ON DELETE CASCADE UNIQUE,  -- 1:1 관계
-    pipeline_id UUID FK -> pipelines ON DELETE RESTRICT,
-    pipeline_version INT,
-    overrides JSONB NULL    -- 템플릿 단위 override가 필요할 경우
-    -- overrides 예: { "nodes": { "planner": { "module_version_id": "uuid-xxx" } } }
-)
++---------------------+     +---------------------------+     +---------------------+
+|   Mobile App        |     |   Admin Dashboard         |     |   FastAPI Server     |
+|   (React Native)    |     |   (Next.js 16)            |     |   (Python 3.11+)    |
+|                     |     |                           |     |                     |
+|  STT Recording ---->|---->|  Visual Pipeline Editor   |     |  Pipeline Runner    |
+|  TTS Playback  <----|<----|  (React Flow canvas)      |     |  (DAG Executor)     |
+|  UI Events    <-----|<----|                           |     |                     |
+|  (WebSocket)        |     |  Pipeline Monitor         |     |  Node Executors     |
++---------------------+     |  (Live execution view)    |     |  (LLM, Code, etc.)  |
+                             +---------------------------+     +---------------------+
+                                        |                              |
+                                        |  REST API (CRUD)             |
+                                        |  WebSocket (execution events)|
+                                        +------------------------------+
+                                                    |
+                                            +-------v-------+
+                                            |  PostgreSQL    |
+                                            |  (Pipeline     |
+                                            |   definitions, |
+                                            |   logs, etc.)  |
+                                            +----------------+
 ```
 
-> `template_pipeline_links` 테이블도 새로 생성되어 템플릿과 파이프라인을 1:1로 연결합니다. 기존 `conversation_templates`에 추가 컬럼을 붙이지 않습니다.
+### 2.2 How It Fits Into Existing Architecture
 
+The pipeline builder adds three new subsystems:
 
-> `pipeline_nodes` 역시 신규 생성 테이블로, graph JSONB를 사용했던 기존 설계와 분리됩니다.
+1. **Pipeline Definition Store** -- New database tables storing pipeline graphs (nodes, edges, versions). Replaces `ai_lab_pipelines` + `ai_lab_pipeline_agents` for session-driving pipelines.
+2. **Pipeline Runner Engine** -- A new service (`apps/server/app/services/pipeline_runner/`) that loads a pipeline definition, topologically sorts nodes, executes them as an async DAG, and emits WebSocket events. Replaces the hardcoded `if pipeline_mode == "v0.2"` branch in `process_user_turn()`.
+3. **Visual Editor UI** -- A new page in the admin dashboard (`/ai-lab/pipeline-editor/[id]`) using React Flow for the canvas. Replaces the form-based `AgentEditor` for pipeline construction.
 
+### 2.3 Execution Flow (User Turn)
 
-> 위 세 테이블은 기존 DB 구조와 별도로 신규 생성됩니다. 기존 conversation_templates/pipeline_logs 등을 재활용하지 않으며, 아래 pipeline_nodes / template_pipeline_links 역시 모두 새 테이블입니다.
+```
+User speaks -> Mobile STT -> Server receives transcript
+                                    |
+                                    v
+                          process_user_turn()
+                                    |
+                          [pipeline_mode check]
+                           /        |        \
+                     "basic"    "v0.2"    "visual"  <-- NEW
+                        |          |          |
+                  ScenarioDir  hardcoded   PipelineRunner.execute(
+                               Eval->Plan    pipeline_id,
+                               ->Conduct     context
+                                           )
+                                             |
+                                      DAG execution
+                                      (parallel branches,
+                                       conditional routing,
+                                       WS events at each node)
+                                             |
+                                      PipelineResult
+                                             |
+                                    process_ai_turn()
+                                    (consumes result,
+                                     generates AI speech)
+                                             |
+                                    TTS -> Mobile playback
+```
 
-> **결정 Q1**: 파이프라인 정의는 `pipeline_nodes` 테이블로 분리 저장. JSON 붙여넣기 입력은 서버가 파싱해 노드 레코드로 변환하고, UI는 해당 레코드들을 다시 조합해 프리뷰/수정 가능하도록 함. (JSON 단일 필드 방식은 사용하지 않음.)
+---
 
-## 4. API 설계 개요
-1. **LLM 모듈 API**
-   - `GET /learning-modules` 목록 + 필터(모드별 등)
-   - `POST /learning-modules` 생성
-   - `POST /learning-modules/{id}/versions` 새 프롬프트 등록(변경 사유 필수)
-   - `POST /learning-modules/{id}/activate-version` 특정 버전 활성화
-   - `GET /learning-modules/{id}/history` 버전 목록 + diff 옵션
-2. **파이프라인 API**
-   - `GET /pipelines`
-   - `POST /pipelines` (그래프 정의 포함)
-   - `POST /pipelines/{id}/versions`
-   - `GET /pipelines/{id}` / `history`
-3. **템플릿 연동**
-   - `PUT /templates/{id}/pipeline` → 어떤 파이프라인/버전을 쓸지 저장.
-   - 기존 템플릿 prompt 컬럼은 점진적으로 deprecated (초기엔 겸용 허용).
-4. **실행 API 영향**
-   - MyTurn 관련 API는 파이프라인 정보를 응답에 포함(예: `pipeline_modules`: [ { name, version } ] )
-   - 세션 기록 API는 기존 스키마 유지하되 모듈명 필드 추가.
+## 3. Data Model
 
-> **오픈 질문 Q2**: 파이프라인 그래프를 정의할 때 관리자 UI에서 작성할 JSON 포맷을 구체적으로 어느 정도까지 제한하고 싶은지? (예: 노드/간선만 허용 vs DSL 형태)
+### 3.1 New Tables
 
-## 5. UI 플로우
-1. **학습 모듈 + 파이프라인 통합 관리 페이지 (신규)**
-   - 하나의 페이지에서 모듈과 파이프라인을 동시에 다룸. 상단은 모듈 섹션(리스트, 버전 히스토리, 신규 버전 작성), 하단은 파이프라인 섹션(DAG 구성, 노드별 모듈 배치)으로 레이아웃 분리.
-   - 모듈 섹션에서 새 버전 생성 시 change reason 필수 입력. 파이프라인 섹션에서는 노드 추가/편집 시 모듈을 즉시 참조할 수 있게 구성.
-   - 모듈 생성 시 `module_type`을 지정하여 LLM/측정/하이브리드 모듈을 구분하고, 측정 모듈(예: `response_delay_calc`, `fluency_metrics`, `slot_scoring`, `anchor_detection`)은 LLM 프롬프트에서 참조 가능하도록 태그 지정.
-   - 파이프라인 편집 UI는 "폼 기반 빌더"가 기본(노드 추가 버튼 + 이전/다음 선택 + 옵션 패널). 동시에 "JSON 입력/붙여넣기" 탭도 제공해, AI가 생성해준 정의를 그대로 붙여 넣고 검증할 수 있도록 함. JSON 탭은 최소 스키마(`{ nodes: [...], edges: [...] }`)만 우선 지원하고, 필요 시 필드를 확장.
-   - 페이지 내에서 탭 또는 accordion으로 그룹화해 이동 없이 조립 가능하도록 설계.
-   - 파이프라인/모듈 이름은 자동 생성 대신 저장 시 사용자가 직접 입력(중복 감지는 시스템에서 처리).
-2. **템플릿 관리 페이지 v2 (신규)**
-   - 현행 템플릿 페이지는 유지(v1). 별개의 v2 페이지를 만들어 새 파이프라인 시스템을 사용할 템플릿만 이쪽에서 생성/편집.
-   - 마이그레이션 완료 전까지 v1/v2 병행 운영, 이후 MyTurn에서 호출하는 API를 v2 구조로 전환.
-   - v2 템플릿은 기본적으로 프롬프트 문자열을 직접 담지 않고, 파이프라인 참조만 저장.
-3. **MyTurn / 세션 기록 UI**
-   - API 응답에 포함된 모듈 리스트를 바탕으로 카드 렌더(모듈명+버전 표시).
-   - 병렬 노드 결과도 순서대로 펼쳐 볼 수 있게 구성.
-   - LLM 노드 상세에는 “참조 중인 측정 모듈” 목록을 함께 표시하여 어떤 지표가 프롬프트에 주입되었는지 확인 가능하게 함.
+All new tables use UUID primary keys and timestamp columns following existing project conventions (`Base` from `app/models/base.py`).
 
-### 5.1 측정 모듈 선택 & 프롬프트 바인딩
-- LLM 모듈 버전 편집 시 “참조할 측정 모듈”을 멀티셀렉트로 지정할 수 있음.
-- 선택 가능한 예시 지표: `response_delay_calc`, `fluency_metrics`, `slot_scoring`, `slot_missing_detector`, `wpm_tracker`, `user_sentiment`, `energy_flow`, `custom_metric_x` 등.
-- **측정 모듈 실행 방식 구분:**
-  - `module_type=metric` 중 **코드 기반(rule-based)**: `response_delay_calc`, `wpm_tracker` 등은 LLM 호출 없이 Python 코드로 계산. 버전 관리는 코드 배포 시점에 연동되며, `learning_module_versions.prompt_text`에는 계산 로직 설명/참고 메모만 기록.
-  - `module_type=metric` 중 **LLM 기반**: `user_sentiment`, `energy_flow` 등은 LLM 프롬프트로 분석. 프롬프트 변경 = 새 버전 생성.
-  - `module_type=hybrid`: 코드 전처리 후 LLM 호출 또는 그 반대. 두 가지 버전(코드+프롬프트)을 함께 관리.
-- 파이프라인 러너는 해당 측정 모듈을 먼저 실행해 output을 LLM 모듈 프롬프트 변수로 주입. 예: `{{metrics.response_delay_sec}}`, `{{metrics.fluency.words_per_minute}}`.
-- **프롬프트 변수 바인딩 규약:**
-  - 문법: Mustache 스타일 `{{변수명}}` 사용 (Jinja2가 아님).
-  - 지원 네임스페이스: `metrics.*` (측정 모듈 출력), `context.*` (세션/턴 메타데이터), `prev.*` (직전 노드 출력), `output.<node_key>.*` (특정 노드 출력).
-  - 러너는 `input_mapping`에 정의된 키만 바인딩하며, 누락된 변수는 빈 문자열로 대체하고 경고 로그를 남김.
-- UI에서 사용자 정의 지표 모듈을 추가하면 자동으로 이 목록에 등장하므로, LLM 프롬프트가 지표 조합을 자유롭게 활용할 수 있음.
-- 동일한 `metrics.*` 경로를 프론트엔드에서도 그대로 읽어 UI 요소(배지/그래프)를 렌더하도록 명시하여, 측정 결과를 LLM 프롬프트와 UI가 동시에 공유.
+#### 3.1.1 `visual_pipelines`
 
-### 5.2 선택형 분석(에너지 흐름 등) 활성화
-- `energy_flow`처럼 세션 중 병렬로 돌리는 분석은 metric 모듈로 등록해두고, 템플릿 v2나 세션 variant에서 `energy_flow_enabled` 같은 토글을 설정.
-- 파이프라인 노드에 “활성 조건” 필드를 두어, 해당 플래그가 true일 때만 energy_flow 노드를 실행하고 결과를 `metrics.energy_flow`에 저장.
-- UI는 기존과 동일하게 해당 지표가 존재할 때만 그래프/배지를 렌더하면 되므로, 메트릭 노출 여부가 자연스럽게 제어됨.
+The top-level pipeline definition. Each pipeline has immutable versions.
 
-### 5.3 세션 영향 여부 제어 (Sidecar 노드)
-- 각 노드에는 `affects_turn_flow` 플래그를 두어, true이면 결과가 다음 LLM 단계/턴 분기 결정에 영향을 주고, false이면 "sidecar"로 실행되어 UI/로그만 업데이트.
-- 예: energy_flow 모듈을 `affects_turn_flow=false`로 두면, 사용자 발화 직후 별도의 LLM 없이 측정값만 계산해 UI에 띄우고, 메인 세션 플로우는 지연되지 않음.
-- 반대로 동일한 노드를 true로 설정하면, 해당 결과가 다음 planner/conductor 입력에도 포함되어 세션 진행에 관여하도록 구성 가능.
-- Sidecar 노드 출력은 `output_targets` 옵션으로 **WebSocket 실시간 이벤트**, **turn log(DB)**, **세션 기록/엑셀** 3개 채널 중 원하는 조합을 선택해 브라우저 UI에서 소비할 “3개의 구멍”을 미리 확보해 둔다.
-- 기본값은 세 채널 모두 OFF이며, 필요할 때 템플릿/모듈 설정에서 개별 채널을 켜는 방식으로 제어.
-
-### 5.4 WebSocket 이벤트 스키마
-- sidecar 및 메인 모듈 결과는 명시적 이벤트 타입으로 전송:
-  - `pipeline:module_output` — `{ "type": "pipeline:module_output", "node_key": "evaluator", "turn_index": 5, "output": { ... } }`
-  - `pipeline:sidecar_metric` — `{ "type": "pipeline:sidecar_metric", "node_key": "energy_flow", "turn_index": 5, "payload": { ... } }`
-  - `pipeline:status` — 진행률/타임아웃 알림.
-- 프론트엔드는 node_key 기준으로 렌더러를 선택하고, 동일 payload를 turn log에도 저장하여 실시간·사후 분석 데이터를 일치시킨다.
-
-## 6. 파이프라인 실행 러너 설계
-
-### 6.0 현행 실행 흐름과의 대응
-
-#### 6.0.1 `process_user_turn()` — 파이프라인 생산자
-현재 `my_turn_service.py`에서 `process_user_turn()` 내 분기:
 ```python
-if pipeline_mode == "v0.2":
-    # EvaluatorService → PlannerService → ConductorService (직렬)
-else:
-    # ScenarioDirector.evaluate_turn() (단독)
-```
-새 러너는 이 두 경로를 모두 흡수해야 하며, 기존 v0.2 파이프라인의 결과가 `session.variant["_pipeline_result"]`에 저장되어 `process_ai_turn()`에서 소비되는 패턴도 유지해야 함.
+# app/models/visual_pipeline.py
 
-#### 6.0.2 `process_ai_turn()` — 파이프라인 결과 소비자
-`process_ai_turn()`은 파이프라인이 생성한 결과를 **직접 소비하여 AI 응답을 생성**하는 핵심 소비자이다. 현재 다음 4단계 우선순위로 동작:
+class VisualPipeline(Base):
+    """Visual pipeline definition."""
+    __tablename__ = "visual_pipelines"
 
-| 우선순위 | 조건 | 동작 | 비고 |
-|---|---|---|---|
-| 1 | `greeting_message` 존재 + 첫 턴 | LLM 미호출, 인사말 사용 | 파이프라인과 독립 |
-| 2 | v0.2 + `speaker_scripts[name].text` 존재 | LLM 미호출, Conductor 대본 사용 | **핵심 bypass 경로** |
-| 3 | `engine_trace.intervention_emitted_text` 존재 | LLM 미호출, intervention 텍스트 사용 | moderator 제외 |
-| 4 | 위 조건 미충족 | generation prompt 구성 → LLM 호출 | 기본 경로 |
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    # The full graph definition as JSON (React Flow compatible)
+    # Contains: { nodes: [...], edges: [...], viewport: {...} }
+    graph_json = Column(JSONB, nullable=False, default=dict)
+    # Pipeline version (incremented on each publish)
+    version = Column(Integer, nullable=False, default=1)
+    # Whether this version is a draft or published
+    status = Column(String(20), nullable=False, default="draft")  # "draft" | "published" | "archived"
+    # Global pipeline settings
+    timeout_ms = Column(Integer, nullable=False, default=15000)  # Max execution time
+    # Metadata
+    created_by = Column(UUID(as_uuid=True), nullable=True)  # FK accounts.id
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-**새 러너에서의 대응:**
-- 러너는 파이프라인 실행 후 결과를 표준 컨텍스트 객체에 저장. `process_ai_turn()`은 이 컨텍스트로부터 데이터를 읽음.
-- 파이프라인 결과와 `process_ai_turn()` 사이의 **출력 계약(output contract)** 정의:
-  ```
-  _pipeline_result = {
-      "feedback_text": str,
-      "feedback_instruction": str,
-      "level": int,
-      "level_instruction": str,
-      "corrections": list[dict],
-      "better_expressions": list[dict],
-      "energy_flow": dict | None,
-      "speaker_scripts": { "<name>": { "text": str, "instruction": str } },
-      "user_emotion": str,
-      "question_progress": dict,
-      "engine_trace": dict | None
-  }
-  ```
-- 이 계약은 파이프라인의 **마지막 노드(Conductor 역할)**가 반드시 충족해야 하며, 모듈 프롬프트를 변경하더라도 이 구조는 유지되어야 함.
-- ⚠️ `process_ai_turn()`은 **모든 AI 참가자마다 호출**되므로, 출력 계약이 깨지면 모든 AI 응답이 중단됨.
-
-### 6.1 현재 에너지 흐름(EnergyFlow) 통합
-현재 EnergyFlow는 **두 개의 독립적인 경로**로 존재하며, 목적과 트리거가 다름:
-
-| 경로 | 위치 | 트리거 | 출력 | 용도 |
-|---|---|---|---|---|
-| Conductor 내장 | `conductor_service.py` (`ConductorOutput.energy_flow`) | 파이프라인 직렬 실행 중 자동 | `variant["_pipeline_result"]["energy_flow"]` | 세션 기록/피드백 |
-| 독립 API | `energy_flow_service.py` → `POST /sessions/{id}/energy-flow` | 클라이언트 별도 호출 | 별도 JSON 응답 (비교 테이블) | 실시간 UI 시각화 |
-
-**새 파이프라인에서의 통합 방안:**
-- Conductor 내장 경로: Conductor 프롬프트에서 `energy_flow` 필드 생성을 **제거**하고, 전용 노드로 분리.
-- 독립 API 경로: `EnergyFlowService`를 `module_type=metric`(LLM 기반) 노드로 등록, `affects_turn_flow=false` sidecar로 병렬 실행.
-- 두 경로를 **단일 sidecar 노드**(`node_key: energy_flow_analyzer`)로 통합하되, `output_targets` 설정으로 WS(실시간 UI) + turn_log(세션 기록) 모두 커버.
-- 통합 시 기존 독립 API(`POST /sessions/{id}/energy-flow`)는 deprecate하고 WebSocket 이벤트로 전환.
-
-> **미결정 Q8**: Conductor 내장 energy_flow 제거 시점 및 독립 API deprecation 일정.
-
-### 6.2 컨텍스트 객체
-1. **컨텍스트 객체**
-   - 세션/턴 정보 + 모듈별 output map + 실패/재시도 메타.
-   - 현재 `session.variant` JSON에 저장되는 상태를 전용 런타임 컨텍스트 객체로 이관.
-   - **variant 키 분류** (현행 → 이관 계획):
-     | 키 | 구분 | 이관 대상 | 비고 |
-     |---|---|---|---|
-     | `_pipeline_result` | 런타임 전용 (현재 턴) | 컨텍스트 객체 | 턴마다 덮어쓰기 |
-     | `_pipeline_state` | 영구 (SessionState) | 컨텍스트 객체 + DB flush | 턴 간 상태 유지 |
-     | `_question_progress` | 영구 (진행 상태) | 컨텍스트 객체 + DB flush | custom_state 내부 |
-     | `_force_moderator_turn` | 런타임 플래그 | 컨텍스트 객체 | 턴 제어 |
-     | `_consecutive_ai_turns` | 런타임 카운터 | 컨텍스트 객체 | 안전장치 |
-     | `current_script_index` | 영구 (위치) | 기존 variant 유지 | 세션 재개 필요 |
-     | `participants`, `user_topic` | 영구 (설정) | 기존 variant 유지 | 세션 설정 |
-   - **런타임 컨텍스트 구현**: 메모리 상 Python 객체(`PipelineContext` 클래스)로 관리. 파이프라인 실행 완료 후 영구 항목만 `session.variant`에 flush.
-2. **노드 실행 순서**
-   - DAG으로 정의된 그래프를 위상 정렬 → serial 노드는 순차 실행, parallel 그룹은 gather.
-   - 각 노드는 `input_scope`에 따라 입력 범위를 결정: 전체 세션 컨텍스트(`all_context`), 직전 노드 출력만(`prev_only`), 혹은 특정 노드들의 output만 선택적으로 전달.
-   - `input_mapping`을 통해 전달된 데이터 중 필요한 key만 모듈 프롬프트 변수로 바인딩.
-   - `affects_turn_flow=false` 노드는 메인 DAG와 병렬로 비동기 실행(완료 여부와 무관하게 다음 노드 진행)하며, 결과만 컨텍스트/로그/WS payload에 기록.
-3. **오류 처리**
-   - 노드 실패 시 재시도 정책(기본 1~2회) → 실패 시 파이프라인 중단/대체 노드 호출 여부 정책 필요.
-   - **현재 참조**: `run_ai_turn_background()`에서 이미 3회 재시도 로직 존재. 러너 설계 시 노드 단위 재시도로 세분화.
-   - Sidecar 노드(`affects_turn_flow=false`) 실패 시: 메인 플로우에 영향 없이 실패 로그만 기록. 해당 metrics는 누락된 채로 진행.
-   - 메인 노드 실패 시: 재시도 소진 후 세션에 에러 상태를 기록하고, 사용자에게 폴백 응답(예: 이전 턴의 AI 응답을 재사용하거나 "잠시 후 다시 시도" 메시지)을 반환.
-   - 부분 실행 로그: 파이프라인 중간 실패 시에도 이미 완료된 노드의 로그는 turn log에 보존.
-   - **파이프라인 전체 타임아웃**: 노드 단위 재시도와 별도로, 전체 파이프라인 실행에 상한(기본 15초)을 설정. 초과 시 완료된 노드 결과로 폴백 응답을 구성하고, 미완료 노드는 취소 후 로그에 `timeout` 기록.
-4. **DAG 유효성 검증**
-   - 파이프라인 저장 시 서버에서 자동 검증: 순환 참조 감지, 누락된 모듈 참조, 연결되지 않은 고립 노드, `merge` 노드의 입력 노드 존재 여부.
-   - 검증 실패 시 저장을 거부하고 구체적인 오류 메시지를 반환.
-5. **로그 저장**
-   - 기존 `pipeline_logs` 구조와 동일하게 로그를 남기되, `module_name`/`module_version`/`node_key`를 함께 기록.
-   - 기존 `prompt_used` 필드에 실행 시점 프롬프트 원문 저장은 유지.
-   - 병렬 노드의 출력은 기본적으로 배열로 전달하지만, 필요 시 "합치기" 노드를 따로 둬서 여러 결과 중 하나만 고르거나 요약하도록 구성할 수 있음(예: 두 planner의 결론을 하나로 합치는 전용 LLM).
-6. **전체 타임아웃/폴백**
-   - 턴당 파이프라인 최대 실행 시간(예: 15초)을 설정하고 초과 시 나머지 노드를 취소, fallback 멘트/컨덕터 스크립트를 생성.
-   - 타임아웃 발생은 `pipeline:status` WebSocket 이벤트와 turn log에 기록.
-7. **런타임 컨텍스트 vs variant**
-   - variant에 저장 중인 주요 키 분류:
-     - 런타임 전용: `_pipeline_result`, `_pipeline_state`, `_consecutive_ai_turns`.
-     - 지속 필요: `_question_progress`, `_force_moderator_turn`, `current_script_index`, `participants`, `user_topic`.
-   - 새 러너는 `SessionRuntimeContext` 객체를 두어 런타임 전용 키를 메모리에만 보관하고, 턴 종료 시 필요한 항목만 variant에 동기화.
-   - 장기적으로 Redis 등 외부 스토어 검토 가능하나, 1차 릴리스는 in-process 컨텍스트 + DB 스냅샷으로 진행.
-6. **실측 데이터 주입 (계속 유지)**
-   - 현재 `process_user_turn()`에서 계산하는 `measured_wpm`, `response_delay_sec` 등은 파이프라인 러너의 컨텍스트에 자동 주입하여 각 노드가 참조할 수 있도록 함.
-   - `context.measured.*` 네임스페이스로 통일.
-
-> **오픈 질문 Q3**: 병렬 노드 간 데이터 결합 방식을 단순 배열로 둘지, 특정 aggregator 모듈을 두고 결과를 병합할지 선호하는 구조가 있는지?
-
-### 6.3 크로스-모듈 상태 관리
-- 메인 파이프라인은 “턴 진행에 직접 영향을 주는 노드”만 순차적으로 배치한다. 순차 파이프라인 안에서 Evaluator → Planner → Conductor와 같은 직렬 흐름을 자유롭게 구성할 수 있고, 노드 수/종류에 제한이 없다.
-- UI 요소, 자동 진단, 통계 등 **턴에 영향 주지 않는 병렬 분석**은 sidecar 노드나 별도 API로 언제든 추가/제거할 수 있게 설계한다.
-- 여러 노드의 결과를 합쳐서 다음 턴 상태를 만드는 로직(예: 질문 진행도 계산)은 "후처리 Hook" 또는 별도의 `merge` 노드로 정의하여, 사용자가 파이프라인 그래프에 원하는 만큼 추가할 수 있게 한다.
-
-### 6.4 TurnOrchestrator 연동
-`turn_orchestrator.py`가 다음 발화자 결정/턴 시퀀싱을 담당하며, 파이프라인 결과에 의해 동작이 변경됨:
-- `question_completed=true` → `_force_moderator_turn` 설정 → Moderator가 다음 발화
-- `needs_encouragement` → `bridge_participant` 선택 → 1명 AI만 응답 후 사용자에게 턴 반환
-- `conductor_output.return_to_user_after` → 격려 응답 후 사용자 턴
-
-**새 러너에서의 위치:**
-- 파이프라인 러너의 책임 범위는 **모듈 실행 + 결과 취합**까지이며, **턴 시퀀싱은 러너 외부**에서 처리.
-- 러너 실행 완료 후 `process_user_turn()`이 결과를 기반으로 TurnOrchestrator에 지시.
-- 즉, 기존 패턴(파이프라인 → variant 저장 → complete_turn → Orchestrator)은 유지하되, 러너 내부가 교체됨.
-
-### 6.5 출력 스키마 검증
-- 파이프라인을 구성하는 모든 노드는 사용자가 자유롭게 정의하므로, 출력 구조를 하드코딩하지 않는다. 모듈 버전 생성 시 필요한 경우에만 `output_schema`(JSON Schema 또는 설명)를 등록해 참고용으로 사용하고, 등록하지 않으면 그대로 raw JSON을 전달한다.
-- 기존 Evaluator/Planner/Conductor처럼 다운스트림 코드가 특정 필드를 필요로 하는 경우에도, 해당 템플릿이 어떤 구성인지에 따라 필드 정의를 업데이트할 수 있도록 Admin UI에서 직접 스키마를 수정/추가할 수 있게 한다.
-- 러너는 `output_schema`가 있을 때만 검증 로그를 남기며, 일치하지 않아도 실행을 막지 않는다. 즉, 모든 노드가 새로운 필드를 추가해도 코드 수정 없이 바로 활용할 수 있다.
-
-### 6.7 EnergyFlow 이중 경로 정리
-현재 EnergyFlow는 두 경로가 공존한다:
-1. **Conductor 내장 출력** — Conductor 프롬프트가 `energy_flow` 텍스트를 생성하여 `ConductorOutput.energy_flow`에 저장. 세션 기록/피드백에서 사용.
-2. **독립 API** — `/sessions/{id}/energy-flow` 엔드포인트가 `EnergyFlowService`를 호출해 비교표를 생성. 실시간 UI에서 별도 호출.
-
-새 파이프라인에서는 다음과 같이 정리한다.
-- Conductor 내장 경로는 유지하되, 장기적으로 필요 없을 경우 Conductor 프롬프트에서 해당 서술을 제거하고 별도 노드로 이전.
-- 실시간 비교표는 `energy_flow_analyzer` metric 모듈을 sidecar 노드로 등록하여, 템플릿 옵션(`energy_flow_enabled`)에 따라 WebSocket/turn log/세션 기록에 값을 보낸다.
-- 기존 독립 API는 단계적으로 deprecate할 수 있도록 WebSocket 이벤트(`pipeline:sidecar_metric`)로 동일 데이터 제공.
-> **결정 필요(Q8)**: Conductor 내장 경로를 언제 제거하고 sidecar로 완전히 전환할지 일정 수립.
-
-### 6.6 `process_ai_turn()` 소비 계약
-- 새 러너는 `SessionRuntimeContext.pipeline_result`에 다음 구조를 저장:
-  ```json
-  {
-    "speaker_scripts": {
-      "AI Tutor": {"text": "...", "emotion": "neutral", "metadata": {...}}
-    },
-    "engine_traces": {
-      "conductor": {...},
-      "planner": {...}
-    },
-    "interventions": {
-      "AI Tutor": {"emitted_text": "Can you say that again?", "prompt_key": "repair_say_again"}
-    },
-    "return_to_user_after": false
-  }
-  ```
-- `process_ai_turn()`는 위 구조를 이용해 다음을 수행:
-  1. `speaker_scripts[participant.name].text`가 있으면 LLM 호출을 생략하고 해당 텍스트/오디오만 재생.
-  2. 없으면 기존 LLM 호출 경로 수행하되, `engine_traces`를 turn log에 첨부.
-  3. `interventions`가 존재하면 greet bypass/encouragement 로직을 그대로 적용.
-  4. `return_to_user_after`가 true이면 turn orchestrator에게 즉시 사용자 턴 부여.
-- Variant `_pipeline_result`는 더 이상 누적하지 않고, 각 턴 처리 후 런타임 컨텍스트에서 제거.
-
-## 7. 마이그레이션 전략
-1. **사전 준비**
-   - 템플릿별로 사용 중인 evaluator/planner/conductor/director 프롬프트/모델 정보를 추출하되, v2 템플릿에서는 “프롬프트 없음” 상태로 시작해 새 모듈을 조립하게 유도.
-2. **자동 모듈 생성**
-   - 각 템플릿 x 모듈 조합마다 learning_module + version 레코드를 생성 (이름 규칙: `<템플릿명>-<모듈>` 등).
-   - 활성 버전 포인터는 생성된 버전을 가리키게 설정.
-3. **파이프라인 생성**
-   - v0.1/v0.2 기본 순서에 맞춰 pipeline 레코드를 자동 생성하여 템플릿과 연결.
-4. **MyTurn 서비스 업데이트**
-   - 새 파이프라인 러너가 준비된 뒤 템플릿 v2가 pipeline id를 참조하면 실행 경로 자동 변경. MyTurn API는 일정 시점에 v2 템플릿의 파이프라인만 읽도록 전환.
-5. **검증**
-   - 샌드박스에서 기존 템플릿으로 세션 실행 → 결과가 기존과 동등한지 비교.
-
-### 7.1 템플릿 단위 모듈 override
-- 기본은 파이프라인 버전을 공유하지만, 템플릿 v2 편집 화면에서 특정 노드만 다른 모듈/버전을 지정할 수 있는 override 슬롯을 제공.
-- override 내역은 템플릿 레코드의 `overrides` JSON에 저장하고, 실행 시 러너가 우선 적용.
-- 각 LLM 모듈은 자체 버전 히스토리를 가지며, 파이프라인 자체도 버전 관리 대상이므로 "모듈 버전 → 파이프라인 버전 → 템플릿 override" 순으로 우선순위를 정의.
-
-### 7.2 basic 모드(ScenarioDirector) 하위호환 전략
-- 기존 basic 템플릿은 `pipeline_mode="basic"`으로 계속 동작한다. **새로운 파이프라인 관리 페이지에서 만든 파이프라인**은 `template_pipeline_links`를 통해 연결한 템플릿에서만 사용된다.
-- 즉, DB 마이그레이션 이후에도 basic/v0.2 템플릿은 그대로 두고, 새 템플릿은 원하는 LLM/sidecar/측정 모듈을 조합해 파이프라인을 자유롭게 생성할 수 있다.
-- 향후 ScenarioDirector 기능을 파이프라인 모듈로 대체할 계획은 있지만 일정은 미정이며, 템플릿별로 준비가 되면 링크만 설정하면 된다.
-- `hesitation → encouragement`와 같은 기존 분기 로직은 `activation_condition`을 통해 노드 수준에서 표현 가능하므로, 파이프라인 그래프만 수정하면 언제든 기존 동작을 재현/변형할 수 있다.
-
-> **오픈 질문 Q4**: 자동 생성된 모듈/파이프라인의 네이밍 규칙이나 그룹화 방식에 대해 선호가 있는지?
-
-### 7.3 `pipeline_mode` 전환 메커니즘
-현재 `my_turn_service.py`에서 `pipeline_mode`는 `"basic"` 또는 `"v0.2"`만 존재한다. 새 파이프라인 시스템 도입 시 전환 로직:
-
-1. **분기 기준**: `template_pipeline_links` 레코드 존재 여부로 자동 분기.
-   - `template_pipeline_links`가 있으면 → 새 파이프라인 러너 사용
-   - 없으면 → 기존 `pipeline_mode` 컨트론 유지 (`"v0.2"` 또는 `"basic"`)
-2. **동시 운영**: 같은 시점에 기존 v0.2 세션과 새 파이프라인 세션이 공존 가능. 템플릿 단위로 전환.
-3. **코드 변경**: `process_user_turn()` 상단에 3번째 분기 추가:
-   ```python
-   link = await get_pipeline_link(session.template_id)
-   if link:
-       result = await pipeline_runner.execute(link.pipeline_id, context)
-   elif pipeline_mode == "v0.2":
-       # 기존 하드코딩 경로
-   else:
-       # ScenarioDirector
-   ```
-4. **완전 전환 후**: 모든 템플릿이 `template_pipeline_links`를 가지면 기존 `pipeline_mode` 분기 코드 제거.
-
-## 8. 세션 기록 영향
-- 저장 방식: turn log에 `module_name`, `module_version`, `pipeline_id`, `node_key` 필드를 추가해 추적.
-  - **대상 테이블**: 기존 `pipeline_logs` 테이블에 필드를 추가. `conversation_turns`에는 변경 없음.
-  - 기존 `pipeline_logs` 필드 현황:
-    ```
-    id, trace_id, session_id, turn_index, module_name(VARCHAR 20),
-    schema_version, input_json(JSONB), output_json(JSONB),
-    duration_ms, model_name, prompt_used(TEXT), error_message, created_at
-    ```
-  - 추가 필드: `node_key`(VARCHAR 50), `module_version`(TEXT), `pipeline_id`(UUID FK).
-- UI: 카드 렌더 시 모듈 리스트를 순회하면서 evaluator/planner/conductor 등 역할명이 아니라 모듈명을 그대로 노출.
-- 기존 엑셀/레포트 기능 변경 범위:
-  - `_write_turns_sheet()`: `node_key`, `module_version` 컬럼 추가.
-  - `_write_pipeline_detail_sheet()`: 현재 evaluator/planner/conductor 3개 컬럼 고정 → `pipeline_logs`의 모든 `node_key`를 동적으로 컬럼으로 생성하는 범용 로직으로 교체.
-  - 병렬 노드 결과: 한 턴에 여러 모듈 결과가 있을 때, `node_key` 기준으로 컬럼을 가로로 전개 (Planner_A | Planner_B).
-  - metric 모듈 출력: LLM 모듈과 동일한 형식으로 컬럼 추가. `module_type` 컬럼을 추가하여 구분 가능하게.
-- *turn log = 기존 `pipeline_logs` 및 파생 테이블을 의미하며, 실시간 WebSocket payload와 사후 조회(세션 기록 탭/엑셀)에 동일한 데이터를 제공하는 핵심 기록원.*
-
-### 8.1 Session Observation 시스템 호환성
-- 기존 `ObservationService`(Layer 2)는 `pipeline_logs.module_name`에서 `"evaluator"`, `"planner"`, `"conductor"` 등 **하드코딩된 이름**으로 데이터를 집계함.
-  ```python
-  # observation_service.py L260-270 (현재 코드)
-  evaluator_logs = [log for log in pipeline_logs if log.module_name == "evaluator" and log.output_json]
-  planner_logs = [log for log in pipeline_logs if log.module_name == "planner" and log.output_json]
-  conductor_logs = [log for log in pipeline_logs if log.module_name == "conductor" and log.output_json]
-  ```
-- 새 시스템에서 모듈명이 자유롭게 바뀌면(예: `"Language Analyzer"`) 기존 집계 로직이 깨질 수 있음.
-- **대응 전략**: `pipeline_nodes`에 `node_key` 필드(예: `evaluator`, `planner`)를 표준 역할 식별자로 사용. `ObservationService`는 `module_name` 대신 `node_key`를 기준으로 집계하도록 업데이트. `node_key`는 파이프라인 내에서 고유해야 하며, `pipeline_logs`에도 `node_key` 필드를 추가.
-- **`_normalize_primary_issue()` 호환성**: Evaluator가 반환하는 `diagnosis.primary_issue` 형태가 새 모듈에서도 동일해야 함. 기존 EMF 패턴(`MISSING_SLOT_A` → `INCOMPLETE_EXPRESSION`) 정규화 로직은 모듈의 출력 스키마 계약으로 문서화하여 유지.
-
-### 8.2 ReportingLLMService(Layer 3) 호환성
-- `ReportingLLMService`는 전체 대화 transcript를 LLM에 전달하므로 모듈명 변경 자체에는 영향 없음.
-- **하지만** `_build_pipeline_details()` 메서드에 **동일한 하드코딩 문제**가 존재:
-  ```python
-  # reporting_llm_service.py L346-374 (현재 코드)
-  if log.module_name == "evaluator":
-      turn_data["evaluator"] = { ... }
-  elif log.module_name == "planner":
-      turn_data["planner"] = { ... }
-  elif log.module_name == "conductor":
-      turn_data["conductor"] = { ... }
-  ```
-- **대응**: ObservationService와 동일하게 `node_key` 기반으로 업데이트. 나아가 특정 모듈 이름을 하드코딩하지 않고 `pipeline_logs`의 모든 노드 출력을 동적으로 구조화하는 범용 로직으로 교체.
-
-## 9. 배포/롤아웃 계획
-1. 단계1: 백엔드 스키마 + API + 모듈/파이프라인 관리 UI 추가(기존 템플릿 영향 없음).
-2. 단계2: 마이그레이션 실행, 일부 템플릿을 새 모듈 기반으로 전환하여 테스트.
-3. 단계3: MyTurn 실행 경로를 새 파이프라인 러너로 전환 → 병렬 기능 포함한 신규 파이프라인 운영.
-4. 단계4: 기존 템플릿에서 직접 프롬프트 편집하는 UI/API 제거.
-
-### 9.1 롤백(Rollback) 전략
-각 단계에서 문제 발생 시 이전 상태로 돌아가는 절차:
-- **템플릿 레벨**: `template_pipeline_links` 레코드를 삭제하면 해당 템플릿은 자동으로 기존 `pipeline_mode` 경로로 복귀 (§7.3 분기 로직 활용).
-- **모듈 버전 레벨**: 문제가 있는 버전의 `is_active`를 false로 설정하고 이전 버전을 활성화. 진행 중 세션에는 영향 없음(세션 스냅샷, §9.2 참조).
-- **파이프라인 버전 레벨**: `template_pipeline_links.pipeline_version`을 이전 버전으로 변경. 이전 버전의 노드는 읽기 전용으로 보존되어 있으므로 언제든 복귀 가능.
-- **전체 롤백**: 단계3 전환 후 심각한 문제 발생 시, 모든 `template_pipeline_links`를 삭제하여 전체 시스템을 기존 하드코딩 경로로 복귀.
-
-### 9.2 세션 스냅샷 & 동시성 안전
-- 세션 시작 시점에 사용 중인 `pipeline_id`, `pipeline_version`, 각 노드의 `module_version`을 `session_runtime_snapshot` 필드(JSON)에 저장.
-- 세션 도중 모듈 버전이 변경되더라도 snapshot을 기반으로 실행하여 동시성 문제를 방지.
-- turn log/세션 기록에도 snapshot 요약을 남겨 사후 분석 시 어떤 버전이 사용되었는지 역추적 가능.
-
-## 10. 테스트 및 모니터링
-- 단위 테스트: 파이프라인 러너, DAG 검증, 병렬 실행/에러 분기.
-- 통합 테스트: 실제 모듈/파이프라인 데이터를 이용한 end-to-end 세션.
-- 로깅: 파이프라인 실행 trace_id, 노드별 duration, 실패 이유 등을 수집 → 세션 기록 페이지와 연결.
-
-## 11. 추가 확인이 필요한 사항
-1. **결정 Q1:** 파이프라인 그래프는 `pipeline_nodes` 테이블로 분리 저장.
-2. **결정 Q2:** JSON 탭은 최소 스키마만 제공한 뒤 필요 시 확장 (폼 빌더가 기본 경로).
-3. **결정 Q3:** 병렬 노드 결과를 합치는 방식은 템플릿 실험에 따라 자유롭게 구성(배열 전달 + 선택적 aggregator 노드). 추가 제약 없음.
-4. **결정 Q4:** 모듈/파이프라인 이름은 자동 생성하지 않고 저장 시 사용자가 직접 입력.
-5. **결정 Q5:** 템플릿별로 특정 노드를 override할 수 있으며, 우선순위는 “모듈 버전 → 파이프라인 버전 → 템플릿 override”.
-
-> 추가로 궁금한 사항이 있으면 알려주세요. 위 질문들에 대한 답을 받으면 설계를 더 구체화할 수 있습니다.
-
-### 11.1 결정된 사항 (기존) vs 미결정 사항 (신규)
-| # | 항목 | 상태 | 비고 |
-|---|---|---|---|
-| Q1 | 파이프라인 그래프 저장 방식 | ✅ 결정 | `pipeline_nodes` 테이블 분리 |
-| Q2 | JSON 탭 스키마 범위 | ✅ 결정 | 최소 스키마 + 점진적 확장 |
-| Q3 | 병렬 노드 결합 방식 | ✅ 결정 | 배열 + 선택적 aggregator |
-| Q4 | 네이밍 규칙 | ✅ 결정 | 사용자 직접 입력 |
-| Q5 | 템플릿 override 우선순위 | ✅ 결정 | 모듈 버전 → 파이프라인 버전 → 템플릿 override |
-| Q6 | basic 모드 전환 시점/방식 | ✅ 기본 유지 + 필요 시 템플릿별 전환 | 섹션 7.2 |
-| Q7 | `session.variant` 런타임/영구 분리 | ✅ 결정 | 섹션 6 (런타임 컨텍스트) |
-| Q8 | EnergyFlow 이중 경로 | ✅ sidecar/노드로 자유 구성 | 섹션 6.7 |
-| Q9 | `process_ai_turn()` 소비 계약 | ✅ 정의 | 섹션 6.6 |
-| Q10 | 출력 스키마 검증 정책 | ✅ 자유 출력(필요 시 참고용 schema) | 섹션 6.5 |
-| Q11 | 크로스-모듈 상태 결합 (hook vs 노드) | ✅ 메인 순차 + sidecar 분리 | 섹션 6.3 |
-| Q12 | generation_config 저장 위치 | ✅ 결정 | learning_module_versions.generation_config |
-| Q14 | 세션 버전 스냅샷 | ✅ 결정 | 섹션 9.2 |
-| Q15 | Sidecar WebSocket 스키마 | ✅ 정의 | 섹션 5.4 |
-| Q16 | pipeline_mode 전환 전략 | ✅ 개요 | 섹션 7.3 |
-| Q17 | ReportingLLM/ObservationService 업데이트 | ✅ 계획 | 섹션 8.1~8.2 |
-
-## 13. 시스템 흐름 (Mermaid)
-
-```mermaid
-flowchart LR
-    Tmpl["Template v2"] -->|links| Pipe["Pipeline Definition"]
-    Pipe --> Runner["Pipeline Runner"]
-    Runner -->|serial/parallel| LLM["LLM Modules"]
-    Runner --> Metric["Metric Modules"]
-    Metric -->|"metrics.*"| PromptVars["LLM Prompts"]
-    Metric -->|"metrics.*"| LiveUI["MyTurn UI"]
-    LLM --> TurnLog[("pipeline_logs")]
-    Metric --> TurnLog
-    TurnLog --> SessionUI["Session Record / Excel"]
-    Runner --> WS["WebSocket Events"]
-    WS --> LiveUI
-    Runner --> Sidecar{"Sidecar Node?<br/>affects_turn_flow=false"}
-    Sidecar -->|output_targets| Channels["WS / TurnLog / Session"]
+    # Relationships
+    versions = relationship("VisualPipelineVersion", back_populates="pipeline", cascade="all, delete-orphan")
 ```
 
-## 14. 사용자 시나리오 예시
+**Design decision: graph_json (single JSONB) vs separate node/edge tables.**  
+We store the entire graph as a single JSONB column rather than normalized node/edge tables. Rationale:
+- React Flow natively serializes/deserializes `{ nodes, edges, viewport }` as JSON. Storing it as-is eliminates impedance mismatch.
+- Pipeline graphs are small (typically 5-30 nodes). The performance benefit of normalization is negligible.
+- Atomic saves: updating the graph is a single row update, not a complex multi-table transaction.
+- The server validates the graph structure (DAG check, required fields) before saving.
+- Querying individual nodes is done in application code after loading the JSON, not via SQL.
 
-### 시나리오 A: 기본 첫 세션 파이프라인 구성
-1. 관리자(콘텐츠 기획자)가 통합 관리 페이지에서 `Evaluator v2`, `Planner v2`, `Conductor v2`, `Director v2` LLM 모듈을 등록하고 버전 히스토리를 작성한다.
-2. `response_delay_calc`, `energy_flow` 등 측정 모듈을 `module_type=metric`으로 생성하고, 필요한 경우 Lab에서 실험 후 “모듈 버전 생성” 버튼으로 저장한다.
-3. 파이프라인 빌더에서 `Evaluator → Planner → Conductor → Director` 순서의 직렬 플로우를 만든 뒤, `energy_flow` 노드를 sidecar로 병렬 연결하고 `output_targets`를 WebSocket+turn log로 설정한다.
-4. 새 템플릿 v2를 만들고 해당 파이프라인을 링크한다. 특정 템플릿만 Planner 모듈 버전을 바꾸고 싶다면 override 슬롯에서 교체한다.
-5. 마이턴 세션을 시작하면 러너가 pipeline_nodes 정의를 따라 각 모듈을 호출하고, sidecar 노드는 실시간 UI에 energy_flow 그래프를 띄운다. 세션 기록 탭에서도 각 모듈 output과 metrics가 동일하게 노출된다.
+#### 3.1.2 `visual_pipeline_versions`
 
-### 시나리오 C: 템플릿별 측정 모듈 조합 변경
-1. Template X는 response_delay + energy_flow 두 지표를 모두 사용하지만, Template Y는 energy_flow만 필요하다.
-2. 통합 관리 페이지에서 Template Y의 파이프라인 override 슬롯을 열고, Evaluator 노드의 “참조 측정 모듈” 목록에서 response_delay를 제외한다.
-3. energy_flow sidecar 노드는 Template Y에서도 동일하게 동작하지만, response_delay는 metrics에 기록되지 않으므로 LLM 프롬프트와 UI에는 노출되지 않는다.
+Immutable snapshots for version history.
 
-### 시나리오 D: 병렬 Planner + 합치기 노드 사용
-1. 특정 학습 템플릿에서 Planner를 두 개의 서로 다른 LLM 모듈(A/B)로 병렬 실행해 다양한 전략을 확인하고 싶다.
-2. 파이프라인 노드에서 `Planner_A`와 `Planner_B`를 병렬로 정의하고, 다음 단계에 `PlannerMerge` LLM 모듈을 추가한다.
-3. `PlannerMerge`는 두 planner의 output 배열을 받아 “어떤 경로를 채택할지” 결정하고, 결과를 Conductor로 전달한다.
-4. 세션 기록 탭에서는 Planner A/B의 output과 Merge 결과가 모두 표시되므로, 어느 모듈이 기여했는지 추적 가능하다.
+```python
+class VisualPipelineVersion(Base):
+    """Immutable snapshot of a pipeline version."""
+    __tablename__ = "visual_pipeline_versions"
 
-### 시나리오 E: 에너지 흐름만 UI에 노출 (세션 흐름 영향 X)
-1. Template Z에서 energy_flow 분석이 필요하지만, 메인 턴 로직과는 별개로 UI에만 띄우고 싶다.
-2. energy_flow 노드를 `affects_turn_flow = false`, `output_targets = { WebSocket }`로 설정한다.
-3. 사용자 발화가 들어오면 메인 파이프라인은 즉시 다음 LLM으로 진행하고, energy_flow는 백그라운드에서 계산해 WebSocket으로만 push한다. turn log/세션 기록에는 남지 않는다.
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("visual_pipelines.id", ondelete="CASCADE"), nullable=False)
+    version = Column(Integer, nullable=False)
+    graph_json = Column(JSONB, nullable=False)
+    change_reason = Column(Text, nullable=True)
+    timeout_ms = Column(Integer, nullable=False, default=15000)
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-## 15. 보안 및 권한
-- 모듈/파이프라인 CRUD는 기존 어드민 인증/인가 체계(계정 기반)를 따름.
-- `created_by` UUID는 현재 로그인한 admin 계정 ID.
-- 프롬프트 내용은 민감 데이터로 취급: 모듈 버전의 `prompt_text`는 API 조회 시 admin 권한 필요.
-- 기존 `is_public_to_tester` 접근 제어 체계(`conversation_templates`)와의 관계: 파이프라인/모듈 자체에는 접근 제어 없이 템플릿 단위로만 제어. 모듈은 여러 템플릿에서 공유 가능하므로 별도 접근 제어 불필요.
-- **모듈 삭제 보호**: 파이프라인에서 참조 중인 모듈은 FK RESTRICT로 삭제 방지. 비활성화는 허용하되, 비활성화 시 해당 모듈을 사용하는 파이프라인 목록을 경고로 표시.
+    pipeline = relationship("VisualPipeline", back_populates="versions")
+```
 
-## 16. 성능 고려사항
+#### 3.1.3 `template_visual_pipeline_links`
 
-### 16.1 파이프라인 실행 지연
-- 현재 v0.2 직렬 파이프라인(Evaluator → Planner → Conductor)은 3개 LLM 호출이 순차 실행되므로 총 지연 = Σ(각 모듈 duration).
-- 새 파이프라인에서 병렬 노드를 활용하면 지연 = max(병렬 그룹 duration). 단, 병렬 LLM 호출 시 API rate limit 고려.
-- Sidecar 노드는 메인 플로우와 독립 실행이므로 사용자 체감 지연에 영향 없음.
+Links conversation templates to visual pipelines. Replaces the need for `pipeline_mode` column additions.
 
-### 16.2 `session.variant` 크기
-- 현재 `_pipeline_result`, `_pipeline_state`, `_question_progress` 등이 `session.variant` JSON에 축적됨.
-- 파이프라인 노드가 증가하면 variant 크기가 커질 수 있음. 단일 턴 결과만 유지하고 히스토리는 `pipeline_logs`에서 조회하는 방식으로 제한.
+```python
+class TemplateVisualPipelineLink(Base):
+    """Links a conversation template to a visual pipeline."""
+    __tablename__ = "template_visual_pipeline_links"
 
-### 16.3 DB 인덱스
-- 신규 테이블 인덱스: `pipeline_nodes(pipeline_id)`, `pipeline_nodes(module_id)`, `learning_module_versions(module_id, is_active)`.
-- `pipeline_logs`에 `node_key` 필드 추가 시 인덱스도 함께 생성: `idx_pipeline_logs_node_key (node_key, session_id)`.
-- `template_pipeline_links(template_id)` — UNIQUE 제약 활용.
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    template_id = Column(UUID(as_uuid=True), ForeignKey("conversation_templates.id", ondelete="CASCADE"), nullable=False, unique=True)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("visual_pipelines.id", ondelete="RESTRICT"), nullable=False)
+    pipeline_version = Column(Integer, nullable=True)  # NULL = use latest published
+    overrides = Column(JSONB, nullable=True)  # Per-template node config overrides
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+```
 
-### 16.4 LLM 모델 기본값 관리
-- 현재 개별 서비스에서 기본 모델을 하드코딩 (예: `"gemini-2.0-flash"`, `"gemini-2.5-flash"`). 새 시스템에서는 `learning_modules.default_llm_model`로 통합하되, 기존 어드민 설정 페이지의 모델 입력/변경 기능과 중복되지 않도록 마이그레이션 시점에 정리.
+#### 3.1.4 `pipeline_execution_logs`
 
-### 16.5 세션 스냅샷 (중복)
-- §9.2에서 설명한 snapshot 전략을 성능/안정성 측면에서도 고려. 세션마다 snapshot JSON을 캐시하여 반복 직렬화를 줄인다.
+Per-node execution logs for visual pipeline runs.
 
-### 16.6 WebSocket 부하
-- 새 이벤트 타입이 늘어나므로 이벤트 필터링/샘플링 정책을 도입. 필요 시 관리자 UI에서 노드별 WebSocket 출력 비활성화 가능.
+```python
+class PipelineExecutionLog(Base):
+    """Log entry for a single node execution within a visual pipeline run."""
+    __tablename__ = "pipeline_execution_logs"
 
-## 17. 기존 서비스들과의 관계
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id = Column(String(36), nullable=False, index=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("conversation_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    pipeline_id = Column(UUID(as_uuid=True), nullable=False)
+    pipeline_version = Column(Integer, nullable=False)
+    turn_index = Column(Integer, nullable=False)
+    node_id = Column(String(100), nullable=False)  # React Flow node ID
+    node_type = Column(String(50), nullable=False)  # "llm", "code", "router", etc.
+    node_label = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False)  # "running", "completed", "failed", "skipped"
+    input_json = Column(JSONB, nullable=True)
+    output_json = Column(JSONB, nullable=True)
+    duration_ms = Column(Float, nullable=True)
+    model_name = Column(String(100), nullable=True)
+    prompt_used = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-### 17.1 run0_service.py
-- `run0_service.py`는 과거 파이프라인 실험용 서비스로, 현재도 일부 테스트 경로에서 참조 가능. 새 시스템에서 역할을 명확히 해야 함:
-  - **옵션 A**: run0_service를 새 파이프라인 러너의 thin wrapper로 대체하여, 기존 자동화 스크립트가 새 파이프라인을 호출하도록 업데이트.
-  - **옵션 B**: run0_service를 완전히 폐기하고, 동일 기능을 학습 모듈 관리 페이지의 "테스트 실행" 버튼으로 이전.
-- 결정 전까지 run0_service는 유지하되, 새 러너와 기능 중복 여부를 조사.
+    session = relationship("ConversationSession")
+```
 
-### 17.2 Streaming STT/TTS 연동
-- `streaming_stt_service.py`는 실시간 음성 → 텍스트 전환을 제공. 현재는 최종 transcript가 확정된 뒤 파이프라인을 실행.
-- 새 파이프라인에서도 동일 타이밍을 유지하되, 추후 확장을 위해 다음 사항을 문서화:
-  - 부분 transcript가 확정되면 evaluator sidecar 노드를 실행해 빠른 피드백 제공 가능.
-  - STT 스트림 종료 이벤트가 도착하면 파이프라인 러너를 트리거(현재 `t0_user_end` 측정도 유지).
-- TTS 스트리밍은 Conductor output을 기반으로 하므로, `speaker_scripts` 구조에 audio_config를 포함시키면 즉시 재생 가능.
+### 3.2 Graph JSON Schema
 
-### 16.5 동시성 안전 — 버전 스냅샷
-- 모듈 버전을 활성화하는 **도중** 실행 중인 세션에 미치는 영향을 방지해야 함.
-- **세션 시작 시 스냅샷**: 세션이 시작될 때 파이프라인/모듈 버전 정보를 `session.variant["_pipeline_snapshot"]`에 스냅샷으로 저장.
-- 세션 도중 모듈 활성 버전이 변경되어도, 해당 세션은 스냅샷 기준으로 실행 → 세션 내 일관성 보장.
-- 새 세션부터 변경된 버전이 적용됨.
-- `pipeline_logs`에는 실제 실행된 `module_version`이 기록되므로 추적 가능.
+The `graph_json` column stores React Flow-compatible data plus custom node configurations:
 
-### 16.6 WebSocket 이벤트 스키마
-Sidecar 노드(`affects_turn_flow=false`)가 WebSocket으로 결과를 전송할 때의 이벤트 스키마:
-```json
-{
-    "type": "sidecar_result",
-    "node_key": "energy_flow_analyzer",
-    "module_name": "Energy Flow",
-    "data": { ... },
-    "session_id": "uuid",
-    "turn_index": 5
+```typescript
+interface PipelineGraph {
+  nodes: PipelineNode[];
+  edges: PipelineEdge[];
+  viewport: { x: number; y: number; zoom: number };
+}
+
+interface PipelineNode {
+  id: string;                    // Unique within pipeline (e.g., "evaluator-1")
+  type: NodeType;                // "start" | "end" | "llm" | "code" | "router" | "parallel" | "merge" | "ui_event" | "delay"
+  position: { x: number; y: number };
+  data: NodeData;                // Type-specific configuration (see Section 4)
+}
+
+interface PipelineEdge {
+  id: string;
+  source: string;               // Source node ID
+  target: string;               // Target node ID
+  sourceHandle?: string;        // For nodes with multiple outputs (e.g., router branches)
+  targetHandle?: string;
+  label?: string;               // Edge label (e.g., condition name for router outputs)
+  animated?: boolean;
 }
 ```
-- `type`: 프론트엔드에서 핸들러를 매핑하는 이벤트 타입. 기존 `"ai_response"`, `"pipeline_status"` 등과 구분.
-- `node_key`: 프론트엔드에서 어떤 UI 컴포넌트에 데이터를 전달할지 결정하는 키.
-- `data`: 모듈 출력 원문 (JSON). 특정 구조를 강제하지 않음.
-- 프론트엔드는 `node_key` 기반으로 **동적 렌더링**: 알려진 `node_key`(예: `energy_flow_analyzer`)는 전용 컴포넌트로, 미지의 `node_key`는 JSON 뷰어로 표시.
 
-### 16.7 스트리밍과의 상호작용
-- 현재 `streaming_stt_service.py`가 실시간 음성 인식을 제공. 새 파이프라인에서:
-  - 스트리밍 STT 완료 후 최종 transcript가 확정되면 파이프라인 실행 시작 (현행과 동일).
-  - 부분 transcript로 조기 평가를 시작하는 최적화는 향후 고려사항으로 분류.
-  - LLM 응답의 스트리밍 출력(token-by-token)은 현재 미지원이며, 새 파이프라인에서도 동일하게 전체 응답 완료 후 전달.
+### 3.3 Changes to Existing Tables
+
+**`conversation_templates`**: Add a new value to `pipeline_mode`: `"visual"`. No new columns needed -- the `template_visual_pipeline_links` table handles the association.
+
+**`pipeline_logs`**: No changes. The existing table continues to serve v0.2 logs. New visual pipeline logs go to `pipeline_execution_logs`.
+
+---
+
+## 4. Node Type System
+
+Every node has a `type` field and a `data` object containing type-specific configuration. Below are all node types with their complete schemas.
+
+### 4.1 Start Node
+
+Fixed entry point. Every pipeline has exactly one. Receives the user turn context.
+
+```typescript
+interface StartNodeData {
+  label: string;  // Default: "User Input"
+}
+
+// Output: PipelineContext (see Section 5.2)
+// - transcript: string
+// - session_id: string
+// - turn_index: number
+// - history: string
+// - topic: string
+// - scene_context: string
+// - participants: ParticipantInfo[]
+// - variant: Record<string, any>
+// - measured_wpm: number | null
+// - response_delay_sec: number | null
+```
+
+### 4.2 End Node
+
+Fixed exit point. Every pipeline has exactly one. Collects the final pipeline result.
+
+```typescript
+interface EndNodeData {
+  label: string;  // Default: "Pipeline Output"
+  // Defines which input fields map to the output contract
+  output_mapping: {
+    feedback_text: string;         // Expression like "{{conductor.feedback_text}}"
+    feedback_instruction: string;
+    level: string;
+    level_instruction: string;
+    corrections: string;
+    better_expressions: string;
+    speaker_scripts: string;
+    user_emotion: string;
+    question_progress: string;
+    energy_flow?: string;
+    engine_trace?: string;
+  };
+}
+```
+
+The End node enforces the **output contract** required by `process_ai_turn()`. The `output_mapping` uses template expressions referencing upstream node outputs.
+
+### 4.3 LLM Node
+
+Calls an LLM with a configured prompt. The primary workhorse node.
+
+```typescript
+interface LLMNodeData {
+  label: string;           // e.g., "Evaluator", "Planner", "Conductor"
+  model: string;           // e.g., "gemini-2.5-flash", "gemini-2.0-flash"
+  prompt: string;          // System/instruction prompt with {{variable}} placeholders
+  temperature: number;     // Default: 0
+  max_output_tokens?: number;
+  response_format?: "text" | "json";  // "json" enables structured output
+  output_schema?: Record<string, any>;  // JSON Schema for structured output validation
+  retry_count: number;     // Default: 2
+  timeout_ms: number;      // Default: 10000
+  // Input variable bindings
+  input_variables: {
+    [varName: string]: string;  // e.g., { "transcript": "{{start.transcript}}", "history": "{{start.history}}" }
+  };
+}
+
+// Output: { result: string | object, input_tokens: number, output_tokens: number, model: string }
+```
+
+**Prompt variable syntax**: `{{node_id.field_path}}` where `node_id` references an upstream node's output. Special prefix `start.*` references the initial context.
+
+### 4.4 Code Node
+
+Executes a Python function for data transformation, computation, or metric calculation.
+
+```typescript
+interface CodeNodeData {
+  label: string;           // e.g., "WPM Calculator", "Score Aggregator"
+  code: string;            // Python code string (executed in sandbox)
+  // The function signature must be:
+  // async def execute(inputs: dict) -> dict:
+  //     ...
+  //     return {"result": ...}
+  input_variables: {
+    [varName: string]: string;
+  };
+  timeout_ms: number;      // Default: 5000
+}
+```
+
+Code nodes execute in a restricted scope with access to `math`, `json`, `re`, `datetime`, `statistics` modules. No filesystem or network access.
+
+### 4.5 Router Node (Conditional)
+
+Routes execution to one of multiple output branches based on conditions.
+
+```typescript
+interface RouterNodeData {
+  label: string;           // e.g., "Score Router"
+  // The variable to evaluate
+  input_variable: string;  // e.g., "{{evaluator.result.overall_score}}"
+  // Routing rules evaluated in order; first match wins
+  routes: Array<{
+    id: string;            // Matches sourceHandle on outgoing edges
+    label: string;         // e.g., "Low Score", "High Score"
+    condition: {
+      operator: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains" | "in" | "regex";
+      value: string | number | boolean | string[];
+    };
+  }>;
+  // Default route if no conditions match
+  default_route: string;   // Route ID
+}
+```
+
+The router has multiple output handles (one per route + default). Only one branch executes per run.
+
+### 4.6 Parallel Node (Fork)
+
+Splits execution into multiple parallel branches that run concurrently.
+
+```typescript
+interface ParallelNodeData {
+  label: string;           // e.g., "Parallel Analysis"
+  // No additional config needed -- parallel branches are defined
+  // by the edges connecting from this node's output handles
+  branches: Array<{
+    id: string;            // Handle ID
+    label: string;         // e.g., "Main Flow", "UI Sidecar"
+    affects_turn_flow: boolean;  // false = sidecar (doesn't block End node)
+  }>;
+}
+```
+
+### 4.7 Merge Node (Join)
+
+Waits for all incoming parallel branches to complete, then merges their outputs.
+
+```typescript
+interface MergeNodeData {
+  label: string;           // e.g., "Merge Results"
+  merge_strategy: "all" | "first" | "custom";
+  // "all": Collects all branch outputs into a dict keyed by source node ID
+  // "first": Takes the first branch to complete
+  // "custom": Uses a custom merge expression
+  custom_merge_expression?: string;  // Python expression for "custom" strategy
+  timeout_ms: number;      // Max wait for slowest branch. Default: 12000
+  // For sidecar branches (affects_turn_flow=false):
+  // If a sidecar hasn't completed by timeout, proceed without it
+  skip_sidecar_on_timeout: boolean;  // Default: true
+}
+```
+
+### 4.8 UI Event Node
+
+Emits a WebSocket event to the mobile client during pipeline execution. Does not transform data.
+
+```typescript
+interface UIEventNodeData {
+  label: string;           // e.g., "Show Loading", "Update Score Display"
+  event_type: string;      // Custom event name: "pipeline:ui_update", "pipeline:metric", etc.
+  // Payload template with variable references
+  payload_template: Record<string, string>;  // e.g., { "score": "{{evaluator.result.overall_score}}" }
+  // Target
+  target: "session" | "admin";  // "session" = mobile client, "admin" = admin dashboard
+}
+```
+
+### 4.9 Delay Node
+
+Introduces an intentional delay (e.g., waiting for response_delay_sec to pass).
+
+```typescript
+interface DelayNodeData {
+  label: string;
+  delay_ms: number | string;  // Fixed ms or "{{start.response_delay_sec * 1000}}"
+}
+```
+
+### 4.10 Node Type Registry (Python)
+
+```python
+# app/services/pipeline_runner/node_registry.py
+
+from enum import Enum
+
+class NodeType(str, Enum):
+    START = "start"
+    END = "end"
+    LLM = "llm"
+    CODE = "code"
+    ROUTER = "router"
+    PARALLEL = "parallel"
+    MERGE = "merge"
+    UI_EVENT = "ui_event"
+    DELAY = "delay"
+```
+
+---
+
+## 5. Pipeline Runner Engine
+
+### 5.1 Architecture
+
+The runner is a pure async Python service that:
+1. Loads and validates a pipeline graph
+2. Topologically sorts nodes
+3. Executes nodes respecting dependencies (serial), concurrency (parallel), and routing (conditional)
+4. Passes a shared context object between nodes
+5. Emits WebSocket events at node boundaries
+6. Returns the final pipeline result
+
+```
+apps/server/app/services/pipeline_runner/
+  __init__.py
+  runner.py              # Main PipelineRunner class
+  context.py             # PipelineContext dataclass
+  dag.py                 # DAG validation and topological sort
+  node_executors/
+    __init__.py
+    base.py              # BaseNodeExecutor abstract class
+    llm_executor.py      # LLM node execution
+    code_executor.py     # Code node execution
+    router_executor.py   # Conditional routing
+    parallel_executor.py # Fork/join logic
+    merge_executor.py    # Merge logic
+    ui_event_executor.py # WebSocket emission
+    delay_executor.py    # Delay execution
+  variable_resolver.py   # {{variable}} template resolution
+  output_contract.py     # Validates End node output against contract
+```
+
+### 5.2 PipelineContext
+
+```python
+# app/services/pipeline_runner/context.py
+
+from dataclasses import dataclass, field
+from typing import Any, Optional
+from uuid import UUID
+
+@dataclass
+class PipelineContext:
+    """Runtime context passed through the pipeline."""
+    # Immutable inputs (set once at start)
+    trace_id: str
+    session_id: UUID
+    turn_index: int
+    transcript: str
+    history: str
+    topic: Optional[str]
+    scene_context: Optional[str]
+    participants: list[dict]
+    variant: dict
+    measured_wpm: Optional[float]
+    response_delay_sec: Optional[float]
+
+    # Mutable state (accumulated during execution)
+    node_outputs: dict[str, Any] = field(default_factory=dict)
+    # Maps node_id -> output dict
+
+    # Execution metadata
+    node_statuses: dict[str, str] = field(default_factory=dict)
+    # Maps node_id -> "pending" | "running" | "completed" | "failed" | "skipped"
+    node_durations: dict[str, float] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+    logs: list[dict] = field(default_factory=list)
+
+    def get_node_output(self, node_id: str, field_path: str = "") -> Any:
+        """Resolve a node output by ID and optional dot-separated field path."""
+        output = self.node_outputs.get(node_id)
+        if output is None:
+            return None
+        if not field_path:
+            return output
+        for key in field_path.split("."):
+            if isinstance(output, dict):
+                output = output.get(key)
+            else:
+                return None
+        return output
+```
+
+### 5.3 DAG Execution Algorithm
+
+```python
+# app/services/pipeline_runner/runner.py
+
+import asyncio
+import time
+import uuid
+from typing import Any
+
+from app.services.pipeline_runner.context import PipelineContext
+from app.services.pipeline_runner.dag import validate_dag, topological_layers
+from app.services.pipeline_runner.variable_resolver import resolve_variables
+from app.services.conversation.signaling import manager
+
+
+class PipelineRunner:
+    """Executes a visual pipeline as an async DAG."""
+
+    def __init__(self, db, pipeline_graph: dict, pipeline_id: str, pipeline_version: int):
+        self.db = db
+        self.graph = pipeline_graph
+        self.pipeline_id = pipeline_id
+        self.pipeline_version = pipeline_version
+        self.nodes = {n["id"]: n for n in pipeline_graph["nodes"]}
+        self.edges = pipeline_graph["edges"]
+        self._build_adjacency()
+
+    def _build_adjacency(self):
+        """Build adjacency lists and reverse map from edges."""
+        self.successors: dict[str, list[str]] = {}  # node_id -> [target_ids]
+        self.predecessors: dict[str, list[str]] = {}  # node_id -> [source_ids]
+        self.edge_map: dict[str, dict] = {}  # edge_id -> edge_data
+
+        for node_id in self.nodes:
+            self.successors[node_id] = []
+            self.predecessors[node_id] = []
+
+        for edge in self.edges:
+            src, tgt = edge["source"], edge["target"]
+            self.successors.setdefault(src, []).append(tgt)
+            self.predecessors.setdefault(tgt, []).append(src)
+            self.edge_map[edge["id"]] = edge
+
+    async def execute(self, context: PipelineContext) -> dict:
+        """Execute the pipeline and return the final result."""
+        # Validate DAG
+        validate_dag(self.nodes, self.edges)
+
+        # Find start and end nodes
+        start_node = next(n for n in self.graph["nodes"] if n["type"] == "start")
+        end_node = next(n for n in self.graph["nodes"] if n["type"] == "end")
+
+        # Set start node output to context inputs
+        context.node_outputs[start_node["id"]] = {
+            "transcript": context.transcript,
+            "history": context.history,
+            "topic": context.topic,
+            "scene_context": context.scene_context,
+            "participants": context.participants,
+            "variant": context.variant,
+            "measured_wpm": context.measured_wpm,
+            "response_delay_sec": context.response_delay_sec,
+            "session_id": str(context.session_id),
+            "turn_index": context.turn_index,
+        }
+        context.node_statuses[start_node["id"]] = "completed"
+
+        # Emit pipeline start event
+        await self._emit_ws_event(context, "pipeline:started", {
+            "trace_id": context.trace_id,
+            "pipeline_id": self.pipeline_id,
+            "node_count": len(self.nodes),
+        })
+
+        # Execute DAG using ready-set algorithm
+        completed = {start_node["id"]}
+        active_routes: set[str] | None = None  # None means all routes active
+
+        while True:
+            # Find ready nodes: all predecessors completed and not yet processed
+            ready = []
+            for node_id, node in self.nodes.items():
+                if node_id in completed:
+                    continue
+                if context.node_statuses.get(node_id) == "skipped":
+                    continue
+                preds = self.predecessors.get(node_id, [])
+                if all(
+                    p in completed or context.node_statuses.get(p) == "skipped"
+                    for p in preds
+                ):
+                    ready.append(node_id)
+
+            if not ready:
+                break
+
+            # Execute ready nodes concurrently
+            tasks = [self._execute_node(node_id, context) for node_id in ready]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            for node_id in ready:
+                if context.node_statuses.get(node_id) in ("completed", "failed"):
+                    completed.add(node_id)
+
+        # Extract final result from End node
+        return self._build_final_result(context, end_node)
+
+    async def _execute_node(self, node_id: str, context: PipelineContext):
+        """Execute a single node."""
+        node = self.nodes[node_id]
+        node_type = node["type"]
+        node_data = node.get("data", {})
+
+        context.node_statuses[node_id] = "running"
+        start_time = time.time()
+
+        # Emit node start event
+        await self._emit_ws_event(context, "pipeline:node_started", {
+            "trace_id": context.trace_id,
+            "node_id": node_id,
+            "node_type": node_type,
+            "node_label": node_data.get("label", node_id),
+        })
+
+        try:
+            # Dispatch to appropriate executor
+            executor = self._get_executor(node_type)
+            result = await asyncio.wait_for(
+                executor.execute(node_id, node_data, context, self),
+                timeout=node_data.get("timeout_ms", 10000) / 1000
+            )
+
+            context.node_outputs[node_id] = result
+            context.node_statuses[node_id] = "completed"
+            duration_ms = (time.time() - start_time) * 1000
+            context.node_durations[node_id] = duration_ms
+
+            # Log to DB
+            await self._log_node_execution(context, node_id, node, result, duration_ms)
+
+            # Emit node completed event
+            await self._emit_ws_event(context, "pipeline:node_completed", {
+                "trace_id": context.trace_id,
+                "node_id": node_id,
+                "node_type": node_type,
+                "node_label": node_data.get("label", node_id),
+                "duration_ms": round(duration_ms, 1),
+                "output_preview": str(result)[:200] if result else None,
+            })
+
+        except asyncio.TimeoutError:
+            context.node_statuses[node_id] = "failed"
+            context.errors[node_id] = "Timeout"
+            await self._emit_ws_event(context, "pipeline:node_failed", {
+                "node_id": node_id, "error": "Timeout"
+            })
+        except Exception as e:
+            context.node_statuses[node_id] = "failed"
+            context.errors[node_id] = str(e)
+            await self._emit_ws_event(context, "pipeline:node_failed", {
+                "node_id": node_id, "error": str(e)
+            })
+
+    async def _emit_ws_event(self, context: PipelineContext, event_type: str, payload: dict):
+        """Emit WebSocket event to both session client and admin monitors."""
+        message = {"type": event_type, **payload}
+        # To mobile client
+        await manager.send_message(str(context.session_id), message)
+        # To admin monitors (separate channel keyed by "admin:<session_id>")
+        await manager.send_message(f"admin:{context.session_id}", message)
+```
+
+### 5.4 Variable Resolution
+
+```python
+# app/services/pipeline_runner/variable_resolver.py
+
+import re
+from typing import Any
+
+VARIABLE_PATTERN = re.compile(r"\{\{([^}]+)\}\}")
+
+def resolve_template(template: str, context: "PipelineContext") -> str:
+    """Resolve {{node_id.field.path}} references in a template string."""
+    def replacer(match):
+        path = match.group(1).strip()
+        parts = path.split(".", 1)
+        node_id = parts[0]
+        field_path = parts[1] if len(parts) > 1 else ""
+
+        if node_id == "start":
+            # Special: references the start node's output
+            start_id = _find_start_node_id(context)
+            value = context.get_node_output(start_id, field_path)
+        else:
+            value = context.get_node_output(node_id, field_path)
+
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list)):
+            import json
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    return VARIABLE_PATTERN.sub(replacer, template)
+
+
+def resolve_variables(variables: dict[str, str], context: "PipelineContext") -> dict[str, Any]:
+    """Resolve a dict of variable bindings."""
+    resolved = {}
+    for key, template in variables.items():
+        resolved[key] = resolve_template(template, context)
+    return resolved
+```
+
+### 5.5 Output Contract Validation
+
+```python
+# app/services/pipeline_runner/output_contract.py
+
+REQUIRED_OUTPUT_FIELDS = {
+    "feedback_text": str,
+    "feedback_instruction": str,
+    "level": int,
+    "level_instruction": str,
+    "corrections": list,
+    "better_expressions": list,
+    "speaker_scripts": dict,
+    "user_emotion": str,
+}
+
+OPTIONAL_OUTPUT_FIELDS = {
+    "question_progress": dict,
+    "energy_flow": dict,
+    "engine_trace": dict,
+}
+
+def validate_output_contract(result: dict) -> tuple[bool, list[str]]:
+    """Validate that pipeline output satisfies the contract for process_ai_turn()."""
+    errors = []
+    for field, expected_type in REQUIRED_OUTPUT_FIELDS.items():
+        if field not in result:
+            errors.append(f"Missing required field: {field}")
+        elif not isinstance(result[field], expected_type):
+            errors.append(f"Field '{field}' expected {expected_type.__name__}, got {type(result[field]).__name__}")
+    return (len(errors) == 0, errors)
+```
+
+### 5.6 Error Handling Strategy
+
+| Scenario | Behavior |
+|---|---|
+| LLM node fails (network/API error) | Retry up to `retry_count` times with 1s backoff. On final failure, mark node as failed. |
+| LLM node timeout | Cancel the call, mark as failed, emit `pipeline:node_failed` event. |
+| Sidecar branch fails (`affects_turn_flow=false`) | Log failure, skip the merge for this branch, continue main flow. |
+| Main flow node fails after retries | Abort pipeline, return fallback response ("I had a brief issue, let me try again"), set session error flag. |
+| Pipeline global timeout | Cancel all running nodes, assemble partial result from completed nodes, return best-effort response. |
+| Router: no matching condition | Use `default_route`. If no default, fail the node. |
+| Merge timeout | Proceed with branches that completed; skip timed-out branches. |
+
+---
+
+## 6. Pipeline-Session Integration
+
+### 6.1 Template Pipeline Mode Resolution
+
+In `my_turn_service.py`, the `process_user_turn()` method currently checks `pipeline_mode`:
+
+```python
+# Current code (line ~1189):
+if pipeline_mode == "v0.2":
+    # hardcoded Evaluator -> Planner -> Conductor
+```
+
+The new integration adds a third branch:
+
+```python
+# New code:
+pipeline_mode = getattr(session.template, 'pipeline_mode', 'basic') or 'basic'
+
+if pipeline_mode == "visual":
+    # Load linked visual pipeline
+    from app.services.pipeline_runner.runner import PipelineRunner
+    link = await _get_template_pipeline_link(self.db, session.template.id)
+    if not link:
+        raise ValueError("Template has visual pipeline mode but no linked pipeline")
+
+    pipeline = await _load_pipeline_graph(self.db, link.pipeline_id, link.pipeline_version)
+    runner = PipelineRunner(self.db, pipeline.graph_json, str(pipeline.id), pipeline.version)
+
+    context = PipelineContext(
+        trace_id=str(uuid.uuid4()),
+        session_id=session.id,
+        turn_index=session.current_turn_index,
+        transcript=transcript,
+        history=history,
+        topic=session.template.topic,
+        scene_context=effective_scene_context,
+        participants=participant_summaries,
+        variant=variant,
+        measured_wpm=measured_wpm,
+        response_delay_sec=response_delay_sec,
+    )
+
+    pipeline_result = await runner.execute(context)
+    # Store result in variant for process_ai_turn() to consume
+    variant["_pipeline_result"] = pipeline_result
+    session.variant = json.dumps(variant)
+    await self.db.commit()
+
+elif pipeline_mode == "v0.2":
+    # existing hardcoded pipeline (unchanged)
+    ...
+else:
+    # basic mode (ScenarioDirector) (unchanged)
+    ...
+```
+
+### 6.2 Output Contract Compatibility
+
+The visual pipeline's End node must produce an output matching the existing `_pipeline_result` structure consumed by `process_ai_turn()`:
+
+```python
+_pipeline_result = {
+    "feedback_text": str,            # Moderator feedback for user
+    "feedback_instruction": str,     # How to deliver feedback (tone/style)
+    "level": int,                    # Current difficulty level (1-10)
+    "level_instruction": str,        # Instructions for AI at this level
+    "corrections": list[str],        # Grammar/expression corrections
+    "better_expressions": list[str], # Suggested improvements
+    "speaker_scripts": {             # Pre-generated scripts per AI participant
+        "<speaker_name>": {
+            "text": str,
+            "instruction": str,
+        }
+    },
+    "user_emotion": str,             # Detected emotion
+    "question_progress": dict,       # Question tracking state
+    "energy_flow": dict | None,      # Energy flow visualization data
+    "engine_trace": dict | None,     # Debug/trace data
+}
+```
+
+This contract is enforced by the End node's `output_mapping` configuration and validated at save-time and runtime.
+
+### 6.3 Variant State Management
+
+The runner writes execution results to `session.variant["_pipeline_result"]` just like the current v0.2 code does. This ensures `process_ai_turn()` works identically regardless of pipeline mode. Session-persistent state (like `_pipeline_state`, `_question_progress`) is managed through the context object and flushed to variant after execution.
+
+---
+
+## 7. Admin UI: Visual Pipeline Editor
+
+### 7.1 Library Selection
+
+- **React Flow v12** (`@xyflow/react`): The core node-based editor. React 19 compatible, SSR-safe with dynamic import, extensive customization API. Install as `@xyflow/react`.
+- **Zustand**: Already in the project. Used for pipeline editor state management.
+- **Monaco Editor** (`@monaco-editor/react`): Already in the project. Used for code node editing and prompt editing.
+- **shadcn/ui**: Already in the project. Used for all configuration panels.
+
+### 7.2 Page Structure
+
+```
+apps/admin/src/
+  app/(dashboard)/ai-lab/
+    pipeline-editor/
+      [id]/
+        page.tsx              # Route: /ai-lab/pipeline-editor/:id
+        edit/
+          page.tsx            # Route: /ai-lab/pipeline-editor/:id/edit (alias)
+      new/
+        page.tsx              # Route: /ai-lab/pipeline-editor/new
+    pipelines/
+      page.tsx                # Existing: pipeline list (updated to show visual pipelines)
+```
+
+### 7.3 FSD Module Structure
+
+```
+(fsd)/features/pipeline-editor/
+  model/
+    types.ts                  # TypeScript types for all node types, graph, etc.
+    usePipelineEditor.ts      # Zustand store for editor state
+    usePipelineExecution.ts   # WebSocket hook for live execution monitoring
+    usePipelineMutations.ts   # TanStack Query mutations (save, publish, etc.)
+    constants.ts              # Node type registry, default configs
+  ui/
+    PipelineCanvas.tsx         # Main React Flow canvas wrapper
+    NodePalette.tsx            # Draggable node palette sidebar
+    NodeConfigPanel.tsx        # Right sidebar: node configuration form
+    ExecutionOverlay.tsx       # Overlay showing live execution state on nodes
+    PipelineToolbar.tsx        # Top toolbar: save, publish, version, run test
+    nodes/                     # Custom React Flow node components
+      StartNode.tsx
+      EndNode.tsx
+      LLMNode.tsx
+      CodeNode.tsx
+      RouterNode.tsx
+      ParallelNode.tsx
+      MergeNode.tsx
+      UIEventNode.tsx
+      DelayNode.tsx
+    edges/
+      AnimatedEdge.tsx         # Custom edge with data flow animation
+    panels/
+      LLMConfigPanel.tsx       # Config form for LLM nodes
+      CodeConfigPanel.tsx      # Config form with Monaco editor
+      RouterConfigPanel.tsx    # Config form for router conditions
+      ParallelConfigPanel.tsx  # Config form for parallel branches
+      MergeConfigPanel.tsx     # Config form for merge strategy
+      UIEventConfigPanel.tsx   # Config form for UI events
+      EndConfigPanel.tsx       # Config form for output mapping
+  api/
+    pipelineEditorApi.ts       # API client for visual pipeline CRUD
+  index.ts                     # Barrel exports
+```
+
+### 7.4 Editor State (Zustand)
+
+```typescript
+// (fsd)/features/pipeline-editor/model/usePipelineEditor.ts
+
+import { create } from 'zustand';
+import { type Node, type Edge, applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
+
+interface PipelineEditorState {
+  // Pipeline metadata
+  pipelineId: string | null;
+  pipelineName: string;
+  pipelineDescription: string;
+
+  // React Flow state
+  nodes: Node[];
+  edges: Edge[];
+  viewport: { x: number; y: number; zoom: number };
+
+  // Selection
+  selectedNodeId: string | null;
+  selectedEdgeId: string | null;
+
+  // Execution monitoring
+  isExecuting: boolean;
+  executionTraceId: string | null;
+  nodeStatuses: Record<string, 'pending' | 'running' | 'completed' | 'failed' | 'skipped'>;
+
+  // Dirty tracking
+  isDirty: boolean;
+  lastSavedAt: string | null;
+
+  // Actions
+  setNodes: (nodes: Node[]) => void;
+  setEdges: (edges: Edge[]) => void;
+  onNodesChange: (changes: any) => void;
+  onEdgesChange: (changes: any) => void;
+  onConnect: (connection: any) => void;
+  addNode: (type: string, position: { x: number; y: number }) => void;
+  updateNodeData: (nodeId: string, data: Partial<any>) => void;
+  removeNode: (nodeId: string) => void;
+  selectNode: (nodeId: string | null) => void;
+  setExecutionState: (traceId: string, statuses: Record<string, string>) => void;
+  updateNodeStatus: (nodeId: string, status: string) => void;
+  loadPipeline: (pipeline: any) => void;
+  reset: () => void;
+}
+
+export const usePipelineEditor = create<PipelineEditorState>((set, get) => ({
+  // ... implementation
+}));
+```
+
+### 7.5 Custom Node Component Example
+
+```tsx
+// (fsd)/features/pipeline-editor/ui/nodes/LLMNode.tsx
+
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Card } from '@/shared/ui';
+import { Brain } from 'lucide-react';
+
+export const LLMNode = ({ data, selected, id }: NodeProps) => {
+  const nodeStatus = usePipelineEditor(s => s.nodeStatuses[id]);
+
+  const statusColor = {
+    running: 'border-yellow-500 animate-pulse',
+    completed: 'border-green-500',
+    failed: 'border-red-500',
+    pending: 'border-border',
+  }[nodeStatus || 'pending'];
+
+  return (
+    <>
+      <Handle type="target" position={Position.Top} />
+      <Card className={`w-56 p-3 ${statusColor} border-2 ${selected ? 'ring-2 ring-primary' : ''}`}>
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-purple-400" />
+          <span className="text-sm font-medium truncate">{data.label || 'LLM Node'}</span>
+        </div>
+        <div className="text-xs text-muted-foreground mt-1 truncate">
+          {data.model || 'No model selected'}
+        </div>
+        {nodeStatus === 'running' && (
+          <div className="text-xs text-yellow-400 mt-1">Running...</div>
+        )}
+      </Card>
+      <Handle type="source" position={Position.Bottom} />
+    </>
+  );
+};
+```
+
+### 7.6 Node Palette (Drag-and-Drop)
+
+```tsx
+// (fsd)/features/pipeline-editor/ui/NodePalette.tsx
+
+const NODE_TYPES = [
+  { type: 'llm', label: 'LLM', icon: Brain, description: 'Call an LLM with a prompt', color: 'purple' },
+  { type: 'code', label: 'Code', icon: Code2, description: 'Run Python code', color: 'green' },
+  { type: 'router', label: 'Router', icon: GitBranch, description: 'Conditional branching', color: 'orange' },
+  { type: 'parallel', label: 'Parallel', icon: GitFork, description: 'Run branches concurrently', color: 'blue' },
+  { type: 'merge', label: 'Merge', icon: GitMerge, description: 'Join parallel branches', color: 'blue' },
+  { type: 'ui_event', label: 'UI Event', icon: Zap, description: 'Send WebSocket event', color: 'yellow' },
+  { type: 'delay', label: 'Delay', icon: Clock, description: 'Wait before continuing', color: 'gray' },
+];
+```
+
+Users drag nodes from the palette onto the canvas. The Start and End nodes are pre-placed and cannot be deleted.
+
+### 7.7 Node Configuration Panel
+
+When a node is selected, the right panel shows a type-specific form:
+
+- **LLM**: Model selector (dropdown from `/api/v1/ai-lab/models`), prompt editor (Monaco), temperature slider, input variable bindings, response format toggle, output schema editor.
+- **Code**: Code editor (Monaco, Python syntax), input variable bindings, timeout slider.
+- **Router**: Input variable selector, condition rows (add/remove), operator dropdowns, value inputs.
+- **Parallel/Merge**: Branch labels, affects_turn_flow toggles, merge strategy selector.
+- **UI Event**: Event type input, payload template editor (JSON), target selector.
+- **End**: Output mapping form with auto-complete for upstream node outputs.
+
+### 7.8 Pipeline Canvas Component
+
+```tsx
+// (fsd)/features/pipeline-editor/ui/PipelineCanvas.tsx
+
+'use client';
+
+import { useCallback } from 'react';
+import { ReactFlow, Background, Controls, MiniMap, Panel } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+import { usePipelineEditor } from '../model/usePipelineEditor';
+import { StartNode } from './nodes/StartNode';
+import { EndNode } from './nodes/EndNode';
+import { LLMNode } from './nodes/LLMNode';
+import { CodeNode } from './nodes/CodeNode';
+import { RouterNode } from './nodes/RouterNode';
+import { ParallelNode } from './nodes/ParallelNode';
+import { MergeNode } from './nodes/MergeNode';
+import { UIEventNode } from './nodes/UIEventNode';
+import { DelayNode } from './nodes/DelayNode';
+import { AnimatedEdge } from './edges/AnimatedEdge';
+import { NodePalette } from './NodePalette';
+import { NodeConfigPanel } from './NodeConfigPanel';
+import { PipelineToolbar } from './PipelineToolbar';
+
+const nodeTypes = {
+  start: StartNode,
+  end: EndNode,
+  llm: LLMNode,
+  code: CodeNode,
+  router: RouterNode,
+  parallel: ParallelNode,
+  merge: MergeNode,
+  ui_event: UIEventNode,
+  delay: DelayNode,
+};
+
+const edgeTypes = {
+  animated: AnimatedEdge,
+};
+
+export const PipelineCanvas = () => {
+  const {
+    nodes, edges, onNodesChange, onEdgesChange, onConnect,
+    selectedNodeId, selectNode, addNode,
+  } = usePipelineEditor();
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData('application/pipeline-node-type');
+    if (!type) return;
+    // Calculate position from drop coordinates
+    const position = { x: event.clientX - 250, y: event.clientY - 100 };
+    addNode(type, position);
+  }, [addNode]);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  return (
+    <div className="h-[calc(100vh-64px)] w-full flex">
+      <NodePalette />
+      <div className="flex-1 relative" onDrop={onDrop} onDragOver={onDragOver}>
+        <PipelineToolbar />
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          defaultEdgeOptions={{ type: 'animated', animated: true }}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeClick={(_, node) => selectNode(node.id)}
+          onPaneClick={() => selectNode(null)}
+          fitView
+        >
+          <Background />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
+      {selectedNodeId && <NodeConfigPanel />}
+    </div>
+  );
+};
+```
+
+---
+
+## 8. API Design
+
+### 8.1 Visual Pipeline CRUD
+
+All endpoints under `/api/v1/visual-pipelines`. Added to a new router file.
+
+```
+POST   /api/v1/visual-pipelines
+       Body: { name, description?, graph_json, timeout_ms? }
+       Response: VisualPipelineResponse (201)
+
+GET    /api/v1/visual-pipelines
+       Query: ?status=draft|published|archived
+       Response: VisualPipelineListItem[]
+
+GET    /api/v1/visual-pipelines/{id}
+       Response: VisualPipelineResponse (includes full graph_json)
+
+PUT    /api/v1/visual-pipelines/{id}
+       Body: { name?, description?, graph_json?, timeout_ms? }
+       Response: VisualPipelineResponse
+       Note: Only drafts can be updated. Published pipelines must create new version.
+
+DELETE /api/v1/visual-pipelines/{id}
+       Response: { message: string }
+       Note: Fails if linked to any template (RESTRICT).
+
+POST   /api/v1/visual-pipelines/{id}/publish
+       Body: { change_reason? }
+       Response: VisualPipelineVersionResponse
+       Note: Creates immutable version snapshot, increments version number.
+
+GET    /api/v1/visual-pipelines/{id}/versions
+       Response: VisualPipelineVersionResponse[]
+
+GET    /api/v1/visual-pipelines/{id}/versions/{version}
+       Response: VisualPipelineVersionResponse (includes graph_json)
+
+POST   /api/v1/visual-pipelines/{id}/validate
+       Body: { graph_json }
+       Response: { valid: bool, errors: string[] }
+       Note: Validates DAG structure without saving.
+
+POST   /api/v1/visual-pipelines/{id}/duplicate
+       Response: VisualPipelineResponse (new pipeline with copied graph)
+```
+
+### 8.2 Template-Pipeline Linking
+
+```
+PUT    /api/v1/conversations/templates/{template_id}/visual-pipeline
+       Body: { pipeline_id, pipeline_version? }
+       Response: TemplateVisualPipelineLinkResponse
+       Note: Also sets template.pipeline_mode = "visual"
+
+GET    /api/v1/conversations/templates/{template_id}/visual-pipeline
+       Response: TemplateVisualPipelineLinkResponse | null
+
+DELETE /api/v1/conversations/templates/{template_id}/visual-pipeline
+       Response: { message: string }
+       Note: Resets template.pipeline_mode to "basic"
+```
+
+### 8.3 Pipeline Execution (Test Run)
+
+```
+POST   /api/v1/visual-pipelines/{id}/test-run
+       Body: {
+         transcript: string,
+         session_context?: {
+           topic?, scene_context?, history?, participants?, variant?
+         }
+       }
+       Response: {
+         trace_id: string,
+         result: PipelineResult,
+         node_logs: NodeExecutionLog[],
+         total_duration_ms: number,
+         total_input_tokens: number,
+         total_output_tokens: number,
+         estimated_cost_usd: number,
+       }
+```
+
+### 8.4 Execution Logs
+
+```
+GET    /api/v1/visual-pipelines/execution-logs
+       Query: ?session_id=&trace_id=&pipeline_id=&page=1&size=30
+       Response: PaginatedResponse<PipelineExecutionLogSummary>
+
+GET    /api/v1/visual-pipelines/execution-logs/{trace_id}
+       Response: PipelineExecutionLogDetail (all node logs for a trace)
+```
+
+### 8.5 Pydantic Schemas
+
+```python
+# app/schemas/visual_pipeline.py
+
+from pydantic import BaseModel, Field
+from typing import Optional
+from uuid import UUID
+from datetime import datetime
+
+
+class VisualPipelineCreate(BaseModel):
+    name: str = Field(max_length=255)
+    description: Optional[str] = None
+    graph_json: dict  # Validated server-side
+    timeout_ms: int = Field(default=15000, ge=1000, le=60000)
+
+
+class VisualPipelineUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = None
+    graph_json: Optional[dict] = None
+    timeout_ms: Optional[int] = Field(None, ge=1000, le=60000)
+
+
+class VisualPipelineResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str]
+    graph_json: dict
+    version: int
+    status: str
+    timeout_ms: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VisualPipelineListItem(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str]
+    version: int
+    status: str
+    node_count: int
+    edge_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class VisualPipelineVersionResponse(BaseModel):
+    id: UUID
+    pipeline_id: UUID
+    version: int
+    graph_json: dict
+    change_reason: Optional[str]
+    timeout_ms: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PublishRequest(BaseModel):
+    change_reason: Optional[str] = None
+
+
+class ValidateRequest(BaseModel):
+    graph_json: dict
+
+
+class ValidateResponse(BaseModel):
+    valid: bool
+    errors: list[str]
+
+
+class TestRunRequest(BaseModel):
+    transcript: str
+    session_context: Optional[dict] = None
+
+
+class TemplatePipelineLinkRequest(BaseModel):
+    pipeline_id: UUID
+    pipeline_version: Optional[int] = None  # NULL = latest published
+
+
+class TemplatePipelineLinkResponse(BaseModel):
+    id: UUID
+    template_id: UUID
+    pipeline_id: UUID
+    pipeline_version: Optional[int]
+    pipeline_name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+```
+
+---
+
+## 9. WebSocket Protocol
+
+### 9.1 Event Types for Pipeline Execution Monitoring
+
+All events are sent as JSON via the existing WebSocket connection at `/api/v1/conversations/sessions/{session_id}/ws`. Admin monitoring connects to a parallel WebSocket at `/api/v1/visual-pipelines/monitor/{session_id}/ws`.
+
+```typescript
+// Pipeline lifecycle events
+type PipelineEvent =
+  | { type: "pipeline:started"; trace_id: string; pipeline_id: string; node_count: number }
+  | { type: "pipeline:completed"; trace_id: string; duration_ms: number; success: boolean }
+  | { type: "pipeline:failed"; trace_id: string; error: string }
+
+// Node lifecycle events
+  | { type: "pipeline:node_started"; trace_id: string; node_id: string; node_type: string; node_label: string }
+  | { type: "pipeline:node_completed"; trace_id: string; node_id: string; node_type: string; node_label: string; duration_ms: number; output_preview?: string }
+  | { type: "pipeline:node_failed"; trace_id: string; node_id: string; error: string }
+  | { type: "pipeline:node_skipped"; trace_id: string; node_id: string; reason: string }
+
+// UI Event node emissions (sent to mobile client)
+  | { type: "pipeline:ui_update"; event_type: string; payload: Record<string, any> }
+  | { type: "pipeline:metric"; node_id: string; metric_name: string; value: any }
+
+// Existing event types remain unchanged:
+  | { type: "turn_changed"; ... }
+  | { type: "session_completed" }
+  | { type: "error"; message: string }
+```
+
+### 9.2 Admin Monitor WebSocket
+
+```python
+# New endpoint in conversations.py or visual_pipelines.py
+
+@router.websocket("/visual-pipelines/monitor/{session_id}/ws")
+async def pipeline_monitor_ws(websocket: WebSocket, session_id: UUID):
+    """WebSocket for admin to monitor live pipeline execution."""
+    admin_key = f"admin:{session_id}"
+    await manager.connect(admin_key, websocket)
+    try:
+        while True:
+            # Keep alive -- admin doesn't send data, just receives events
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(admin_key)
+```
+
+### 9.3 Execution Overlay in Admin
+
+The `ExecutionOverlay` component in the pipeline editor listens to WebSocket events and updates node visual states in real-time:
+
+```typescript
+// (fsd)/features/pipeline-editor/model/usePipelineExecution.ts
+
+export const usePipelineExecution = (sessionId: string | null) => {
+  const updateNodeStatus = usePipelineEditor(s => s.updateNodeStatus);
+  const setExecutionState = usePipelineEditor(s => s.setExecutionState);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const ws = new WebSocket(`${WS_URL}/api/v1/visual-pipelines/monitor/${sessionId}/ws`);
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case 'pipeline:started':
+          setExecutionState(data.trace_id, {});
+          break;
+        case 'pipeline:node_started':
+          updateNodeStatus(data.node_id, 'running');
+          break;
+        case 'pipeline:node_completed':
+          updateNodeStatus(data.node_id, 'completed');
+          break;
+        case 'pipeline:node_failed':
+          updateNodeStatus(data.node_id, 'failed');
+          break;
+        case 'pipeline:node_skipped':
+          updateNodeStatus(data.node_id, 'skipped');
+          break;
+      }
+    };
+
+    return () => ws.close();
+  }, [sessionId]);
+};
+```
+
+---
+
+## 10. Migration Strategy
+
+### 10.1 Principles
+
+- **Zero downtime**: Existing basic and v0.2 templates continue working unchanged.
+- **Additive only**: New tables, new endpoints, new UI pages. No modification to existing tables or removal of existing code.
+- **Opt-in migration**: Templates switch to visual pipeline one-by-one by an admin action.
+
+### 10.2 Phase-by-Phase Migration
+
+**Phase 0: Coexistence**
+- The `pipeline_mode` column gains a new value `"visual"` alongside `"basic"` and `"v0.2"`.
+- `process_user_turn()` gains a third branch for `"visual"` mode.
+- All existing sessions continue using their current pipeline mode.
+
+**Phase 1: v0.2 Template Conversion**
+- For each v0.2 template, create a visual pipeline that replicates the Evaluator->Planner->Conductor flow:
+  - Start node -> LLM node (Evaluator) -> LLM node (Planner) -> LLM node (Conductor) -> End node
+  - Copy prompts from `conversation_templates.evaluator_prompt`, `planner_prompt`, `conductor_prompt` into the respective LLM node configs.
+  - Copy model selections from `evaluator_llm_model`, `planner_llm_model`, `conductor_llm_model`.
+- Provide a one-click migration button in admin: "Convert to Visual Pipeline".
+- After conversion, the template's `pipeline_mode` changes to `"visual"`.
+
+**Phase 2: Basic Template Conversion**
+- Basic mode templates use `ScenarioDirector` which is a single LLM call.
+- Convert to: Start node -> LLM node (Director) -> End node.
+- The Director prompt comes from `conversation_templates.director_system_prompt`.
+
+**Phase 3: Deprecation**
+- Once all templates are migrated, the v0.2 hardcoded path and ScenarioDirector path remain in code but are no longer actively used.
+- They can be removed in a future cleanup release.
+- The original `ai_lab_pipelines` and `ai_lab_pipeline_agents` tables remain for the AI Lab experiment feature (separate concern from session pipelines).
+
+### 10.3 Alembic Migration
+
+```python
+# migrations/versions/xxxx_add_visual_pipeline_tables.py
+
+def upgrade():
+    # Create visual_pipelines table
+    op.create_table(
+        "visual_pipelines",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("name", sa.String(255), nullable=False),
+        sa.Column("description", sa.Text, nullable=True),
+        sa.Column("graph_json", postgresql.JSONB, nullable=False, server_default="{}"),
+        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+        sa.Column("status", sa.String(20), nullable=False, server_default="draft"),
+        sa.Column("timeout_ms", sa.Integer, nullable=False, server_default="15000"),
+        sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+    )
+
+    # Create visual_pipeline_versions table
+    op.create_table(
+        "visual_pipeline_versions",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("pipeline_id", postgresql.UUID(as_uuid=True),
+                   sa.ForeignKey("visual_pipelines.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("version", sa.Integer, nullable=False),
+        sa.Column("graph_json", postgresql.JSONB, nullable=False),
+        sa.Column("change_reason", sa.Text, nullable=True),
+        sa.Column("timeout_ms", sa.Integer, nullable=False, server_default="15000"),
+        sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+    )
+    op.create_index("idx_vpv_pipeline_version", "visual_pipeline_versions", ["pipeline_id", "version"], unique=True)
+
+    # Create template_visual_pipeline_links table
+    op.create_table(
+        "template_visual_pipeline_links",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("template_id", postgresql.UUID(as_uuid=True),
+                   sa.ForeignKey("conversation_templates.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column("pipeline_id", postgresql.UUID(as_uuid=True),
+                   sa.ForeignKey("visual_pipelines.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("pipeline_version", sa.Integer, nullable=True),
+        sa.Column("overrides", postgresql.JSONB, nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+    )
+
+    # Create pipeline_execution_logs table
+    op.create_table(
+        "pipeline_execution_logs",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("trace_id", sa.String(36), nullable=False, index=True),
+        sa.Column("session_id", postgresql.UUID(as_uuid=True),
+                   sa.ForeignKey("conversation_sessions.id", ondelete="CASCADE"), nullable=False, index=True),
+        sa.Column("pipeline_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("pipeline_version", sa.Integer, nullable=False),
+        sa.Column("turn_index", sa.Integer, nullable=False),
+        sa.Column("node_id", sa.String(100), nullable=False),
+        sa.Column("node_type", sa.String(50), nullable=False),
+        sa.Column("node_label", sa.String(255), nullable=True),
+        sa.Column("status", sa.String(20), nullable=False),
+        sa.Column("input_json", postgresql.JSONB, nullable=True),
+        sa.Column("output_json", postgresql.JSONB, nullable=True),
+        sa.Column("duration_ms", sa.Float, nullable=True),
+        sa.Column("model_name", sa.String(100), nullable=True),
+        sa.Column("prompt_used", sa.Text, nullable=True),
+        sa.Column("error_message", sa.Text, nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+    )
+
+def downgrade():
+    op.drop_table("pipeline_execution_logs")
+    op.drop_table("template_visual_pipeline_links")
+    op.drop_table("visual_pipeline_versions")
+    op.drop_table("visual_pipelines")
+```
+
+---
+
+## 11. Implementation Phases
+
+### Phase 1: Data Model + Pipeline Runner (Server Only)
+**Duration**: 3-4 days  
+**Deliverable**: Pipeline definitions can be stored and executed via API.
+
+1. Create Alembic migration for all 4 new tables.
+2. Create SQLAlchemy models in `app/models/visual_pipeline.py`.
+3. Create Pydantic schemas in `app/schemas/visual_pipeline.py`.
+4. Implement DAG validation in `app/services/pipeline_runner/dag.py`.
+5. Implement `PipelineContext` in `app/services/pipeline_runner/context.py`.
+6. Implement variable resolver in `app/services/pipeline_runner/variable_resolver.py`.
+7. Implement node executors (LLM first, then Code, Router, Parallel, Merge, UIEvent, Delay).
+8. Implement `PipelineRunner` in `app/services/pipeline_runner/runner.py`.
+9. Implement output contract validation in `app/services/pipeline_runner/output_contract.py`.
+10. Create CRUD service in `app/services/pipeline_runner/pipeline_crud_service.py`.
+11. Create API router in `app/api/v1/visual_pipelines.py` (CRUD + test-run + validate).
+12. Register router in `app/api/v1/router.py`.
+
+**Dependencies**: None (fully additive).
+
+### Phase 2: Pipeline-Session Integration (Server)
+**Duration**: 2-3 days  
+**Deliverable**: Templates can use visual pipelines for actual learning sessions.
+
+1. Add `template_visual_pipeline_links` CRUD to template service.
+2. Add template-pipeline linking API endpoints.
+3. Add `"visual"` branch to `process_user_turn()` in `my_turn_service.py`.
+4. Add WebSocket events for pipeline execution monitoring.
+5. Add admin monitor WebSocket endpoint.
+6. Add pipeline execution log API endpoints.
+
+**Dependencies**: Phase 1.
+
+### Phase 3: Visual Editor UI (Frontend)
+**Duration**: 5-7 days  
+**Deliverable**: Admins can create/edit pipelines visually in the browser.
+
+1. Install `@xyflow/react` package.
+2. Create FSD module structure: `(fsd)/features/pipeline-editor/`.
+3. Implement TypeScript types for all node types.
+4. Implement Zustand store (`usePipelineEditor`).
+5. Implement API client (`pipelineEditorApi.ts`).
+6. Implement custom node components (Start, End, LLM, Code, Router, Parallel, Merge, UIEvent, Delay).
+7. Implement custom animated edge component.
+8. Implement `NodePalette` with drag-and-drop.
+9. Implement `PipelineCanvas` with React Flow.
+10. Implement `NodeConfigPanel` with type-specific forms.
+11. Implement `PipelineToolbar` (save, publish, version history, test run).
+12. Create page routes (`/ai-lab/pipeline-editor/new`, `/ai-lab/pipeline-editor/[id]`).
+13. Update pipeline list page to show visual pipelines alongside AI Lab pipelines.
+
+**Dependencies**: Phase 1 API must be deployed.
+
+### Phase 4: Execution Monitoring + Template Linking UI (Frontend)
+**Duration**: 2-3 days  
+**Deliverable**: Admins can monitor live execution and link pipelines to templates.
+
+1. Implement `usePipelineExecution` WebSocket hook.
+2. Implement `ExecutionOverlay` component (real-time node status on canvas).
+3. Add "Test Run" dialog with transcript input and live result view.
+4. Add pipeline selector to template editor page.
+5. Add "Convert to Visual Pipeline" button for v0.2 templates.
+6. Add pipeline execution log viewer page.
+
+**Dependencies**: Phases 2 and 3.
+
+### Phase 5: Polish + Migration Tooling
+**Duration**: 2-3 days  
+**Deliverable**: Automated v0.2-to-visual conversion, validation edge cases, UX polish.
+
+1. Implement v0.2-to-visual automatic conversion script.
+2. Add graph validation warnings in the editor (disconnected nodes, missing configs, cycle detection).
+3. Add undo/redo support (Zustand middleware).
+4. Add pipeline import/export (JSON download/upload).
+5. Add node copy/paste shortcuts.
+6. Comprehensive error handling and loading states.
+
+**Dependencies**: Phase 4.
+
+---
+
+## 12. File-Level Implementation Guide
+
+### Phase 1 Files
+
+| Action | File Path |
+|---|---|
+| CREATE | `apps/server/app/models/visual_pipeline.py` |
+| CREATE | `apps/server/app/schemas/visual_pipeline.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/__init__.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/runner.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/context.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/dag.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/variable_resolver.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/output_contract.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/pipeline_crud_service.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/__init__.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/base.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/llm_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/code_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/router_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/parallel_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/merge_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/ui_event_executor.py` |
+| CREATE | `apps/server/app/services/pipeline_runner/node_executors/delay_executor.py` |
+| CREATE | `apps/server/app/api/v1/visual_pipelines.py` |
+| CREATE | `apps/server/migrations/versions/xxxx_add_visual_pipeline_tables.py` |
+| MODIFY | `apps/server/app/models/__init__.py` (add imports) |
+| MODIFY | `apps/server/app/api/v1/router.py` (add visual_pipelines router) |
+
+### Phase 2 Files
+
+| Action | File Path |
+|---|---|
+| MODIFY | `apps/server/app/services/conversation/my_turn_service.py` (add "visual" branch in `process_user_turn()`) |
+| MODIFY | `apps/server/app/api/v1/conversations.py` (add template-pipeline link endpoints, add admin monitor WS) |
+| MODIFY | `apps/server/app/services/conversation/signaling.py` (ensure admin key namespace support) |
+| MODIFY | `apps/server/app/services/conversation/template_service.py` (add pipeline link CRUD) |
+
+### Phase 3 Files
+
+| Action | File Path |
+|---|---|
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/index.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/model/types.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/model/usePipelineEditor.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/model/usePipelineExecution.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/model/usePipelineMutations.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/model/constants.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/api/pipelineEditorApi.ts` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/PipelineCanvas.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/NodePalette.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/NodeConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/PipelineToolbar.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/ExecutionOverlay.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/StartNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/EndNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/LLMNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/CodeNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/RouterNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/ParallelNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/MergeNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/UIEventNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/nodes/DelayNode.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/edges/AnimatedEdge.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/LLMConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/CodeConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/RouterConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/ParallelConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/MergeConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/UIEventConfigPanel.tsx` |
+| CREATE | `apps/admin/src/(fsd)/features/pipeline-editor/ui/panels/EndConfigPanel.tsx` |
+| CREATE | `apps/admin/src/app/(dashboard)/ai-lab/pipeline-editor/new/page.tsx` |
+| CREATE | `apps/admin/src/app/(dashboard)/ai-lab/pipeline-editor/[id]/page.tsx` |
+| MODIFY | `apps/admin/package.json` (add `@xyflow/react` dependency) |
+
+### Phase 4 Files
+
+| Action | File Path |
+|---|---|
+| MODIFY | `apps/admin/src/(fsd)/features/pipeline-editor/ui/PipelineToolbar.tsx` (add test run dialog) |
+| MODIFY | `apps/admin/src/(fsd)/features/conversations/ui/TemplateEditor.tsx` (add pipeline selector) |
+| CREATE | `apps/admin/src/app/(dashboard)/ai-lab/pipeline-logs/page.tsx` |
+
+---
+
+### Critical Files for Implementation
+
+> 모든 경로는 프로젝트 루트(`study-english/`) 기준 상대 경로입니다.
+
+| 파일 | 역할 | 구현 시 참고 사항 |
+|------|------|-------------------|
+| `apps/server/app/services/conversation/my_turn_service.py` | 핵심 통합 지점 | `process_user_turn()`에 `"visual"` 분기 추가 (현재 ~1189행) |
+| `apps/server/app/services/conversation/signaling.py` | WebSocket ConnectionManager | admin 모니터링 채널 (`admin:<session_id>`) 지원 필요 |
+| `apps/server/app/models/conversation.py` | ConversationTemplate/Session 모델 | `pipeline_mode="visual"` 지원, `variant` JSONB에 파이프라인 결과 저장 |
+| `apps/server/app/schemas/pipeline_schemas.py` | v0.2 출력 계약 | `ConductorOutput`, `EvaluatorOutput`, `PlannerOutput` — End 노드가 호환해야 할 구조 |
+| `apps/server/app/services/ai_lab/chain_builder.py` | LLM 호출 엔진 | LLM 노드 executor 구현 시 재사용 가능한 Gemini/OpenAI 호출 패턴 |
+| `apps/server/app/services/ai_lab/experiment_service.py` | AI Lab 실험 실행 | 기존 파이프라인 실행 패턴 참고 (순차 에이전트, 토큰 카운팅, 벤치마크) |
+| `apps/server/app/api/v1/router.py` | v1 라우터 통합 | 새 `visual_pipelines` 라우터 등록 위치 |
+| `apps/server/app/models/__init__.py` | 모델 임포트 | 새 `VisualPipeline` 등 모델 임포트 추가 |
+| `apps/admin/src/(fsd)/features/ai-lab/model/types.ts` | TypeScript 타입 패턴 참조 | API 클라이언트 컨벤션, 인터페이스 스타일 참고 |
+| `apps/admin/src/(fsd)/features/ai-lab/ui/ExperimentRunner.tsx` | 기존 실험 UI 참조 | 모델 선택, 파일 업로드, 결과 표시 패턴 참고 (32KB) |
