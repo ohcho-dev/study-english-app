@@ -29,7 +29,13 @@ type ParsedNaturalKo = { kind: 'natural-ko'; original: string; upgraded: string 
 type ParsedItem = ParsedGeneric | ParsedPoint | ParsedNaturalKo;
 
 /** Parse a single better_expression string into a typed result. */
-const parseBetterExpression = (s: string): ParsedItem => {
+const parseBetterExpression = (s: unknown): ParsedItem => {
+    // Non-string values (e.g. objects from pipeline output) — serialize to display as generic
+    if (typeof s !== 'string') {
+        const text = typeof s === 'object' ? JSON.stringify(s) : String(s ?? '');
+        const mid = text.length > 0 ? text : '(empty)';
+        return { kind: 'generic', before: '', after: mid };
+    }
     if (s.startsWith('{')) {
         try {
             const obj = JSON.parse(s);

@@ -11,6 +11,9 @@ export const ROUTES = {
         pipelines: '/ai-lab/pipelines',
         experiment: '/ai-lab/experiment',
         logs: '/ai-lab/logs',
+        visualPipelines: '/ai-lab/visual-pipelines',
+        pipelineLogs: '/ai-lab/pipeline-logs',
+        templateLinks: '/ai-lab/template-links',
     },
     conversations: {
         run0: '/conversations/run0',
@@ -26,4 +29,3 @@ export const ROUTES = {
         users: '/settings/users',
     },
 } as const;
-

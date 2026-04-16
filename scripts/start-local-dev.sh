@@ -50,7 +50,7 @@ cd "$SERVER_DIR"
 poetry run alembic upgrade head 2>/dev/null || echo "⚠️  마이그레이션 스킵 (이미 최신)"
 
 # 서버 백그라운드 실행
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --log-level warning &
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 SERVER_PID=$!
 
 echo "⏳ Server 시작 대기 중..."

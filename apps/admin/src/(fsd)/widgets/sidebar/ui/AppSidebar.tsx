@@ -24,6 +24,7 @@ import {
     Palette,
     Users,
     Link as LinkIcon,
+    ListTodo,
     TestTube,
     ScrollText,
     Mic,
@@ -62,6 +63,9 @@ const allMenuItems: MenuGroup[] = [
             { title: '파이프라인', href: ROUTES.aiLab.pipelines, icon: LinkIcon },
             { title: '실험 테스트', href: ROUTES.aiLab.experiment, icon: TestTube },
             { title: '실험 로그', href: ROUTES.aiLab.logs, icon: ScrollText },
+            { title: '비주얼 빌더', href: ROUTES.aiLab.visualPipelines, icon: LinkIcon },
+            { title: '실행 로그', href: ROUTES.aiLab.pipelineLogs, icon: ListTodo },
+            { title: '템플릿 연결', href: ROUTES.aiLab.templateLinks, icon: Layout },
         ],
     },
     {

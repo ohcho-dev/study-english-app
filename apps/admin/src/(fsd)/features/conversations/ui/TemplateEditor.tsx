@@ -14,6 +14,7 @@ import { Badge } from '@/shared/ui/badge';
 // Tabs removed — prompt card switches dynamically based on pipelineMode
 import { Textarea } from '@/shared/ui/textarea'; // Assuming Textarea exists, or verify later. Wait, Textarea is usually in standard shadcn. Check `textarea.tsx` or use `textarea` html tag if not found.
 import { Label } from '@/shared/ui/label'; // Import Label
+import { TemplatePipelineLinkCard } from '@/(fsd)/features/pipeline-editor';
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getDirectorPromptSpec, getLLMModels, getTemplatePrompts, updateTemplatePrompts, getPromptHistory } from '../api/conversationsApi';
@@ -550,15 +551,24 @@ Keep responses concise (1-3 sentences) and conversational.`
                                     onChange={(e) => setPipelineMode(e.target.value)}
                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
                                 >
-                                    <option value="basic">Basic (ScenarioDirector)</option>
-                                    <option value="v0.2">v0.2 (Expert Pipeline)</option>
+                                    <option value="basic">기본 모드 (시나리오 디렉터)</option>
+                                    <option value="v0.2">v0.2 모드 (전문가 파이프라인)</option>
+                                    <option value="visual">비주얼 모드 (새 빌더)</option>
                                 </select>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    {pipelineMode === 'v0.2'
-                                        ? 'Evaluator→Planner→Conductor 3단계 분석 파이프라인'
-                                        : '기존 ScenarioDirector 단일 오케스트레이터'}
+                                    {pipelineMode === 'visual'
+                                        ? '연결된 비주얼 파이프라인이 실제 세션 실행을 담당합니다.'
+                                        : pipelineMode === 'v0.2'
+                                            ? 'Evaluator→Planner→Conductor 3단계 분석 파이프라인'
+                                            : '기존 ScenarioDirector 단일 오케스트레이터'}
                                 </p>
                             </div>
+
+                            <TemplatePipelineLinkCard
+                                templateId={template?.id}
+                                pipelineMode={pipelineMode}
+                                onPipelineModeChange={setPipelineMode}
+                            />
 
                             <div className="flex items-center gap-2">
                                 <input
@@ -772,6 +782,24 @@ Keep responses concise (1-3 sentences) and conversational.`
                                 </div>
                             </CardContent>
                         </Card>
+                    ) : pipelineMode === 'visual' ? (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base">비주얼 파이프라인 모드</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4 text-sm text-muted-foreground">
+                                <p>이 템플릿은 기존 단일 프롬프트 대신 비주얼 빌더 그래프를 사용해 세션을 실행합니다.</p>
+                                <p>노드별 프롬프트, 코드, 출력 계약, 병렬 브랜치는 위 연결 카드에서 선택한 파이프라인 안에서 관리합니다.</p>
+                                <div className="rounded-md border bg-muted/40 p-4">
+                                    <p className="font-medium text-foreground">권장 작업 순서</p>
+                                    <ol className="mt-2 list-decimal space-y-1 pl-5">
+                                        <li>비주얼 파이프라인을 연결하거나 v0.2 자동 변환을 실행합니다.</li>
+                                        <li>비주얼 빌더에서 출력 계약과 노드 구성을 검증합니다.</li>
+                                        <li>테스트 실행으로 로그와 출력 값을 확인한 뒤 템플릿을 저장합니다.</li>
+                                    </ol>
+                                </div>
+                            </CardContent>
+                        </Card>
                     ) : (
                         /* Basic — Director Prompt */
                         <Card>
@@ -839,7 +867,7 @@ Keep responses concise (1-3 sentences) and conversational.`
                                             <br />
                                             <code>{"{{history}}"}</code> : Conversation History
                                             <br />
-                                            <code>{"{{user_input}}"}</code> : User's latest input
+                                            <code>{"{{user_input}}"}</code> : 사용자 최신 입력
                                         </div>
                                     </div>
                                 </div>
