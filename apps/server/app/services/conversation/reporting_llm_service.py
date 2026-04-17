@@ -374,7 +374,11 @@ class ReportingLLMService:
             elif log.module_name == "conductor":
                 out = log.output_json
                 turn_data["conductor"] = {
-                    "feedback_text": out.get("feedback_text", "") if isinstance(out, dict) else "",
+                    "intervention_emitted": (
+                        out.get("intervention_emitted", out.get("feedback_text", ""))
+                        if isinstance(out, dict)
+                        else ""
+                    ),
                     "corrections": out.get("corrections", []) if isinstance(out, dict) else [],
                     "better_expressions": out.get("better_expressions", []) if isinstance(out, dict) else [],
                     "scripts": [

@@ -45,8 +45,8 @@ const VisualPipelinesPage = () => {
         <div className="space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-zinc-950">비주얼 파이프라인</h1>
-                    <p className="mt-1 text-sm text-zinc-500">기존 AI Lab 실험 파이프라인과 분리된 세션 실행 전용 빌더입니다.</p>
+                    <h1 className="text-2xl font-bold">비주얼 파이프라인</h1>
+                    <p className="mt-1 text-sm">기존 AI Lab 실험 파이프라인과 분리된 세션 실행 전용 빌더입니다.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <Button variant="outline" asChild>
@@ -79,7 +79,7 @@ const VisualPipelinesPage = () => {
                     {(data || []).map((pipeline) => (
                         <Card key={pipeline.id} className="rounded-3xl border-zinc-200">
                             <CardHeader>
-                                <CardTitle className="text-lg text-zinc-950">{pipeline.name}</CardTitle>
+                                <CardTitle className="text-lg">{pipeline.name}</CardTitle>
                                 <CardDescription>
                                     버전 {pipeline.version} · {pipeline.status} · 노드 {pipeline.node_count}개 / 엣지 {pipeline.edge_count}개
                                 </CardDescription>

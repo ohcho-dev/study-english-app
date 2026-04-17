@@ -145,7 +145,7 @@ const CanvasBody = () => {
     }, [copySelectedNode, pasteClipboardNode, redo, removeSelection, selectedEdgeId, selectedNodeId, undo]);
 
     return (
-        <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(15,118,110,0.15),_transparent_28%),linear-gradient(180deg,_#f6fffd_0%,_#eef7f7_100%)]">
+        <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(45,212,191,0.18),_transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(59,130,246,0.12),_transparent_24%),linear-gradient(180deg,_hsl(var(--background))_0%,_rgba(15,23,42,0.04)_100%)]">
             <NodePalette />
             <div className="relative flex-1" onDrop={handleDrop} onDragOver={handleDragOver}>
                 <PipelineToolbar />
@@ -168,9 +168,9 @@ const CanvasBody = () => {
                     onMoveEnd={(_, nextViewport) => setViewport(nextViewport)}
                     defaultEdgeOptions={{ type: 'animated', animated: true }}
                 >
-                    <Background gap={24} size={1.1} color="#b8d7d5" />
+                    <Background gap={24} size={1.1} color="rgba(148, 163, 184, 0.28)" />
                     <Controls />
-                    <MiniMap zoomable pannable className="!bg-white !shadow-lg" />
+                    <MiniMap zoomable pannable className="!bg-card !shadow-lg !border !border-border" />
                 </ReactFlow>
             </div>
             {selectedNodeId ? <NodeConfigPanel /> : null}

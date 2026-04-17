@@ -420,7 +420,7 @@ export const sendTextInput = async (
     text: string,
     t0UserEnd?: number,
     t1ServerFinal?: number,
-): Promise<{ transcript: string; next_turn: number }> => {
+): Promise<{ transcript: string; next_turn: number; [key: string]: unknown }> => {
     const formData = new FormData();
     formData.append('text', text);
     if (t0UserEnd) formData.append('t0_user_end', t0UserEnd.toString());

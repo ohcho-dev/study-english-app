@@ -4,7 +4,7 @@ import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { ScrollArea } from '@/shared/ui/scroll-area';
 
-import { getOutputRegistry } from '../model/constants';
+import { getScopedOutputSuggestions } from '../model/outputRegistry';
 import { usePipelineEditor } from '../model/usePipelineEditor';
 import { CodeConfigPanel } from './panels/CodeConfigPanel';
 import { EndConfigPanel } from './panels/EndConfigPanel';
@@ -18,23 +18,14 @@ import type { DelayNodeData, StartNodeData } from '../model/types';
 
 export const NodeConfigPanel = () => {
     const nodes = usePipelineEditor((state) => state.nodes);
+    const edges = usePipelineEditor((state) => state.edges);
     const selectedNodeId = usePipelineEditor((state) => state.selectedNodeId);
     const updateNodeData = usePipelineEditor((state) => state.updateNodeData);
     const node = nodes.find((item) => item.id === selectedNodeId);
 
     if (!node) return null;
 
-    const registry = getOutputRegistry(nodes);
-    const suggestions = [
-        ...Object.entries(registry)
-            .filter(([nodeId]) => nodeId !== node.id)
-            .flatMap(([nodeId, fields]) => fields.map((field) => ({
-                ...field,
-                path: `${nodeId}.${field.path}`,
-                label: `${nodeId}.${field.path}`,
-                key: `${nodeId}.${field.key}`,
-            }))),
-    ];
+    const suggestions = getScopedOutputSuggestions(nodes, edges, node.id);
 
     const onPatch = (patch: Record<string, unknown>) => updateNodeData(node.id, patch);
     const nodeLabel = typeof node.data.label === 'string' ? node.data.label : node.id;
@@ -42,13 +33,13 @@ export const NodeConfigPanel = () => {
     const startData = node.data as unknown as StartNodeData;
 
     return (
-        <aside className="w-[380px] border-l border-zinc-200 bg-zinc-50">
+        <aside className="w-[380px] border-l border-border bg-card/85 backdrop-blur">
             <ScrollArea className="h-[calc(100vh-64px)]">
                 <div className="space-y-4 p-4">
                     <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">노드 설정</p>
-                        <h2 className="mt-1 text-lg font-semibold text-zinc-950">{nodeLabel}</h2>
-                        <p className="text-sm text-zinc-500">타입: {node.type}</p>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">노드 설정</p>
+                        <h2 className="mt-1 text-lg font-semibold text-foreground">{nodeLabel}</h2>
+                        <p className="text-sm text-muted-foreground">타입: {node.type}</p>
                     </div>
                     {node.type === 'llm' ? <LLMConfigPanel node={node} suggestions={suggestions} onPatch={onPatch} /> : null}
                     {node.type === 'code' ? <CodeConfigPanel node={node} suggestions={suggestions} onPatch={onPatch} /> : null}

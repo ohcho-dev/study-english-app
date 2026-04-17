@@ -23,8 +23,8 @@ const NewVisualPipelinePage = () => {
                     </Link>
                 </Button>
                 <div>
-                    <h1 className="text-2xl font-bold text-zinc-950">새 비주얼 파이프라인</h1>
-                    <p className="text-sm text-zinc-500">기존 기능을 건드리지 않는 새 세션 엔진 편집기입니다.</p>
+                    <h1 className="text-2xl font-bold text-foreground">새 비주얼 파이프라인</h1>
+                    <p className="text-sm text-muted-foreground">기존 기능을 건드리지 않는 새 세션 엔진 편집기입니다.</p>
                 </div>
             </div>
             <PipelineCanvas />

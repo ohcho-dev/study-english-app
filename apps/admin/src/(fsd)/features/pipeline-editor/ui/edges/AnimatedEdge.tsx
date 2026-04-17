@@ -32,7 +32,7 @@ export const AnimatedEdge = ({
                             position: 'absolute',
                             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
                         }}
-                        className="rounded-full border border-teal-400/30 bg-card/95 px-2 py-1 text-[10px] font-medium text-teal-300 shadow-sm shadow-black/20 backdrop-blur"
+                        className="rounded-full border border-teal-400/30 bg-card/95 px-2 py-1 text-[10px] font-medium text-teal-700 shadow-sm shadow-black/20 backdrop-blur dark:text-teal-200"
                     >
                         {String(data.label)}
                     </div>

@@ -1782,7 +1782,7 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
         "레벨(전)", "레벨(후)", "Path", "이유",
         "연속 고점 횟수",
         # Conductor
-        "교정 표현", "더 나은 표현", "피드백",
+        "교정 표현", "더 나은 표현", "개입 발화",
         # 타이밍
         "t_recording_start", "t_first_speech", "Δfirst_speech(s)", "t0_user_end", "Δuser_end(s)", "E2E(ms)",
     ]
@@ -1884,7 +1884,11 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
         # Conductor
         corr = ", ".join(cd.get("corrections", [])) if isinstance(cd, dict) else None
         better = ", ".join(cd.get("better_expressions", [])) if isinstance(cd, dict) else None
-        feedback = cd.get("feedback_text", "")[:200] if isinstance(cd, dict) else None
+        intervention = (
+            cd.get("intervention_emitted", cd.get("feedback_text", ""))[:200]
+            if isinstance(cd, dict)
+            else None
+        )
 
         formatted_recording_start = _format_timestamp_ms(t.t_recording_start)
         formatted_first_speech = _format_timestamp_ms(t.t_first_speech)
@@ -1907,7 +1911,7 @@ def _write_pipeline_detail_sheet(ws, turns, pipeline_logs) -> None:
             # Planner
             level_before, level_after, path, reasons_str, consec,
             # Conductor
-            corr, better, feedback,
+            corr, better, intervention,
             # Timing
             formatted_recording_start,
             formatted_first_speech,

@@ -90,6 +90,80 @@ def _format_json_for_log(payload: Any, limit: int = LOG_PAYLOAD_LIMIT) -> str:
     return text
 
 
+def _normalize_intervention_text(value: Any) -> str:
+    """Normalize a runtime intervention slot into a stripped string."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _normalize_speaker_scripts(raw: Any) -> dict[str, dict[str, str]]:
+    """Normalize runtime speaker scripts into a consistent dict shape."""
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: dict[str, dict[str, str]] = {}
+    for speaker_name, script in raw.items():
+        if isinstance(script, dict):
+            text = script.get("text", "")
+            instruction = script.get("instruction", "")
+        else:
+            text = script
+            instruction = ""
+
+        if not isinstance(text, str) or not text.strip():
+            continue
+
+        normalized[str(speaker_name)] = {
+            "text": text.strip(),
+            "instruction": instruction.strip() if isinstance(instruction, str) else "",
+        }
+
+    return normalized
+
+
+def _extract_moderator_intervention(
+    speaker_scripts: dict[str, dict[str, str]],
+    participants: list | None,
+) -> str:
+    """Use the moderator script as the direct intervention when legacy payload has no explicit slot."""
+    if not participants:
+        return ""
+
+    for participant in sorted(participants, key=lambda item: item.order_index):
+        participant_type = (
+            participant.participant_type.value
+            if hasattr(participant.participant_type, "value")
+            else str(participant.participant_type)
+        )
+        if participant_type != "moderator":
+            continue
+
+        script = speaker_scripts.get(participant.name, {})
+        if isinstance(script, dict):
+            return _normalize_intervention_text(script.get("text"))
+
+    return ""
+
+
+def _consume_intervention_emitted(
+    session: ConversationSession,
+    session_config: dict,
+    pipeline_result: dict,
+) -> None:
+    """Consume one-shot intervention text so later AI turns fall back to speaker scripts or LLM."""
+    if not isinstance(pipeline_result, dict):
+        return
+
+    if not _normalize_intervention_text(pipeline_result.get("intervention_emitted")):
+        return
+
+    next_pipeline_result = dict(pipeline_result)
+    next_pipeline_result.pop("intervention_emitted", None)
+    session_config["_pipeline_result"] = next_pipeline_result
+    session.variant = json.dumps(session_config, ensure_ascii=False)
+
+
 def detect_mentioned_participant(text: str, participants, exclude_speaker_name: str = None):
     """Detect if text mentions a specific participant by name.
     
@@ -756,42 +830,31 @@ class MyTurnService:
         
         if pipeline_mode in ("v0.2", "visual") and pipeline_result:
             participant_type = participant.participant_type.value if hasattr(participant.participant_type, 'value') else str(participant.participant_type)
-            
-            if participant_type == "moderator":
-                # Moderator uses feedback_text from Conductor
-                feedback = pipeline_result.get("feedback_text", "")
-                feedback_instruction = pipeline_result.get("feedback_instruction", "")
-                if feedback:
-                    context += f"\n\n[CONDUCTOR FEEDBACK]:\n{feedback}"
-                    corrections = pipeline_result.get("corrections", [])
-                    better_expr = pipeline_result.get("better_expressions", [])
-                    if corrections:
-                        context += f"\nCorrections: {', '.join(corrections)}"
-                    if better_expr:
-                        context += f"\nBetter expressions: {', '.join(better_expr)}"
-                    if feedback_instruction:
-                        context += f"\n{feedback_instruction}"
-            else:
-                # AI participants get script or level instruction from Conductor
-                level = pipeline_result.get("level", 1)
-                level_instr = pipeline_result.get("level_instruction", "")
-                speaker_scripts = pipeline_result.get("speaker_scripts", {})
-                if not isinstance(speaker_scripts, dict):
-                    speaker_scripts = {}
-                engine_trace_data = pipeline_result.get("engine_trace") or {}
+            level = pipeline_result.get("level", 1)
+            level_instr = pipeline_result.get("level_instruction", "")
+            intervention_emitted = _normalize_intervention_text(pipeline_result.get("intervention_emitted"))
+            speaker_scripts = _normalize_speaker_scripts(pipeline_result.get("speaker_scripts"))
+            my_script = speaker_scripts.get(participant.name, {})
+            if not isinstance(my_script, dict):
+                my_script = {}
 
-                my_script = speaker_scripts.get(participant.name, {})
-                if not isinstance(my_script, dict):
-                    my_script = {}
-                if my_script.get("text"):
-                    instruction = my_script.get("instruction", "")
-                    context += f'\n\n[CONDUCTOR SCRIPT]:\n"{my_script["text"]}"'
-                    if instruction:
-                        context += f"\n{instruction}"
-                elif engine_trace_data.get("intervention_emitted_text"):
-                    context += f"\n\n[CONDUCTOR INTERVENTION]: {engine_trace_data['intervention_emitted_text']}"
-                elif level_instr:
-                    context += f"\n\n[LEVEL INSTRUCTION]: Level {level}. {level_instr}"
+            corrections = pipeline_result.get("corrections", [])
+            better_expr = pipeline_result.get("better_expressions", [])
+            if participant_type == "moderator":
+                if corrections:
+                    context += f"\nCorrections: {', '.join(corrections)}"
+                if better_expr:
+                    context += f"\nBetter expressions: {', '.join(better_expr)}"
+
+            if intervention_emitted:
+                context += f'\n\n[PIPELINE INTERVENTION]:\n"{intervention_emitted}"'
+            elif my_script.get("text"):
+                script_instruction = my_script.get("instruction", "")
+                context += f'\n\n[PIPELINE SCRIPT]:\n"{my_script["text"]}"'
+                if script_instruction:
+                    context += f"\n{script_instruction}"
+            elif level_instr:
+                context += f"\n\n[LEVEL INSTRUCTION]: Level {level}. {level_instr}"
         
         # Add Emotion Context (Phase 5)
         if user_emotion and user_emotion != "neutral":
@@ -846,43 +909,27 @@ class MyTurnService:
                 pre_generated_text = participant.greeting_message
                 logger.info(f"[process_ai_turn] Using greeting_message for {participant.name}: {pre_generated_text[:50]}...")
             
-            # 2nd priority: Use Conductor script from pipeline
+            # 2nd priority: Use pipeline-emitted speech from visual/v0.2 runtime payload
             elif pipeline_mode in ("v0.2", "visual") and pipeline_result:
-                speaker_scripts = pipeline_result.get("speaker_scripts", {})
-                if not isinstance(speaker_scripts, dict):
-                    speaker_scripts = {}
+                intervention_emitted = _normalize_intervention_text(pipeline_result.get("intervention_emitted"))
+                speaker_scripts = _normalize_speaker_scripts(pipeline_result.get("speaker_scripts"))
                 my_script = speaker_scripts.get(participant.name, {})
                 if not isinstance(my_script, dict):
                     my_script = {}
-                engine_trace_data = pipeline_result.get("engine_trace") or {}
-                if my_script.get("text"):
+
+                if intervention_emitted:
+                    should_bypass_llm = True
+                    pre_generated_text = intervention_emitted
+                    _consume_intervention_emitted(session, session_config, pipeline_result)
+                elif my_script.get("text"):
                     should_bypass_llm = True
                     pre_generated_text = my_script.get("text")
-                elif (
-                    engine_trace_data.get("intervention_emitted_text")
-                    and participant.participant_type != ParticipantType.MODERATOR
-                ):
-                    should_bypass_llm = True
-                    pre_generated_text = engine_trace_data["intervention_emitted_text"]
-                # 3rd priority (visual only): feedback_text를 AI 참여자 대사로 직접 사용
-                # speaker_scripts/engine_trace 없이 feedback_text만 반환하는 파이프라인 대응
-                elif (
-                    pipeline_mode == "visual"
-                    and participant.participant_type != ParticipantType.MODERATOR
-                    and pipeline_result.get("feedback_text")
-                ):
-                    should_bypass_llm = True
-                    pre_generated_text = pipeline_result["feedback_text"]
-                    logger.info(
-                        f"[process_ai_turn] visual 3rd-priority bypass: using feedback_text "
-                        f"for {participant.name}"
-                    )
             
             if should_bypass_llm:
-                logger.info(f"[process_ai_turn] Bypassing LLM for {participant.name}. Using Conductor script directly.")
+                logger.info(f"[process_ai_turn] Bypassing LLM for {participant.name}. Using pipeline-emitted speech directly.")
                 reply_text = pre_generated_text
                 t1_llm_start = time.time() * 1000
-                generation_prompt = "[LLM Bypassed - Used Conductor Script]\n" + pre_generated_text
+                generation_prompt = "[LLM Bypassed - Used Pipeline Speech]\n" + pre_generated_text
             else:
                 if pipeline_mode in ("v0.2", "visual"):
                     # v0.2: System prompt from Admin controls all behavior.
@@ -1215,6 +1262,9 @@ class MyTurnService:
                 VisualPipelineCrudService,
             )
             from app.services.pipeline_runner.runner import PipelineRunner
+            from app.services.pipeline_runner.session_runtime import (
+                build_session_runtime_payload,
+            )
 
             effective_scene_context = session.template.scene_context or ""
             user_topic = variant.get("user_topic")
@@ -1230,6 +1280,7 @@ class MyTurnService:
                         {
                             "id": str(p.id),
                             "name": p.name,
+                            "persona": p.persona or "",
                             "type": (
                                 p.participant_type.value
                                 if hasattr(p.participant_type, "value")
@@ -1285,9 +1336,18 @@ class MyTurnService:
                 persist_logs=True,
             )
             pipeline_result = await runner.execute(pipeline_context)
+            session_pipeline_result = build_session_runtime_payload(
+                graph_json,
+                pipeline_result,
+            )
 
-            variant["_pipeline_result"] = pipeline_result
-            question_progress = pipeline_result.get("question_progress") or {}
+            pipeline_error = pipeline_result.get("_pipeline_error")
+            if isinstance(pipeline_error, dict):
+                variant["_pipeline_error"] = pipeline_error
+
+            variant["_pipeline_result_raw"] = pipeline_result
+            variant["_pipeline_result"] = session_pipeline_result
+            question_progress = session_pipeline_result.get("question_progress") or {}
             if question_progress:
                 variant["_question_progress"] = question_progress
                 if question_progress.get("session_completed"):
@@ -1309,18 +1369,15 @@ class MyTurnService:
             else:
                 asyncio.create_task(self._complete_turn_wrapper(session_id, script_index))
 
-            return {
+            response_payload = {
                 "transcript": transcript,
                 "next_turn": session.current_turn_index,
                 "pipeline": "visual",
                 "trace_id": trace_id,
-                "level": pipeline_result.get("level"),
-                "corrections": pipeline_result.get("corrections"),
-                "better_expressions": pipeline_result.get("better_expressions"),
-                "feedback_text": pipeline_result.get("feedback_text"),
                 "response_delay_sec": response_delay_sec,
-                "question_progress": question_progress,
             }
+            response_payload.update(session_pipeline_result)
+            return response_payload
 
         if pipeline_mode == "v0.2":
             # ════════════════════════════════════════════════════════════
@@ -1556,7 +1613,7 @@ class MyTurnService:
             
             pipeline_logger.warning(
                 f"[v0.2 Conductor] scripts={len(conductor_output.scripts)}, "
-                f"feedback={len(conductor_output.feedback_text)} chars, "
+                f"intervention={len(conductor_output.intervention_emitted)} chars, "
                 f"duration={conductor_duration:.0f}ms"
             )
             
@@ -1574,6 +1631,13 @@ class MyTurnService:
                     "text": s.text,
                     "instruction": s.instruction,
                 }
+
+            intervention_emitted = _normalize_intervention_text(conductor_output.intervention_emitted)
+            if not intervention_emitted:
+                intervention_emitted = _extract_moderator_intervention(
+                    speaker_scripts,
+                    session.template.participants if session.template else None,
+                )
             
             question_progress = _merge_question_progress(
                 session_state.custom_state.get("question_progress"),
@@ -1584,7 +1648,7 @@ class MyTurnService:
             session_state.custom_state["question_progress"] = question_progress
 
             variant["_pipeline_result"] = {
-                "feedback_text": conductor_output.feedback_text,
+                "intervention_emitted": intervention_emitted,
                 "feedback_instruction": conductor_output.feedback_instruction,
                 "level": plan_output.persona_plan.current_level,
                 "level_instruction": conductor_output.level_instruction,
@@ -1650,6 +1714,7 @@ class MyTurnService:
 
             conductor_summary = {
                 "scripts": len(conductor_output.scripts),
+                "intervention_emitted": intervention_emitted,
                 "return_to_user_after": conductor_output.return_to_user_after,
                 "user_emotion": conductor_output.user_emotion,
                 "level_instruction": conductor_output.level_instruction,
@@ -1665,7 +1730,7 @@ class MyTurnService:
                 "level": plan_output.persona_plan.current_level,
                 "corrections": conductor_output.corrections,
                 "better_expressions": conductor_output.better_expressions,
-                "feedback_text": conductor_output.feedback_text,
+                "intervention_emitted": intervention_emitted,
                 "evaluator_data": evaluator_summary,
                 "planner_data": planner_summary,
                 "conductor_data": conductor_summary,

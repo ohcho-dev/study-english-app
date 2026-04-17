@@ -6,13 +6,13 @@ import { NODE_DESCRIPTIONS, NODE_LABELS } from '../model/constants';
 import type { NodeType } from '../model/types';
 
 const paletteItems: Array<{ type: NodeType; icon: React.ComponentType<{ className?: string }>; accent: string }> = [
-    { type: 'llm', icon: Brain, accent: 'bg-fuchsia-500/15 text-fuchsia-300 ring-1 ring-inset ring-fuchsia-400/25' },
-    { type: 'code', icon: Code2, accent: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/25' },
-    { type: 'router', icon: GitBranch, accent: 'bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-400/25' },
-    { type: 'parallel', icon: GitFork, accent: 'bg-cyan-500/15 text-cyan-300 ring-1 ring-inset ring-cyan-400/25' },
-    { type: 'merge', icon: GitMerge, accent: 'bg-sky-500/15 text-sky-300 ring-1 ring-inset ring-sky-400/25' },
-    { type: 'ui_event', icon: BellRing, accent: 'bg-yellow-500/15 text-yellow-300 ring-1 ring-inset ring-yellow-400/25' },
-    { type: 'delay', icon: TimerReset, accent: 'bg-slate-500/15 text-slate-300 ring-1 ring-inset ring-slate-400/25' },
+    { type: 'llm', icon: Brain, accent: 'bg-fuchsia-500/15 text-fuchsia-700 ring-1 ring-inset ring-fuchsia-400/25 dark:text-fuchsia-200' },
+    { type: 'code', icon: Code2, accent: 'bg-emerald-500/15 text-emerald-700 ring-1 ring-inset ring-emerald-400/25 dark:text-emerald-200' },
+    { type: 'router', icon: GitBranch, accent: 'bg-amber-500/15 text-amber-700 ring-1 ring-inset ring-amber-400/25 dark:text-amber-200' },
+    { type: 'parallel', icon: GitFork, accent: 'bg-cyan-500/15 text-cyan-700 ring-1 ring-inset ring-cyan-400/25 dark:text-cyan-200' },
+    { type: 'merge', icon: GitMerge, accent: 'bg-sky-500/15 text-sky-700 ring-1 ring-inset ring-sky-400/25 dark:text-sky-200' },
+    { type: 'ui_event', icon: BellRing, accent: 'bg-yellow-500/15 text-yellow-700 ring-1 ring-inset ring-yellow-400/25 dark:text-yellow-200' },
+    { type: 'delay', icon: TimerReset, accent: 'bg-slate-500/15 text-slate-700 ring-1 ring-inset ring-slate-400/25 dark:text-slate-200' },
 ];
 
 export const NodePalette = () => {

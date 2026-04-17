@@ -235,7 +235,7 @@ export const PipelineToolbar = () => {
     };
 
     return (
-        <div className="absolute left-4 right-4 top-4 z-20 rounded-3xl border border-zinc-200 bg-white/95 p-4 shadow-xl backdrop-blur">
+        <div className="absolute left-4 right-4 top-4 z-20 rounded-3xl border border-border bg-card/92 p-4 shadow-xl shadow-black/20 backdrop-blur">
             <input ref={importInputRef} type="file" accept="application/json" className="hidden" onChange={handleImportChange} />
             <div className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px_auto] lg:items-start">
@@ -253,8 +253,8 @@ export const PipelineToolbar = () => {
                             <Input type="number" value={timeoutMs} onChange={(event) => setMeta({ timeoutMs: Number(event.target.value || 15000) })} />
                         </div>
                     </div>
-                    <div className="rounded-2xl bg-zinc-100 p-3 text-sm text-zinc-600">
-                        <div className="flex items-center justify-between text-zinc-900">
+                    <div className="rounded-2xl border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+                        <div className="flex items-center justify-between text-foreground">
                             <span className="font-semibold">편집 상태</span>
                             <Badge variant={isDirty ? 'default' : 'outline'}>{isDirty ? '변경 있음' : '저장됨'}</Badge>
                         </div>
@@ -294,7 +294,7 @@ export const PipelineToolbar = () => {
                                     테스트 실행
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-4xl">
+                            <DialogContent className="max-w-4xl sm:max-w-4xl">
                                 <DialogHeader>
                                     <DialogTitle>테스트 실행</DialogTitle>
                                 </DialogHeader>
@@ -324,13 +324,13 @@ export const PipelineToolbar = () => {
                                         </Button>
                                     </div>
                                     <div className="space-y-3">
-                                        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
-                                            <p className="text-sm font-semibold text-zinc-900">최종 결과</p>
-                                            <ScrollArea className="mt-2 h-[190px] rounded-xl bg-white p-3 text-xs text-zinc-700">
+                                        <div className="rounded-2xl border border-border bg-muted/40 p-3">
+                                            <p className="text-sm font-semibold text-foreground">최종 결과</p>
+                                            <ScrollArea className="mt-2 h-[190px] rounded-xl border border-border bg-background/90 p-3 text-xs text-muted-foreground">
                                                 <pre>{JSON.stringify(testRunMutation.data?.result || {}, null, 2)}</pre>
                                             </ScrollArea>
                                             {testRunMutation.data ? (
-                                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-600">
+                                                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                                     <p>총 실행 시간: {testRunMutation.data.total_duration_ms}ms</p>
                                                     <p>입력 토큰: {testRunMutation.data.total_input_tokens}</p>
                                                     <p>출력 토큰: {testRunMutation.data.total_output_tokens}</p>
@@ -338,13 +338,13 @@ export const PipelineToolbar = () => {
                                                 </div>
                                             ) : null}
                                         </div>
-                                        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
-                                            <p className="text-sm font-semibold text-zinc-900">노드 로그</p>
-                                            <ScrollArea className="mt-2 h-[250px] rounded-xl bg-white p-3">
-                                                <div className="space-y-2 text-xs text-zinc-700">
+                                        <div className="rounded-2xl border border-border bg-muted/40 p-3">
+                                            <p className="text-sm font-semibold text-foreground">노드 로그</p>
+                                            <ScrollArea className="mt-2 h-[250px] rounded-xl border border-border bg-background/90 p-3">
+                                                <div className="space-y-2 text-xs text-muted-foreground">
                                                     {(testRunMutation.data?.node_logs || []).map((log) => (
-                                                        <div key={`${log.node_id}-${log.created_at || log.trace_id}`} className="rounded-xl border border-zinc-200 p-2">
-                                                            <div className="flex items-center justify-between font-medium text-zinc-900">
+                                                        <div key={`${log.node_id}-${log.created_at || log.trace_id}`} className="rounded-xl border border-border bg-card/70 p-2">
+                                                            <div className="flex items-center justify-between font-medium text-foreground">
                                                                 <span>{log.node_label || log.node_id}</span>
                                                                 <Badge variant="outline">{log.status}</Badge>
                                                             </div>

@@ -28,8 +28,8 @@ const VisualPipelineEditorPage = () => {
                     </Link>
                 </Button>
                 <div>
-                    <h1 className="text-2xl font-bold text-zinc-950">비주얼 파이프라인 편집기</h1>
-                    <p className="text-sm text-zinc-500">시각 그래프와 출력 레지스트리를 기준으로 세션 엔진을 편집합니다.</p>
+                    <h1 className="text-2xl font-bold text-foreground">비주얼 파이프라인 편집기</h1>
+                    <p className="text-sm text-muted-foreground">시각 그래프와 출력 계약을 기준으로 세션 엔진을 편집합니다.</p>
                 </div>
             </div>
             {isLoading || !data ? <Skeleton className="h-[720px] rounded-3xl" /> : <PipelineCanvas />}

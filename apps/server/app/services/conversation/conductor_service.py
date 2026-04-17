@@ -149,7 +149,7 @@ class ConductorService:
         duration_ms = (time.time() - t_start) * 1000
         logger.info(
             f"[Conductor] Level={level}, scripts={len(result.scripts)}, "
-            f"feedback_len={len(result.feedback_text)}, "
+            f"intervention_len={len(result.intervention_emitted)}, "
             f"duration={duration_ms:.0f}ms"
         )
         return result, duration_ms
@@ -300,7 +300,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
         # Collect extra fields not in standard schema as engine_trace
         _standard_keys = {
             "scripts", "return_to_user_after", "user_emotion",
-            "feedback_text", "feedback_instruction", "level_instruction",
+            "intervention_emitted", "feedback_text", "feedback_instruction", "level_instruction",
             "corrections", "better_expressions", "energy_flow",
             "schema_version", "trace_id", "turn_id",
         }
@@ -314,7 +314,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             scripts=scripts,
             return_to_user_after=False,  # ALWAYS false
             user_emotion=data.get("user_emotion", "neutral"),
-            feedback_text=data.get("feedback_text", ""),
+            intervention_emitted=data.get("intervention_emitted", data.get("feedback_text", "")),
             feedback_instruction=data.get("feedback_instruction", ""),
             level_instruction=level_instruction,
             corrections=self._normalize_string_list(data.get("corrections", [])),
@@ -365,7 +365,7 @@ Generate scripts based on the current state. return_to_user_after MUST be false.
             scripts=scripts,
             return_to_user_after=False,
             user_emotion="neutral",
-            feedback_text="계속 연습해 볼게요!",
+            intervention_emitted="좋아요! 계속 연습해 볼게요.",
             level_instruction=level_instruction,
             corrections=[],
             better_expressions=[],

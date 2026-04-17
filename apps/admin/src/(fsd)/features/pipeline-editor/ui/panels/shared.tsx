@@ -25,13 +25,22 @@ export const SectionBlock = ({ title, description, children }: {
     </section>
 );
 
-export const VariableSuggestions = ({ registry }: { registry: OutputFieldDescriptor[] }) => (
+export const VariableSuggestions = ({
+    registry,
+    valueFormatter,
+}: {
+    registry: OutputFieldDescriptor[];
+    valueFormatter?: (field: OutputFieldDescriptor) => string;
+}) => (
     <div className="rounded-xl border border-border bg-muted/60 p-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">출력 레지스트리</p>
         <div className="mt-2 flex flex-wrap gap-2">
             {registry.map((field) => (
-                <code key={field.key} className="rounded border border-border bg-background/80 px-2 py-1 text-[11px] text-teal-300">
-                    {`{{${field.path}}}`}
+                <code
+                    key={field.key}
+                    className="rounded border border-border bg-background/80 px-2 py-1 text-[11px] text-foreground"
+                >
+                    {valueFormatter ? valueFormatter(field) : `{{${field.path}}}`}
                 </code>
             ))}
         </div>
@@ -44,14 +53,23 @@ export const BindingsEditor = ({
     value,
     onChange,
     suggestions,
+    placeholder,
+    addButtonLabel,
+    suggestionValueFormatter,
+    suggestionLabelFormatter,
 }: {
     title: string;
     description?: string;
     value: Record<string, string>;
     onChange: (next: Record<string, string>) => void;
     suggestions: OutputFieldDescriptor[];
+    placeholder?: string;
+    addButtonLabel?: string;
+    suggestionValueFormatter?: (field: OutputFieldDescriptor) => string;
+    suggestionLabelFormatter?: (field: OutputFieldDescriptor) => string;
 }) => {
     const entries = Object.entries(value || {});
+    const formatSuggestionValue = suggestionValueFormatter || ((field: OutputFieldDescriptor) => `{{${field.path}}}`);
     return (
         <SectionBlock title={title} description={description ?? '키명과 참조식을 연결합니다.'}>
             <div className="space-y-2">
@@ -73,7 +91,7 @@ export const BindingsEditor = ({
                         <Input
                             value={binding}
                             onChange={(event) => onChange({ ...value, [key]: event.target.value })}
-                            placeholder="{{start.transcript}}"
+                            placeholder={placeholder || '{{start.transcript}}'}
                             list={`binding-suggestions-${title}`}
                         />
                         <Button
@@ -97,12 +115,12 @@ export const BindingsEditor = ({
                 onClick={() => onChange({ ...value, [`input_${entries.length + 1}`]: '' })}
             >
                 <Plus className="mr-2 h-4 w-4" />
-                변수 추가
+                {addButtonLabel || '변수 추가'}
             </Button>
-            <VariableSuggestions registry={suggestions} />
+            <VariableSuggestions registry={suggestions} valueFormatter={suggestionLabelFormatter || formatSuggestionValue} />
             <datalist id={`binding-suggestions-${title}`}>
                 {suggestions.map((field) => (
-                    <option key={field.key} value={`{{${field.path}}}`} />
+                    <option key={field.key} value={formatSuggestionValue(field)} />
                 ))}
             </datalist>
         </SectionBlock>
@@ -138,7 +156,6 @@ export const DeclaredOutputsEditor = ({
     const serialized = serializeOutputs(value);
     useEffect(() => {
         setText(serialized);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [serialized]);
 
     return (

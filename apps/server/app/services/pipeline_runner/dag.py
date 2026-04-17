@@ -21,19 +21,6 @@ NODE_TYPES = {
 class GraphValidationError(ValueError):
     """Raised when a pipeline graph is invalid."""
 
-
-REQUIRED_END_FIELDS = {
-    "feedback_text",
-    "feedback_instruction",
-    "level",
-    "level_instruction",
-    "corrections",
-    "better_expressions",
-    "speaker_scripts",
-    "user_emotion",
-}
-
-
 def validate_graph(graph: dict[str, Any]) -> list[str]:
     """Validate graph structure and return all errors."""
     errors: list[str] = []
@@ -110,11 +97,8 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
                 errors.append(f"router node '{node_id}' requires default_route")
         elif node_type == "end":
             mapping = data.get("output_mapping") or {}
-            missing = sorted(REQUIRED_END_FIELDS - set(mapping))
-            if missing:
-                errors.append(
-                    f"end node '{node_id}' missing output mappings: {', '.join(missing)}"
-                )
+            if not isinstance(mapping, dict):
+                errors.append(f"end node '{node_id}' output_mapping must be an object")
 
     return errors
 

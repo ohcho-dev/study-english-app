@@ -5,27 +5,12 @@ import type {
     EditorNode,
     EndNodeData,
     NodeType,
-    OutputFieldDescriptor,
     ParallelNodeData,
     PipelineGraph,
     PipelineNodeData,
 } from './types';
 
 export const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 0.9 };
-
-const REQUIRED_END_OUTPUTS = {
-    feedback_text: '{{conductor_1.result.feedback_text}}',
-    feedback_instruction: '{{conductor_1.result.feedback_instruction}}',
-    level: '{{planner_1.result.persona_plan.current_level}}',
-    level_instruction: '{{conductor_1.result.level_instruction}}',
-    corrections: '{{conductor_1.result.corrections}}',
-    better_expressions: '{{conductor_1.result.better_expressions}}',
-    speaker_scripts: '{{conductor_1.result.speaker_scripts}}',
-    user_emotion: '{{conductor_1.result.user_emotion}}',
-    question_progress: '{{conductor_1.result.question_progress}}',
-    energy_flow: '{{conductor_1.result.energy_flow}}',
-    engine_trace: '{{conductor_1.result.engine_trace}}',
-};
 
 export const NODE_LABELS: Record<NodeType, string> = {
     start: '시작',
@@ -62,7 +47,6 @@ export const getDefaultNodeData = (type: NodeType): PipelineNodeData => {
                     { key: 'topic', label: '주제', path: 'topic' },
                     { key: 'scene_context', label: '장면 문맥', path: 'scene_context' },
                     { key: 'participants', label: '참여자 목록', path: 'participants' },
-                    { key: 'variant', label: '세션 상태', path: 'variant' },
                     { key: 'measured_wpm', label: '실측 WPM', path: 'measured_wpm' },
                     { key: 'response_delay_sec', label: '응답 지연', path: 'response_delay_sec' },
                 ],
@@ -70,7 +54,8 @@ export const getDefaultNodeData = (type: NodeType): PipelineNodeData => {
         case 'end':
             return {
                 label: '파이프라인 출력',
-                output_mapping: { ...REQUIRED_END_OUTPUTS },
+                output_mapping: {},
+                runtime_bindings: {},
             } satisfies EndNodeData;
         case 'llm':
             return {
@@ -197,12 +182,3 @@ export const createEdge = (connection: Connection, existingEdges: EditorEdge[]):
     type: 'animated',
     animated: true,
 });
-
-export const getOutputRegistry = (nodes: EditorNode[]): Record<string, OutputFieldDescriptor[]> => {
-    const registry: Record<string, OutputFieldDescriptor[]> = {};
-    nodes.forEach((node) => {
-        const data = node.data as unknown as { declared_outputs?: OutputFieldDescriptor[] };
-        registry[node.id] = data.declared_outputs || [];
-    });
-    return registry;
-};

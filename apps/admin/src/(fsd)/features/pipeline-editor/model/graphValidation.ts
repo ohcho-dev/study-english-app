@@ -1,3 +1,4 @@
+import { buildAdjacencyMaps, collectUpstreamNodeIds, extractBindingReferences, getOutputRegistry } from './outputRegistry';
 import type { EditorEdge, EditorNode } from './types';
 
 export interface GraphWarning {
@@ -7,41 +8,10 @@ export interface GraphWarning {
     nodeId?: string;
 }
 
-const REQUIRED_END_OUTPUT_KEYS = [
-    'feedback_text',
-    'feedback_instruction',
-    'level',
-    'level_instruction',
-    'corrections',
-    'better_expressions',
-    'speaker_scripts',
-    'user_emotion',
-    'question_progress',
-    'energy_flow',
-    'engine_trace',
-];
-
 const getNodeLabel = (node: EditorNode | undefined) => {
     if (!node) return '알 수 없는 노드';
     const label = typeof node.data?.label === 'string' ? node.data.label : null;
     return label || node.id;
-};
-
-const buildAdjacency = (nodes: EditorNode[], edges: EditorEdge[]) => {
-    const adjacency = new Map<string, Set<string>>();
-    const reverseAdjacency = new Map<string, Set<string>>();
-
-    nodes.forEach((node) => {
-        adjacency.set(node.id, new Set());
-        reverseAdjacency.set(node.id, new Set());
-    });
-
-    edges.forEach((edge) => {
-        adjacency.get(edge.source)?.add(edge.target);
-        reverseAdjacency.get(edge.target)?.add(edge.source);
-    });
-
-    return { adjacency, reverseAdjacency };
 };
 
 const collectReachable = (startIds: string[], adjacency: Map<string, Set<string>>) => {
@@ -91,6 +61,7 @@ const hasCycle = (nodes: EditorNode[], adjacency: Map<string, Set<string>>, reve
 export const getGraphWarnings = (nodes: EditorNode[], edges: EditorEdge[]): GraphWarning[] => {
     const warnings: GraphWarning[] = [];
     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const registry = getOutputRegistry(nodes);
 
     const startNodes = nodes.filter((node) => node.type === 'start');
     const endNodes = nodes.filter((node) => node.type === 'end');
@@ -121,7 +92,7 @@ export const getGraphWarnings = (nodes: EditorNode[], edges: EditorEdge[]): Grap
         }
     });
 
-    const { adjacency, reverseAdjacency } = buildAdjacency(nodes, edges);
+    const { adjacency, reverseAdjacency } = buildAdjacencyMaps(nodes, edges);
 
     if (nodes.length > 0 && hasCycle(nodes, adjacency, reverseAdjacency)) {
         warnings.push({
@@ -135,6 +106,7 @@ export const getGraphWarnings = (nodes: EditorNode[], edges: EditorEdge[]): Grap
     const reachableToEnd = collectReachable(endNodes.map((node) => node.id), reverseAdjacency);
 
     nodes.forEach((node) => {
+        const upstreamNodeIds = collectUpstreamNodeIds(nodes, edges, node.id);
         const incomingCount = reverseAdjacency.get(node.id)?.size || 0;
         const outgoingCount = adjacency.get(node.id)?.size || 0;
 
@@ -306,22 +278,134 @@ export const getGraphWarnings = (nodes: EditorNode[], edges: EditorEdge[]): Grap
                 const mapping = node.data?.output_mapping && typeof node.data.output_mapping === 'object'
                     ? node.data.output_mapping as Record<string, unknown>
                     : {};
+                const runtimeBindings = node.data?.runtime_bindings && typeof node.data.runtime_bindings === 'object'
+                    ? node.data.runtime_bindings as Record<string, unknown>
+                    : {};
 
-                const missingKeys = REQUIRED_END_OUTPUT_KEYS.filter((key) => !mapping[key]);
-                if (missingKeys.length > 0) {
+                if (Object.keys(mapping).length === 0) {
                     warnings.push({
                         id: `end-contract-${node.id}`,
                         level: 'warning',
                         nodeId: node.id,
-                        message: `${getNodeLabel(node)} 노드의 출력 계약이 일부 비어 있습니다: ${missingKeys.join(', ')}`,
+                        message: `${getNodeLabel(node)} 노드의 출력 매핑이 비어 있습니다.`,
                     });
                 }
+
+                if (Object.keys(runtimeBindings).length === 0) {
+                    warnings.push({
+                        id: `end-runtime-bindings-${node.id}`,
+                        level: 'warning',
+                        nodeId: node.id,
+                        message: `${getNodeLabel(node)} 노드의 세션 런타임 바인딩이 비어 있습니다.`,
+                    });
+                }
+
+                Object.entries(runtimeBindings).forEach(([slot, target]) => {
+                    if (typeof target !== 'string' || !target.trim()) {
+                        warnings.push({
+                            id: `end-runtime-binding-empty-${node.id}-${slot}`,
+                            level: 'warning',
+                            nodeId: node.id,
+                            message: `${getNodeLabel(node)} 노드의 런타임 바인딩 ${slot} 값이 비어 있습니다.`,
+                        });
+                        return;
+                    }
+
+                    if (target.includes('{{')) {
+                        warnings.push({
+                            id: `end-runtime-binding-template-${node.id}-${slot}`,
+                            level: 'warning',
+                            nodeId: node.id,
+                            message: `${getNodeLabel(node)} 노드의 런타임 바인딩 ${slot} 은 템플릿 식이 아니라 출력 키 경로여야 합니다.`,
+                        });
+                        return;
+                    }
+
+                    const topLevelKey = target.trim().split('.')[0];
+                    if (topLevelKey && !(topLevelKey in mapping)) {
+                        warnings.push({
+                            id: `end-runtime-binding-missing-${node.id}-${slot}-${topLevelKey}`,
+                            level: 'warning',
+                            nodeId: node.id,
+                            message: `${getNodeLabel(node)} 노드의 런타임 바인딩 ${slot} 이 존재하지 않는 출력 ${topLevelKey} 을 참조합니다.`,
+                        });
+                    }
+                });
                 break;
             }
             default:
                 break;
         }
+
+        const bindings = collectNodeBindings(node);
+        bindings.forEach(({ label, value }) => {
+            const references = extractBindingReferences(value);
+            references.forEach((reference) => {
+                const referencedNodeId = reference.nodeId === 'start'
+                    ? startNodes[0]?.id
+                    : reference.nodeId;
+
+                if (!referencedNodeId || !nodeMap.has(referencedNodeId)) {
+                    warnings.push({
+                        id: `binding-missing-${node.id}-${label}-${reference.nodeId}-${reference.path}`,
+                        level: 'warning',
+                        nodeId: node.id,
+                        message: `${getNodeLabel(node)} 노드의 ${label}에서 존재하지 않는 출력 ${reference.expression} 을 참조합니다.`,
+                    });
+                    return;
+                }
+
+                if (!upstreamNodeIds.has(referencedNodeId)) {
+                    warnings.push({
+                        id: `binding-downstream-${node.id}-${label}-${reference.nodeId}-${reference.path}`,
+                        level: 'warning',
+                        nodeId: node.id,
+                        message: `${getNodeLabel(node)} 노드의 ${label}에서 upstream 이 아닌 출력 ${reference.expression} 을 참조합니다.`,
+                    });
+                    return;
+                }
+
+                const declaredPaths = new Set((registry[referencedNodeId] || []).map((field) => field.path));
+                if (declaredPaths.size > 0 && !declaredPaths.has(reference.path)) {
+                    warnings.push({
+                        id: `binding-unregistered-${node.id}-${label}-${reference.nodeId}-${reference.path}`,
+                        level: 'warning',
+                        nodeId: node.id,
+                        message: `${getNodeLabel(node)} 노드의 ${label}에서 등록되지 않은 출력 ${reference.expression} 을 참조합니다.`,
+                    });
+                }
+            });
+        });
     });
 
     return warnings;
+};
+
+const collectNodeBindings = (node: EditorNode): Array<{ label: string; value: unknown }> => {
+    switch (node.type) {
+        case 'llm':
+        case 'code':
+            return Object.entries((node.data?.input_variables as Record<string, unknown>) || {}).map(([key, value]) => ({
+                label: `입력 변수 ${key}`,
+                value,
+            }));
+        case 'router':
+            return [{ label: '입력 변수', value: node.data?.input_variable }];
+        case 'merge':
+            return [{ label: '커스텀 병합 식', value: node.data?.custom_merge_expression }];
+        case 'ui_event':
+            return Object.entries((node.data?.payload_template as Record<string, unknown>) || {}).map(([key, value]) => ({
+                label: `이벤트 페이로드 ${key}`,
+                value,
+            }));
+        case 'delay':
+            return [{ label: '지연 시간', value: node.data?.delay_ms }];
+        case 'end':
+            return Object.entries((node.data?.output_mapping as Record<string, unknown>) || {}).map(([key, value]) => ({
+                label: `출력 매핑 ${key}`,
+                value,
+            }));
+        default:
+            return [];
+    }
 };

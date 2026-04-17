@@ -26,6 +26,7 @@ export interface StartNodeData {
 export interface EndNodeData {
     label: string;
     output_mapping: Record<string, string>;
+    runtime_bindings?: Record<string, string>;
 }
 
 export interface LLMNodeData {

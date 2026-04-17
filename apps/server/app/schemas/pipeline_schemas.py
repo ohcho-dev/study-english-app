@@ -199,7 +199,7 @@ class ConductorOutput(BaseModel):
     scripts: list[ConductorScript] = Field(default_factory=list, description="Generated scripts")
     return_to_user_after: bool = Field(default=False, description="Whether to return to user after all scripts")
     user_emotion: str = Field(default="neutral", description="Detected or inferred user emotion")
-    feedback_text: str = Field(default="", description="Moderator feedback text for the user")
+    intervention_emitted: str = Field(default="", description="Direct intervention text to emit before scripted speech")
     feedback_instruction: str = Field(default="", description="Delivery instruction for moderator, passed directly to moderator LLM")
     level_instruction: str = Field(default="", description="Level instruction for AI participants")
     corrections: list[str] = Field(default_factory=list, description="Grammar/expression corrections")

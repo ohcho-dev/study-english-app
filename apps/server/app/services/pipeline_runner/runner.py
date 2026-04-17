@@ -23,7 +23,10 @@ from app.services.pipeline_runner.node_executors.merge_executor import MergeNode
 from app.services.pipeline_runner.node_executors.parallel_executor import ParallelNodeExecutor
 from app.services.pipeline_runner.node_executors.router_executor import RouterNodeExecutor
 from app.services.pipeline_runner.node_executors.ui_event_executor import UIEventNodeExecutor
-from app.services.pipeline_runner.output_contract import coerce_output_contract, validate_output_contract
+from app.services.pipeline_runner.output_contract import (
+    coerce_output_contract,
+    validate_output_contract,
+)
 from app.services.pipeline_runner.variable_resolver import resolve_mapping
 
 TERMINAL_STATUSES = {"completed", "failed", "skipped"}
@@ -250,7 +253,8 @@ class PipelineRunner:
         context: PipelineContext,
     ) -> NodeExecutionResult:
         output_mapping = node_data.get("output_mapping") or {}
-        resolved = coerce_output_contract(resolve_mapping(output_mapping, context))
+        resolved = resolve_mapping(output_mapping, context)
+        resolved = coerce_output_contract(resolved)
         is_valid, errors = validate_output_contract(resolved)
         if not is_valid:
             raise ValueError("; ".join(errors))
@@ -430,17 +434,10 @@ class PipelineRunner:
         context.metadata.setdefault("total_output_tokens", 0)
         context.metadata.setdefault("estimated_cost_usd", 0.0)
         return {
-            "feedback_text": "지금 응답을 생성하는 중에 문제가 발생했습니다. 다시 한 번 이어서 진행해 주세요.",
-            "feedback_instruction": "차분하고 짧게 안내한다.",
-            "level": 1,
-            "level_instruction": "Use simple English and keep the conversation moving.",
-            "corrections": [],
-            "better_expressions": [],
-            "speaker_scripts": {},
-            "user_emotion": "neutral",
-            "question_progress": {},
-            "energy_flow": None,
-            "engine_trace": {"error": error_text, "trace_id": context.trace_id},
+            "_pipeline_error": {
+                "message": error_text,
+                "trace_id": context.trace_id,
+            },
         }
 
     def _get_node_by_type(self, node_type: str) -> dict[str, Any]:
