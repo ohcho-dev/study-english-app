@@ -25,7 +25,7 @@ export const NODE_LABELS: Record<NodeType, string> = {
 };
 
 export const NODE_DESCRIPTIONS: Record<NodeType, string> = {
-    start: '사용자 입력과 세션 문맥이 시작됩니다.',
+    start: '세션 문맥 또는 테스트 입력 JSON이 시작됩니다.',
     end: '세션용 출력 계약을 완성합니다.',
     llm: '모델을 호출해 JSON 또는 텍스트를 생성합니다.',
     code: '파이썬 코드로 데이터를 변환합니다.',
@@ -42,6 +42,7 @@ export const getDefaultNodeData = (type: NodeType): PipelineNodeData => {
             return {
                 label: '사용자 입력',
                 declared_outputs: [
+                    { key: 'input_json', label: '테스트 입력 JSON', path: 'input_json' },
                     { key: 'transcript', label: '사용자 발화', path: 'transcript' },
                     { key: 'history', label: '대화 이력', path: 'history' },
                     { key: 'topic', label: '주제', path: 'topic' },

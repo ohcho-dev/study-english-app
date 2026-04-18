@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class VisualPipelineCreate(BaseModel):
@@ -75,8 +75,16 @@ class ValidateResponse(BaseModel):
 
 
 class TestRunRequest(BaseModel):
-    transcript: str = Field(..., min_length=1)
+    transcript: str | None = None
+    input_json: dict[str, Any] | list[dict[str, Any]] | None = None
     session_context: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "TestRunRequest":
+        has_transcript = isinstance(self.transcript, str) and bool(self.transcript.strip())
+        if not has_transcript and self.input_json is None:
+            raise ValueError("transcript 또는 input_json 중 하나는 필요합니다.")
+        return self
 
 
 class NodeExecutionLogResponse(BaseModel):
@@ -94,14 +102,35 @@ class NodeExecutionLogResponse(BaseModel):
     created_at: datetime | None = None
 
 
-class TestRunResponse(BaseModel):
+class TestRunCaseResponse(BaseModel):
     trace_id: str
+    input_json: dict[str, Any] | None = None
     result: dict[str, Any]
     node_logs: list[NodeExecutionLogResponse]
     total_duration_ms: float
     total_input_tokens: int
     total_output_tokens: int
     estimated_cost_usd: float
+
+
+class TestRunBatchSummary(BaseModel):
+    item_count: int
+    total_duration_ms: float
+    total_input_tokens: int
+    total_output_tokens: int
+    estimated_cost_usd: float
+
+
+class TestRunResponse(BaseModel):
+    trace_id: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
+    node_logs: list[NodeExecutionLogResponse] = Field(default_factory=list)
+    total_duration_ms: float = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    estimated_cost_usd: float = 0
+    batch_results: list[TestRunCaseResponse] = Field(default_factory=list)
+    batch_summary: TestRunBatchSummary | None = None
 
 
 class TemplatePipelineLinkRequest(BaseModel):

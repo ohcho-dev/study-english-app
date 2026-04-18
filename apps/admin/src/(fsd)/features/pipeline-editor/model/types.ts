@@ -185,13 +185,30 @@ export interface NodeExecutionLog {
 }
 
 export interface TestRunResponse {
-    trace_id: string;
+    trace_id?: string | null;
     result: Record<string, unknown>;
     node_logs: NodeExecutionLog[];
     total_duration_ms: number;
     total_input_tokens: number;
     total_output_tokens: number;
     estimated_cost_usd: number;
+    batch_results: Array<{
+        trace_id: string;
+        input_json?: Record<string, unknown> | null;
+        result: Record<string, unknown>;
+        node_logs: NodeExecutionLog[];
+        total_duration_ms: number;
+        total_input_tokens: number;
+        total_output_tokens: number;
+        estimated_cost_usd: number;
+    }>;
+    batch_summary?: {
+        item_count: number;
+        total_duration_ms: number;
+        total_input_tokens: number;
+        total_output_tokens: number;
+        estimated_cost_usd: number;
+    } | null;
 }
 
 export interface PipelineExecutionTraceSummary {

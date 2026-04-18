@@ -26,7 +26,7 @@ export const CodeConfigPanel = ({ node, suggestions, onPatch }: {
                 </div>
             </SectionBlock>
             <SectionBlock title="실행 코드" description="`async def execute(inputs)` 함수를 작성하세요.">
-                <Textarea rows={16} value={data.code || ''} onChange={(event) => onPatch({ code: event.target.value })} className="font-mono text-xs" />
+                <Textarea className="max-w-[350px] font-mono text-xs" rows={16} value={data.code || ''} onChange={(event) => onPatch({ code: event.target.value })} />
             </SectionBlock>
             <BindingsEditor title="입력 변수 바인딩" value={data.input_variables || {}} onChange={(input_variables) => onPatch({ input_variables })} suggestions={suggestions} />
             <DeclaredOutputsEditor

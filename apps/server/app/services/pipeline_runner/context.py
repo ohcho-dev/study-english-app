@@ -44,6 +44,7 @@ class PipelineContext:
     variant: dict[str, Any]
     measured_wpm: float | None
     response_delay_sec: float | None
+    input_json: dict[str, Any] | None = None
     persist_logs: bool = False
 
     node_outputs: dict[str, Any] = field(default_factory=dict)
@@ -89,6 +90,7 @@ class PipelineContext:
             "variant": self.variant,
             "measured_wpm": self.measured_wpm,
             "response_delay_sec": self.response_delay_sec,
+            "input_json": self.input_json,
             "session_id": str(self.session_id) if self.session_id else None,
             "turn_index": self.turn_index,
         }

@@ -1,0 +1,112 @@
+{
+  "TDV1-Q01": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Start Delay",
+    "expected_module": "Start",
+    "expected_response_change": "no_start_to_minimal_start",
+    "acceptable_alternative_failure_patterns": [],
+    "acceptable_alternative_modules": ["Simplify"],
+    "acceptable_alternative_response_changes": ["filler_only_to_sentence_head"],
+    "notes": "Delay is long and there is no meaningful English output. This is a clean Start Delay case."
+  },
+  "TDV1-Q02": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Empty Start",
+    "expected_module": "Extend",
+    "expected_response_change": "short_answer_to_one_line_extension",
+    "acceptable_alternative_failure_patterns": [],
+    "acceptable_alternative_modules": [],
+    "acceptable_alternative_response_changes": ["noun_answer_to_reason_addition"],
+    "notes": "Boundary case with Start Delay. Delay exists, but a meaningful minimal answer is already present, so it should not be Start Delay."
+  },
+  "TDV1-Q03": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Empty Start",
+    "expected_module": "Extend",
+    "expected_response_change": "minimal_clause_to_reason_or_context",
+    "acceptable_alternative_failure_patterns": [],
+    "acceptable_alternative_modules": [],
+    "acceptable_alternative_response_changes": ["short_answer_to_one_line_extension"],
+    "notes": "Full sentence surface form is present, but for benchmark purposes this is still treated as expandable Empty Start."
+  },
+  "TDV1-Q04": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Empty Start",
+    "expected_module": "Extend",
+    "expected_response_change": "yes_no_to_reason_addition",
+    "acceptable_alternative_failure_patterns": [],
+    "acceptable_alternative_modules": [],
+    "acceptable_alternative_response_changes": ["short_answer_to_one_line_extension"],
+    "notes": "Yes/No question. Single-word answer is semantically valid, but benchmark expects Extend routing."
+  },
+  "TDV1-Q05": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Repair Need",
+    "expected_module": "Repair",
+    "expected_response_change": "clarification_then_restart",
+    "acceptable_alternative_failure_patterns": [],
+    "acceptable_alternative_modules": [],
+    "acceptable_alternative_response_changes": ["repair_then_resume"],
+    "notes": "This is the cleanest Repair sample in v1. asked_for_repeat=true should strongly support Repair Need."
+  },
+  "TDV1-Q06": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Structure Collapse",
+    "expected_module": "Structure Shift",
+    "expected_response_change": "fragment_to_usable_clause",
+    "acceptable_alternative_failure_patterns": ["Empty Start"],
+    "acceptable_alternative_modules": ["Extend"],
+    "acceptable_alternative_response_changes": ["feeling_stem_to_complete_clause"],
+    "notes": "Boundary case between Empty Start and Structure Collapse. For feeling/state questions, 'I feel...' should prefer Structure Collapse."
+  },
+  "TDV1-Q07": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Structure Collapse",
+    "expected_module": "Structure Shift",
+    "expected_response_change": "broken_reasoning_to_simple_structure",
+    "acceptable_alternative_failure_patterns": ["Vocab Hunting"],
+    "acceptable_alternative_modules": ["Simplify"],
+    "acceptable_alternative_response_changes": ["fragment_to_usable_clause"],
+    "notes": "There are content words present, but clause structure is unstable. Prefer Structure Shift over vocabulary-only interpretation."
+  },
+  "TDV1-Q08": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Translation Trap",
+    "expected_module": "Structure Shift",
+    "expected_response_change": "translation_like_output_to_more_english_like_frame",
+    "acceptable_alternative_failure_patterns": ["Structure Collapse"],
+    "acceptable_alternative_modules": ["Sense Shift"],
+    "acceptable_alternative_response_changes": ["direct_translation_to_shifted_frame"],
+    "notes": "Use only as a clear Translation Trap sample. Do not overgeneralize this pattern to all slightly awkward outputs."
+  },
+  "TDV1-Q09": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Vocab Hunting",
+    "expected_module": "Simplify",
+    "expected_response_change": "lexical_search_to_simple_rephrase",
+    "acceptable_alternative_failure_patterns": ["Structure Collapse"],
+    "acceptable_alternative_modules": ["Structure Shift"],
+    "acceptable_alternative_response_changes": ["stalled_description_to_basic_verb_restart"],
+    "notes": "Boundary case between vocabulary retrieval and structural instability."
+  },
+  "TDV1-Q10": {
+    "dataset_version": "TD-v1",
+    "session_id": "TDV1-SESSION-001",
+    "expected_failure_pattern": "Over-Control / Freeze",
+    "expected_module": "Start",
+    "expected_response_change": "self_cancel_to_actual_output",
+    "acceptable_alternative_failure_patterns": ["Start Delay"],
+    "acceptable_alternative_modules": ["Simplify"],
+    "acceptable_alternative_response_changes": ["hesitation_to_minimal_start"],
+    "notes": "Secondary pattern test. Current minimal fields may make this look like Start Delay, so alternative interpretation is allowed."
+  }
+}

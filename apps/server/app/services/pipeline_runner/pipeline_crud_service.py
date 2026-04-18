@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import case, func, select
@@ -20,6 +21,8 @@ from app.schemas.visual_pipeline import (
     PipelineExecutionTraceSummary,
     TemplatePipelineLinkRequest,
     TemplatePipelineLinkResponse,
+    TestRunBatchSummary,
+    TestRunCaseResponse,
     TestRunRequest,
     TestRunResponse,
     VisualPipelineCreate,
@@ -212,23 +215,56 @@ class VisualPipelineCrudService:
         pipeline = await self._get_pipeline_orm(pipeline_id)
         if pipeline is None:
             raise ValueError("pipeline not found")
-        session_context = request.session_context or {}
-        session_id_value = session_context.get("session_id")
-        session_id = UUID(session_id_value) if session_id_value else None
-        context = PipelineContext(
-            trace_id=str(uuid4()),
-            session_id=session_id,
-            turn_index=int(session_context.get("turn_index") or 0),
-            transcript=request.transcript,
-            history=str(session_context.get("history") or ""),
-            topic=session_context.get("topic"),
-            scene_context=session_context.get("scene_context"),
-            participants=list(session_context.get("participants") or []),
-            variant=dict(session_context.get("variant") or {}),
-            measured_wpm=session_context.get("measured_wpm"),
-            response_delay_sec=session_context.get("response_delay_sec"),
-            persist_logs=False,
+        batch_inputs = self._expand_batch_test_inputs(request.input_json)
+        if batch_inputs is not None:
+            batch_results: list[TestRunCaseResponse] = []
+            total_duration_ms = 0.0
+            total_input_tokens = 0
+            total_output_tokens = 0
+            estimated_cost_usd = 0.0
+
+            for item in batch_inputs:
+                case = await self._execute_test_case(pipeline, request, item)
+                batch_results.append(case)
+                total_duration_ms += case.total_duration_ms
+                total_input_tokens += case.total_input_tokens
+                total_output_tokens += case.total_output_tokens
+                estimated_cost_usd += case.estimated_cost_usd
+
+            return TestRunResponse(
+                total_duration_ms=total_duration_ms,
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
+                estimated_cost_usd=estimated_cost_usd,
+                batch_results=batch_results,
+                batch_summary=TestRunBatchSummary(
+                    item_count=len(batch_results),
+                    total_duration_ms=total_duration_ms,
+                    total_input_tokens=total_input_tokens,
+                    total_output_tokens=total_output_tokens,
+                    estimated_cost_usd=estimated_cost_usd,
+                ),
+            )
+
+        single_input = self._expand_single_test_input(request.input_json)
+        case = await self._execute_test_case(pipeline, request, single_input)
+        return TestRunResponse(
+            trace_id=case.trace_id,
+            result=case.result,
+            node_logs=case.node_logs,
+            total_duration_ms=case.total_duration_ms,
+            total_input_tokens=case.total_input_tokens,
+            total_output_tokens=case.total_output_tokens,
+            estimated_cost_usd=case.estimated_cost_usd,
         )
+
+    async def _execute_test_case(
+        self,
+        pipeline: VisualPipeline,
+        request: TestRunRequest,
+        input_json: dict[str, Any] | None,
+    ) -> TestRunCaseResponse:
+        context = self._build_test_context(request, input_json)
         runner = PipelineRunner(
             db=None,
             pipeline_graph=pipeline.graph_json,
@@ -237,8 +273,9 @@ class VisualPipelineCrudService:
             timeout_ms=pipeline.timeout_ms,
         )
         result = await runner.execute(context)
-        return TestRunResponse(
+        return TestRunCaseResponse(
             trace_id=context.trace_id,
+            input_json=input_json,
             result=result,
             node_logs=[NodeExecutionLogResponse(**log.to_dict()) for log in context.logs],
             total_duration_ms=float(context.metadata.get("total_duration_ms") or 0),
@@ -246,6 +283,131 @@ class VisualPipelineCrudService:
             total_output_tokens=int(context.metadata.get("total_output_tokens") or 0),
             estimated_cost_usd=float(context.metadata.get("estimated_cost_usd") or 0),
         )
+
+    def _build_test_context(
+        self,
+        request: TestRunRequest,
+        input_json: dict[str, Any] | None,
+    ) -> PipelineContext:
+        session_context = request.session_context or {}
+        session_id_value = session_context.get("session_id")
+        session_id = UUID(session_id_value) if session_id_value else None
+        response_delay_sec = session_context.get("response_delay_sec")
+        if response_delay_sec is None:
+            response_delay_sec = self._derive_response_delay(input_json)
+
+        return PipelineContext(
+            trace_id=str(uuid4()),
+            session_id=session_id,
+            turn_index=int(session_context.get("turn_index") or 0),
+            transcript=self._derive_test_transcript(request.transcript, input_json),
+            history=str(session_context.get("history") or ""),
+            topic=session_context.get("topic"),
+            scene_context=session_context.get("scene_context"),
+            participants=list(session_context.get("participants") or []),
+            variant=dict(session_context.get("variant") or {}),
+            measured_wpm=session_context.get("measured_wpm"),
+            response_delay_sec=response_delay_sec,
+            input_json=input_json,
+            persist_logs=False,
+        )
+
+    def _expand_batch_test_inputs(
+        self,
+        input_json: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]] | None:
+        if input_json is None:
+            return None
+        if isinstance(input_json, list):
+            if not all(isinstance(item, dict) for item in input_json):
+                raise ValueError("input_json 배열에는 객체만 넣을 수 있습니다.")
+            return [dict(item) for item in input_json]
+        if not isinstance(input_json, dict):
+            raise ValueError("input_json은 객체 또는 객체 배열이어야 합니다.")
+
+        items = input_json.get("items")
+        if isinstance(items, list):
+            dataset_meta = {key: value for key, value in input_json.items() if key != "items"}
+            expanded: list[dict[str, Any]] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError("items 배열에는 객체만 넣을 수 있습니다.")
+                expanded.append(self._expand_dataset_item(dataset_meta, item))
+            return expanded
+        return None
+
+    def _expand_single_test_input(
+        self,
+        input_json: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> dict[str, Any] | None:
+        if input_json is None:
+            return None
+        if isinstance(input_json, list):
+            raise ValueError("단건 실행에는 JSON 객체를 사용하세요.")
+        if not isinstance(input_json, dict):
+            raise ValueError("input_json은 객체 또는 객체 배열이어야 합니다.")
+        items = input_json.get("items")
+        if isinstance(items, list):
+            raise ValueError("items 배열은 배치 실행에서만 사용할 수 있습니다.")
+        return dict(input_json)
+
+    def _expand_dataset_item(
+        self,
+        dataset_meta: dict[str, Any],
+        item: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = {**dataset_meta, **item}
+        user_input = item.get("user_input")
+        if isinstance(user_input, dict):
+            for key in ("user_utterance_text", "first_response_delay_sec", "asked_for_repeat"):
+                if key not in merged and key in user_input:
+                    merged[key] = user_input.get(key)
+
+        expected_labels = item.get("expected_labels")
+        if isinstance(expected_labels, dict):
+            if "expected_failure_pattern" not in merged:
+                merged["expected_failure_pattern"] = expected_labels.get("failure_pattern")
+            if "expected_module" not in merged:
+                merged["expected_module"] = expected_labels.get("module")
+            if "expected_response_change" not in merged:
+                merged["expected_response_change"] = expected_labels.get("response_change")
+        return merged
+
+    def _derive_test_transcript(
+        self,
+        transcript: str | None,
+        input_json: dict[str, Any] | None,
+    ) -> str:
+        if isinstance(transcript, str) and transcript.strip():
+            return transcript.strip()
+        if not isinstance(input_json, dict):
+            return ""
+
+        user_input = input_json.get("user_input")
+        if isinstance(user_input, dict):
+            user_utterance_text = user_input.get("user_utterance_text")
+            if isinstance(user_utterance_text, str):
+                return user_utterance_text
+
+        user_utterance_text = input_json.get("user_utterance_text")
+        if isinstance(user_utterance_text, str):
+            return user_utterance_text
+        return ""
+
+    def _derive_response_delay(self, input_json: dict[str, Any] | None) -> float | None:
+        if not isinstance(input_json, dict):
+            return None
+
+        value = input_json.get("first_response_delay_sec")
+        if isinstance(value, int | float):
+            return float(value)
+
+        user_input = input_json.get("user_input")
+        if isinstance(user_input, dict):
+            nested_value = user_input.get("first_response_delay_sec")
+            if isinstance(nested_value, int | float):
+                return float(nested_value)
+        return None
 
     async def get_pipeline_for_execution(
         self,

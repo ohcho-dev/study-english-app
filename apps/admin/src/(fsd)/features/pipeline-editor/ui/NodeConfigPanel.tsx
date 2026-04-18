@@ -33,7 +33,7 @@ export const NodeConfigPanel = () => {
     const startData = node.data as unknown as StartNodeData;
 
     return (
-        <aside className="w-[380px] border-l border-border bg-card/85 backdrop-blur">
+        <aside className="w-[440px] border-l border-border bg-card/85 backdrop-blur">
             <ScrollArea className="h-[calc(100vh-64px)]">
                 <div className="space-y-4 p-4">
                     <div>
@@ -68,7 +68,7 @@ export const NodeConfigPanel = () => {
                     ) : null}
                     {node.type === 'start' ? (
                         <div className="space-y-4">
-                            <SectionBlock title="시작 노드" description="세션 컨텍스트에서 전달되는 입력 필드를 등록합니다.">
+                            <SectionBlock title="시작 노드" description="세션 컨텍스트 또는 테스트 실행 JSON에서 전달되는 입력 필드를 등록합니다.">
                                 <div className="space-y-2">
                                     <Label>노드 이름</Label>
                                     <Input value={String(startData.label || '')} onChange={(event) => onPatch({ label: event.target.value })} />

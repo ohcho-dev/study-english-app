@@ -127,9 +127,20 @@ export const useValidateVisualPipeline = () => useMutation({
 });
 
 export const useTestRunVisualPipeline = () => useMutation({
-    mutationFn: ({ id, transcript, sessionContext }: { id: string; transcript: string; sessionContext?: Record<string, unknown> }) =>
+    mutationFn: ({
+        id,
+        transcript,
+        inputJson,
+        sessionContext,
+    }: {
+        id: string;
+        transcript?: string;
+        inputJson?: Record<string, unknown> | Array<Record<string, unknown>>;
+        sessionContext?: Record<string, unknown>;
+    }) =>
         testRunVisualPipeline(id, {
             transcript,
+            input_json: inputJson,
             session_context: sessionContext,
         }),
 });

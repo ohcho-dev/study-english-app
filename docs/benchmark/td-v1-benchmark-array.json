@@ -1,0 +1,85 @@
+[
+  {
+    "question_id": "TDV1-Q01",
+    "question_type": "open_preference",
+    "question_text": "What kind of food do you like?",
+    "user_utterance_text": "",
+    "first_response_delay_sec": 4.2,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q02",
+    "question_type": "open_preference",
+    "question_text": "What kind of food do you like?",
+    "user_utterance_text": "Korean food.",
+    "first_response_delay_sec": 2.8,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q03",
+    "question_type": "daily_routine",
+    "question_text": "What do you usually do after work?",
+    "user_utterance_text": "I usually go home.",
+    "first_response_delay_sec": 1.0,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q04",
+    "question_type": "yes_no_preference",
+    "question_text": "Do you like studying in the morning?",
+    "user_utterance_text": "No.",
+    "first_response_delay_sec": 3.4,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q05",
+    "question_type": "broad_experience",
+    "question_text": "Did you do anything fun last weekend?",
+    "user_utterance_text": "Sorry? Do you mean something special?",
+    "first_response_delay_sec": 1.6,
+    "asked_for_repeat": true
+  },
+  {
+    "question_id": "TDV1-Q06",
+    "question_type": "feeling_state",
+    "question_text": "How do you feel when you listen to music?",
+    "user_utterance_text": "I feel...",
+    "first_response_delay_sec": 1.2,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q07",
+    "question_type": "reason_explanation",
+    "question_text": "Why do you like winter?",
+    "context": "User is explaining why winter is good.",
+    "user_utterance_text": "Because... snowboard... and... good...",
+    "first_response_delay_sec": 1.9,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q08",
+    "question_type": "compliment_response",
+    "question_text": "What would you say to compliment someone's outfit?",
+    "context": "User wants to say '옷 예쁘다.' in English.",
+    "user_utterance_text": "Your clothes are pretty.",
+    "first_response_delay_sec": 1.0,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q09",
+    "question_type": "problem_description",
+    "question_text": "What's wrong with your car?",
+    "context": "User wants to describe a car issue.",
+    "user_utterance_text": "My car is... broken... problem... engine...",
+    "first_response_delay_sec": 2.3,
+    "asked_for_repeat": false
+  },
+  {
+    "question_id": "TDV1-Q10",
+    "question_type": "personal_opinion",
+    "question_text": "What do you think about working from home?",
+    "user_utterance_text": "Um... I... no... maybe... I don't know...",
+    "first_response_delay_sec": 4.0,
+    "asked_for_repeat": false
+  }
+]

@@ -40,6 +40,52 @@ import {
     useVisualPipelineVersions,
 } from '../model/usePipelineMutations';
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const parseTestInputJson = (
+    raw: string,
+): Record<string, unknown> | Array<Record<string, unknown>> | undefined => {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+        if (!parsed.every(isRecord)) {
+            throw new Error('배열에는 JSON 객체만 넣을 수 있습니다.');
+        }
+        return parsed as Array<Record<string, unknown>>;
+    }
+    if (!isRecord(parsed)) {
+        throw new Error('JSON 객체 또는 객체 배열만 지원합니다.');
+    }
+    return parsed;
+};
+
+const readPath = (source: Record<string, unknown>, path: string): unknown => {
+    return path.split('.').reduce<unknown>((current, segment) => {
+        if (!isRecord(current)) return undefined;
+        return current[segment];
+    }, source);
+};
+
+const pickString = (source: Record<string, unknown>, paths: string[]): string => {
+    for (const path of paths) {
+        const value = readPath(source, path);
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return '';
+};
+
+const pickNumber = (source: Record<string, unknown>, paths: string[]): number | null => {
+    for (const path of paths) {
+        const value = readPath(source, path);
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+    }
+    return null;
+};
+
 export const PipelineToolbar = () => {
     const router = useRouter();
     const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -71,6 +117,7 @@ export const PipelineToolbar = () => {
     const validateMutation = useValidateVisualPipeline();
     const testRunMutation = useTestRunVisualPipeline();
 
+    const [testInputJson, setTestInputJson] = useState('');
     const [testTranscript, setTestTranscript] = useState('');
     const [testHistory, setTestHistory] = useState('');
     const [testTopic, setTestTopic] = useState('');
@@ -140,8 +187,17 @@ export const PipelineToolbar = () => {
             alert('테스트 실행 전 먼저 저장하세요.');
             return;
         }
-        if (!testTranscript.trim()) {
-            alert('테스트 발화를 입력하세요.');
+
+        let parsedInputJson: Record<string, unknown> | Array<Record<string, unknown>> | undefined;
+        try {
+            parsedInputJson = parseTestInputJson(testInputJson);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : '테스트 입력 JSON 형식을 확인하세요.');
+            return;
+        }
+
+        if (!parsedInputJson && !testTranscript.trim()) {
+            alert('테스트 입력 JSON 또는 테스트 발화 중 하나를 입력하세요.');
             return;
         }
 
@@ -150,7 +206,8 @@ export const PipelineToolbar = () => {
         try {
             const response = await testRunMutation.mutateAsync({
                 id: pipelineId,
-                transcript: testTranscript,
+                transcript: testTranscript.trim() || undefined,
+                inputJson: parsedInputJson,
                 sessionContext: {
                     history: testHistory,
                     topic: testTopic,
@@ -159,9 +216,13 @@ export const PipelineToolbar = () => {
                     variant: {},
                 },
             });
+
+            const latestBatchRun = response.batch_results.at(-1);
+            const latestLogs = latestBatchRun?.node_logs || response.node_logs;
+            const traceId = latestBatchRun?.trace_id || response.trace_id || null;
             setExecutionState(
-                response.trace_id,
-                Object.fromEntries(response.node_logs.map((log) => [log.node_id, log.status])),
+                traceId,
+                Object.fromEntries(latestLogs.map((log) => [log.node_id, log.status])),
             );
         } finally {
             setExecuting(false);
@@ -234,6 +295,28 @@ export const PipelineToolbar = () => {
         }
     };
 
+    const batchResults = testRunMutation.data?.batch_results || [];
+    const batchSummary = testRunMutation.data?.batch_summary || null;
+    const batchScoreSummary = useMemo(() => {
+        if (batchResults.length === 0) return null;
+        const totals = batchResults.reduce(
+            (acc, item) => {
+                const totalScore = pickNumber(item.result, ['scorecard.total_score', 'benchmark_compare.total_score']);
+                const maxScore = pickNumber(item.result, ['scorecard.max_score', 'benchmark_compare.max_score']);
+                if (totalScore !== null) {
+                    acc.total += totalScore;
+                    acc.hasScore = true;
+                }
+                if (maxScore !== null) {
+                    acc.max += maxScore;
+                }
+                return acc;
+            },
+            { total: 0, max: 0, hasScore: false },
+        );
+        return totals.hasScore ? totals : null;
+    }, [batchResults]);
+
     return (
         <div className="absolute left-4 right-4 top-4 z-20 rounded-3xl border border-border bg-card/92 p-4 shadow-xl shadow-black/20 backdrop-blur">
             <input ref={importInputRef} type="file" accept="application/json" className="hidden" onChange={handleImportChange} />
@@ -294,27 +377,51 @@ export const PipelineToolbar = () => {
                                     테스트 실행
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-4xl sm:max-w-4xl">
+                            <DialogContent className="max-w-6xl sm:max-w-6xl">
                                 <DialogHeader>
                                     <DialogTitle>테스트 실행</DialogTitle>
                                 </DialogHeader>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     <div className="space-y-3">
                                         <div className="space-y-2">
-                                            <Label>테스트 발화</Label>
-                                            <Textarea rows={6} value={testTranscript} onChange={(event) => setTestTranscript(event.target.value)} placeholder="사용자 발화를 입력하세요." />
+                                            <Label>테스트 입력 JSON 배열</Label>
+                                            <Textarea
+                                                rows={14}
+                                                value={testInputJson}
+                                                onChange={(event) => setTestInputJson(event.target.value)}
+                                                placeholder={[
+                                                    '[',
+                                                    '  {',
+                                                    '    "question_id": "TDV1-Q01",',
+                                                    '    "question_type": "open_preference",',
+                                                    '    "question_text": "What kind of food do you like?",',
+                                                    '    "user_utterance_text": "",',
+                                                    '    "first_response_delay_sec": 4.2,',
+                                                    '    "asked_for_repeat": false',
+                                                    '  }',
+                                                    ']',
+                                                ].join('\n')}
+                                                className="max-h-[300px]"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                이 벤치마크는 문항 객체 1개 또는 객체 배열만 넣으면 됩니다. 정답 라벨과 채점 기준은 파이프라인 내부 기준표에서 조회합니다.
+                                            </p>
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>대화 이력</Label>
+                                            <Label>추가 발화(선택)</Label>
+                                            <Textarea rows={4} value={testTranscript} onChange={(event) => setTestTranscript(event.target.value)} placeholder="일반 파이프라인 단건 테스트에서만 사용합니다." />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>대화 이력(선택)</Label>
                                             <Textarea rows={6} value={testHistory} onChange={(event) => setTestHistory(event.target.value)} />
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="space-y-2">
-                                                <Label>주제</Label>
+                                                <Label>주제(선택)</Label>
                                                 <Input value={testTopic} onChange={(event) => setTestTopic(event.target.value)} />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>장면 문맥</Label>
+                                                <Label>장면 문맥(선택)</Label>
                                                 <Input value={testScene} onChange={(event) => setTestScene(event.target.value)} />
                                             </div>
                                         </div>
@@ -325,34 +432,85 @@ export const PipelineToolbar = () => {
                                     </div>
                                     <div className="space-y-3">
                                         <div className="rounded-2xl border border-border bg-muted/40 p-3">
-                                            <p className="text-sm font-semibold text-foreground">최종 결과</p>
-                                            <ScrollArea className="mt-2 h-[190px] rounded-xl border border-border bg-background/90 p-3 text-xs text-muted-foreground">
-                                                <pre>{JSON.stringify(testRunMutation.data?.result || {}, null, 2)}</pre>
+                                            <p className="text-sm font-semibold text-foreground">실행 요약</p>
+                                            <ScrollArea className="mt-2 h-[180px] rounded-xl border border-border bg-background/90 p-3 text-xs text-muted-foreground">
+                                                <pre>{JSON.stringify(batchSummary || testRunMutation.data?.result || {}, null, 2)}</pre>
                                             </ScrollArea>
                                             {testRunMutation.data ? (
                                                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                                                    <p>총 실행 시간: {testRunMutation.data.total_duration_ms}ms</p>
+                                                    <p>총 실행 시간: {testRunMutation.data.total_duration_ms.toFixed(1)}ms</p>
                                                     <p>입력 토큰: {testRunMutation.data.total_input_tokens}</p>
                                                     <p>출력 토큰: {testRunMutation.data.total_output_tokens}</p>
                                                     <p>예상 비용: ${testRunMutation.data.estimated_cost_usd.toFixed(6)}</p>
+                                                    {batchSummary ? <p>문항 수: {batchSummary.item_count}</p> : null}
+                                                    {batchScoreSummary ? <p>총점 합계: {batchScoreSummary.total}/{batchScoreSummary.max}</p> : null}
                                                 </div>
                                             ) : null}
                                         </div>
                                         <div className="rounded-2xl border border-border bg-muted/40 p-3">
-                                            <p className="text-sm font-semibold text-foreground">노드 로그</p>
-                                            <ScrollArea className="mt-2 h-[250px] rounded-xl border border-border bg-background/90 p-3">
-                                                <div className="space-y-2 text-xs text-muted-foreground">
-                                                    {(testRunMutation.data?.node_logs || []).map((log) => (
-                                                        <div key={`${log.node_id}-${log.created_at || log.trace_id}`} className="rounded-xl border border-border bg-card/70 p-2">
-                                                            <div className="flex items-center justify-between font-medium text-foreground">
-                                                                <span>{log.node_label || log.node_id}</span>
-                                                                <Badge variant="outline">{log.status}</Badge>
+                                            <p className="text-sm font-semibold text-foreground">
+                                                {batchResults.length > 0 ? '문항별 결과' : '노드 로그'}
+                                            </p>
+                                            {batchResults.length > 0 ? (
+                                                <ScrollArea className="mt-2 h-[360px] rounded-xl border border-border bg-background/90 p-3">
+                                                    <div className="space-y-2 text-xs text-muted-foreground">
+                                                        {batchResults.map((run, index) => {
+                                                            const questionId = pickString(run.result, ['question_id', 'normalized_input.question_id']) || `문항 ${index + 1}`;
+                                                            const detectedPattern = pickString(run.result, ['detected_failure_pattern']);
+                                                            const selectedModule = pickString(run.result, ['selected_module']);
+                                                            const totalScore = pickNumber(run.result, ['scorecard.total_score', 'benchmark_compare.total_score']);
+                                                            const maxScore = pickNumber(run.result, ['scorecard.max_score', 'benchmark_compare.max_score']);
+                                                            const interpretation = pickString(run.result, ['interpretation.summary_note', 'interpretation.summary', 'score_interpretation.summary_note']);
+
+                                                            return (
+                                                                <details key={`${run.trace_id}-${questionId}`} className="rounded-xl border border-border bg-card/70 p-2">
+                                                                    <summary className="flex cursor-pointer items-center justify-between gap-3 font-medium text-foreground">
+                                                                        <span>{questionId}</span>
+                                                                        <span className="flex gap-2">
+                                                                            {totalScore !== null && maxScore !== null ? <Badge variant="outline">{totalScore}/{maxScore}</Badge> : null}
+                                                                            {detectedPattern ? <Badge variant="outline">{detectedPattern}</Badge> : null}
+                                                                            {selectedModule ? <Badge variant="outline">{selectedModule}</Badge> : null}
+                                                                        </span>
+                                                                    </summary>
+                                                                    {interpretation ? <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{interpretation}</p> : null}
+                                                                    <details className="mt-2 rounded-lg border border-border bg-background/80 p-2">
+                                                                        <summary className="cursor-pointer text-foreground">결과 JSON</summary>
+                                                                        <pre className="mt-2 whitespace-pre-wrap">{JSON.stringify(run.result, null, 2)}</pre>
+                                                                    </details>
+                                                                    <details className="mt-2 rounded-lg border border-border bg-background/80 p-2">
+                                                                        <summary className="cursor-pointer text-foreground">노드 로그</summary>
+                                                                        <div className="mt-2 space-y-2">
+                                                                            {run.node_logs.map((log) => (
+                                                                                <div key={`${run.trace_id}-${log.node_id}-${log.created_at || log.trace_id}`} className="rounded-lg border border-border bg-card/70 p-2">
+                                                                                    <div className="flex items-center justify-between font-medium text-foreground">
+                                                                                        <span>{log.node_label || log.node_id}</span>
+                                                                                        <Badge variant="outline">{log.status}</Badge>
+                                                                                    </div>
+                                                                                    <pre className="mt-2 whitespace-pre-wrap">{JSON.stringify(log.output_json || log.error_message || {}, null, 2)}</pre>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </details>
+                                                                </details>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </ScrollArea>
+                                            ) : (
+                                                <ScrollArea className="mt-2 h-[360px] rounded-xl border border-border bg-background/90 p-3">
+                                                    <div className="space-y-2 text-xs text-muted-foreground">
+                                                        {(testRunMutation.data?.node_logs || []).map((log) => (
+                                                            <div key={`${log.node_id}-${log.created_at || log.trace_id}`} className="rounded-xl border border-border bg-card/70 p-2">
+                                                                <div className="flex items-center justify-between font-medium text-foreground">
+                                                                    <span>{log.node_label || log.node_id}</span>
+                                                                    <Badge variant="outline">{log.status}</Badge>
+                                                                </div>
+                                                                <pre className="mt-2 whitespace-pre-wrap">{JSON.stringify(log.output_json || log.error_message || {}, null, 2)}</pre>
                                                             </div>
-                                                            <pre className="mt-2 whitespace-pre-wrap">{JSON.stringify(log.output_json || log.error_message || {}, null, 2)}</pre>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </ScrollArea>
+                                                        ))}
+                                                    </div>
+                                                </ScrollArea>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

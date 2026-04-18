@@ -70,7 +70,8 @@ export const validateVisualPipeline = async (
 export const testRunVisualPipeline = async (
     id: string,
     payload: {
-        transcript: string;
+        transcript?: string;
+        input_json?: Record<string, unknown> | Array<Record<string, unknown>>;
         session_context?: Record<string, unknown>;
     },
 ): Promise<TestRunResponse> => {
